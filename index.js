@@ -152,7 +152,7 @@ app.get('/live-stream-games*', function(req, res) {
       // add code for floating box to end of page 
       body += "<style>#floatingbox{z-index: 1;padding: 5px;visibility: hidden;background-color:#ECECEC;position:absolute;border: 1px solid #000;}</style><div id='floatingbox'><div id='textbox'></div></div><script>var boxshown=false;function ShowBox(evt,text){if ( boxshown==true ){boxshown=false; obj=document.getElementById('floatingbox'); obj.style.visibility='hidden';}if ( boxshown==false ){x=evt.pageX; y=evt.pageY; obj=document.getElementById('floatingbox'); obj.style.top=(y + 15) + 'px'; obj.style.left=(x + 15) + 'px'; obj2=document.getElementById('textbox'); obj2.innerHTML=text; obj.style.visibility='visible'; boxshown=true;}}function closeBox(){boxshown=false; obj=document.getElementById('floatingbox'); obj.style.visibility='hidden';}</script>"
 
-      respond(response, res, new Buffer(body))
+      respond(response, res, Buffer.from(body))
     })
   }
 
@@ -312,7 +312,7 @@ function get_master_playlist(stream_url, req, res, resolution, audio_track) {
         })
         .join('\n')+'\n'
 
-      respond(response, res, new Buffer(body))
+      respond(response, res, Buffer.from(body))
     })
   }
 
@@ -359,7 +359,7 @@ app.get('/playlist', function(req, res) {
         })
         .join('\n')+'\n'
 
-      respond(response, res, new Buffer(body))
+      respond(response, res, Buffer.from(body))
     })
   }
 
@@ -389,7 +389,7 @@ app.get('/ts', function(req, res) {
     getKey(ku, req.headers, function(err, key) {
       if (err) return res.error(err)
 
-      var iv = new Buffer(req.query.iv, 'hex')
+      var iv = Buffer.from(req.query.iv, 'hex')
       log('iv : 0x'+req.query.iv)
 
       var dc = crypto.createDecipheriv('aes-128-cbc', key, iv)

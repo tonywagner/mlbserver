@@ -1,17 +1,22 @@
 {
   "name": "mlbserver",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tonywagner/mlbserver.git"
   },
-  "author": "",
-  "license": "ISC",
+  "dependencies": {
+    "minimist": "^0.2.0",
+    "request": "^2.36.0",
+    "request-promise": "^4.2.4",
+    "root": "^3.2.0",
+    "tough-cookie-filestore": "^0.0.1",
+    "readline-sync": "^1.4.9"
+  },
+  "bin": {
+    "mlbserver": "index.js"
+  },
   "bugs": {
     "url": "https://github.com/tonywagner/mlbserver/issues"
   },
