@@ -30,11 +30,47 @@ const valid_resolutions = [ 'adaptive', '180p', '216p', '288p', '360p', '504p', 
 // Valid audio tracks, default is all
 const valid_audio_tracks = [ 'all', 'English', 'Natural Sound', 'English Radio', 'Radio Española' ]
 
+// Team IDs
+const team_ids = {'ari':'109',
+                  'atl':'144',
+                  'bal':'110',
+                  'bos':'111',
+                  'chc':'112',
+                  'cws':'145',
+                  'cin':'113',
+                  'cle':'114',
+                  'col':'115',
+                  'det':'116',
+                  'hou':'117',
+                  'kc':'118',
+                  'laa':'108',
+                  'lad':'119',
+                  'mia':'146',
+                  'mil':'158',
+                  'min':'142',
+                  'nym':'121',
+                  'nyy':'147',
+                  'oak':'133',
+                  'phi':'143',
+                  'pit':'134',
+                  'stl':'138',
+                  'sd':'135',
+                  'sf':'137',
+                  'sea':'136',
+                  'tb':'139',
+                  'tex':'140',
+                  'tor':'141',
+                  'was':'120'};
+const team_id_list = 'ari, atl, bal, bos, chc, cws, cin, cle, col, det, hou, kc, laa, lad, mia, mil, min, nym, nyy, oak, phi, pit:, stl, sd, sf, sea, tb, tex, tor, was'
+
 // Declare web server
 var app = root()
 
+// Get app's base directory
+global.__basedir = __dirname;
+
 // Create cookies json file if it doesn't exist
-var cookiepath = "cookies.json"
+var cookiepath = __basedir + "/cookies.json"
 if(!fs.existsSync(cookiepath)){
     fs.closeSync(fs.openSync(cookiepath, 'w'))
 }
@@ -44,9 +80,9 @@ request = request.defaults({timeout:15000, agent:false, jar: request.jar()})
 
 // Read credentials json file if it exists
 var credentials = { username: '', password: '', device_id: '' }
-var credentialspath = "credentials.json"
+var credentialspath = __basedir + "/credentials.json"
 if(fs.existsSync(credentialspath)){
-  credentials = JSON.parse(fs.readFileSync('credentials.json'))
+  credentials = JSON.parse(fs.readFileSync(credentialspath))
 }
 // Get username and password (and generate random UUID for device_id) if not yet specified, and write to credentials json file
 if ( (credentials['username'] == '') || (credentials['password'] == '') ) {
@@ -54,13 +90,22 @@ if ( (credentials['username'] == '') || (credentials['password'] == '') ) {
   credentials['password'] = readlineSync.question('Enter password: ', {
     hideEchoBack: true
   })
+  credentials['default_team'] = readlineSync.question('Enter default team (' + team_id_list + '): ')
   credentials['device_id'] = getRandomString(8) + '-' + getRandomString(4) + '-' + getRandomString(4) + '-' + getRandomString(4) + '-' + getRandomString(12)
-  fs.writeFileSync('credentials.json', JSON.stringify(credentials))
+  fs.writeFileSync(credentialspath, JSON.stringify(credentials))
 }
 
 // Response array placeholders
 var login = {'token':null,'expires':null}
 var access = {'token':null,'expires':null}
+var loginpath = __basedir + "/login.json"
+if(fs.existsSync(loginpath)){
+  login = JSON.parse(fs.readFileSync(loginpath))
+}
+/*var accesspath = __basedir + "/access.json"
+if(fs.existsSync(accesspath)){
+  access = JSON.parse(fs.readFileSync(accesspath))
+}*/
 
 // Authorization header placeholder
 var my_authorization_headers = {
@@ -125,7 +170,37 @@ app.listen(argv.port || 9999, function(addr) {
 })
 
 // Redirect root url to the live-stream-games (schedule) page
-app.get('/', '/live-stream-games')
+//app.get('/', '/live-stream-games')
+app.get('/', function(req, res) {
+  body = '<htm><head><title>mlbserver</title></head><body><h1>mlbserver</h1>' + "\n"
+
+  body += '<p><a href="/live-stream-games">MLB.TV Media Center</a></p>' + "\n"
+
+  body += '<p>Default team: ' + credentials['default_team'] + '<br>' + "\n" +
+         '<a href="/v">watch today</a> | <a href="/v?date=' + new Date(new Date().setDate(new Date().getDate()-1)).toISOString().substring(0, 10) + '">watch yesterday</a></p>'  + "\n"
+
+  body += '<p>Watch today for:<br>' + "\n"
+  for (key in team_ids) {
+    body += '<a href="/v?team=' + key + '">' + key + '</a><br>' + "\n"
+  }
+  body += '</p>' + "\n"
+
+  body += '<p>Force resolution examples: '
+  for (key in valid_resolutions) {
+  body += '<a href="/v?resolution=' + valid_resolutions[key] + '">' + valid_resolutions[key] + '</a> | '
+  }
+  body += "\n" + '<p>Force audio track examples: '
+  for (key in valid_audio_tracks) {
+  body += '<a href="/v?audio_track=' + valid_audio_tracks[key] + '">' + valid_audio_tracks[key] + '</a> | '
+  }
+  body += '</p>' + "\n"
+
+  body += '<p>To log out, delete files "credentials.json" and "login.json" in folder "' + __basedir + '" on your server</p>' + "\n" +
+          '</body></html>'
+
+  res.writeHead(200, {'Content-Type': 'text/html'});
+  res.end(body)
+})
 
 // Listen for live-stream-games (schedule) page requests, return the page after local url substitution
 app.get('/live-stream-games*', function(req, res) {
@@ -142,15 +217,8 @@ app.get('/live-stream-games*', function(req, res) {
 
       var body = response.body
 
-      // a regex substitution to add play icon link to direct video url
-      // plus a floating box with some specific resolution/audio track examples
-      body = body.replace(/(<use xlink:href="#icon-watch"><\/use>\n                                                                        <\/svg>\n                                                                    <span class="card-info-feeds-container">\n                                                                            <span class="card-info-feeds card-info-away">\n                                                                                )([A-Z]+)(:\n                                                                                    <span class="card-info-link">\n                                                                                        <a href="https:\/\/www.mlb.com\/tv\/g\d+\/[v])([a-zA-Z0-9-]+)([^<]+)(<\/a>\n                                                                                    <\/span>\n                                                                            <\/span>\n                                                                            <span class="card-info-feeds card-info-home">\n                                                                                )([A-Z]+)(:\n                                                                                    <span class="card-info-link">\n                                                                                        <a href=")(https:\/\/www.mlb.com\/tv\/g\d+\/[v])([a-zA-Z0-9-]+)([^<]+)/g,"$1$2$3$4$5</a> <a href=\"/video?id=$4\" onmouseover=\"javascript:ShowBox(event,'<a href=\\'/video?id=$4&resolution=720p_alt\\'>720p60</a><br><a href=\\'/video?id=$4&resolution=720p\\'>720p</a><br><a href=\\'/video?id=$4&resolution=540p\\'>540p</a><br><a href=\\'/video?id=$4&resolution=360p\\'>360p</a><br><a href=\\'/video?id=$4&resolution=180p\\'>180p</a><br><a href=\\'/video?id=$4&audio_track=Natural Sound\\'>Natural Sound</a><br><a href=\\'/video?id=$4&audio_track=English Radio\\'>English Radio</a><br><a href=\\'/video?id=$4&audio_track=Radio Española\\'>Radio Española</a><br>');return false;\">&#9658;$6$7$8$9$10$11</a> <a href=\"/video?id=$10\" onmouseover=\"javascript:ShowBox(event,'<a href=\\'/video?id=$10&resolution=720p_alt\\'>720p60</a><br><a href=\\'/video?id=$10&resolution=720p\\'>720p</a><br><a href=\\'/video?id=$10&resolution=540p\\'>540p</a><br><a href=\\'/video?id=$10&resolution=360p\\'>360p</a><br><a href=\\'/video?id=$10&resolution=180p\\'>180p</a><br><a href=\\'/video?id=$10&audio_track=Natural Sound\\'>Natural Sound</a><br><a href=\\'/video?id=$10&audio_track=English Radio\\'>English Radio</a><br><a href=\\'/video?id=$10&audio_track=Radio Española\\'>Radio Española</a><br>');return false;\">&#9658;")
-
       // a regex substitution to change existing media player links to local hls.js embed urls
       body = body.replace(/https:\/\/www.mlb.com\/tv\/g\d+\/[v]([a-zA-Z0-9-]+)/g,"/embed?src=%2Fvideo%3Fid%3D$1")
-
-      // add code for floating box to end of page 
-      body += "<style>#floatingbox{z-index: 1;padding: 5px;visibility: hidden;background-color:#ECECEC;position:absolute;border: 1px solid #000;}</style><div id='floatingbox'><div id='textbox'></div></div><script>var boxshown=false;function ShowBox(evt,text){if ( boxshown==true ){boxshown=false; obj=document.getElementById('floatingbox'); obj.style.visibility='hidden';}if ( boxshown==false ){x=evt.pageX; y=evt.pageY; obj=document.getElementById('floatingbox'); obj.style.top=(y + 15) + 'px'; obj.style.left=(x + 15) + 'px'; obj2=document.getElementById('textbox'); obj2.innerHTML=text; obj.style.visibility='visible'; boxshown=true;}}function closeBox(){boxshown=false; obj=document.getElementById('floatingbox'); obj.style.visibility='hidden';}</script>"
 
       respond(response, res, Buffer.from(body))
     })
@@ -192,13 +260,21 @@ app.get('/embed', function(req, res) {
   res.end(body)
 })
 
+// Redirect v to video (shortcut)
+app.get('/v', '/video')
+
 // Listen for video request, log in and get tokens if necessary, then ultimately get the master playlist from the derived stream url
 app.get('/video', async function(req, res) {
   delete req.headers.host
 
   log('video request : ' + req.url)
 
-  var content_id = req.query.id
+  // type not yet implemented (default video 0, audio 2)
+  var type = req.query.type || 0
+  var team = req.query.team || credentials['default_team']
+  var team_id = team_ids[team]
+  var date = req.query.date || new Date().toISOString().substring(0, 10)
+  var content_id = req.query.id || await get_content_id(team_id, date, type)
   var resolution = req.query.resolution || 'adaptive'
   var audio_track = req.query.audio_track || 'all'
 
@@ -212,6 +288,7 @@ app.get('/video', async function(req, res) {
       login['token'] = obj.access_token
       log('Login token : ' + login['token'])
       login['expires'] = new Date(new Date().getTime() + obj.expires_in*1000)
+      fs.writeFileSync(loginpath, JSON.stringify(login))
     }
 
     if ((newlogin) || (access['token'] == null) || (access['expires'] < new Date())) {
@@ -223,6 +300,7 @@ app.get('/video', async function(req, res) {
       my_authorization_headers['Authorization'] = access['token']
       log('Access token : ' + access['token'])
       access['expires'] = new Date(new Date().getTime() + access_response.expires_in*1000)
+      //fs.writeFileSync(accesspath, JSON.stringify(access))
     }
 
     var playback_url = await get_playback_url(access['token'], content_id)
@@ -399,6 +477,33 @@ app.get('/ts', function(req, res) {
     })
   })
 })
+
+// 0. get content id using team id, date, and content type (default video 0 or audio 2)
+function get_content_id(team_id, this_date, content_type=0) {
+  return new Promise((resolve, reject) => {
+    request.get({
+      url: "http://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + this_date + "&endDate=" + this_date + "&teamId=" + team_id + "&hydrate=game(content(media(epg)))",
+      headers: {
+        'User-Agent': 'okhttp/3.12.1'
+      }
+    })
+    .then(function (body) {
+      var obj = JSON.parse(body)
+      var temparray = obj.dates[0].games[0].content.media.epg[content_type].items
+      var content_id = temparray[0]['contentId']
+      for (var i = 0; i < temparray.length; i++) {
+        if ( temparray[i]['mediaFeedSubType'] == team_id ) {
+          content_id = temparray[i]['contentId']
+          break
+        }
+      }
+      resolve(content_id)
+    })
+    .catch(function (err) {
+      console.error(err)
+    })
+  })
+}
 
 // 1. get login token
 function get_login_token(account_username, account_password) {
