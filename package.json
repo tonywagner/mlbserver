@@ -1,0 +1,25 @@
+{
+  "name": "mlbserver",
+  "version": "2021.7.14",
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tonywagner/mlbserver.git"
+  },
+  "dependencies": {
+    "minimist": "^1.2.5",
+    "readline-sync": "^1.4.10",
+    "request": "^2.88.2",
+    "request-promise": "^4.2.6",
+    "root": "^3.2.0",
+    "tough-cookie-filestore": "^0.0.1",
+    "xml2js": "^0.4.23"
+  },
+  "bin": {
+    "mlbserver": "index.js"
+  },
+  "bugs": {
+    "url": "https://github.com/tonywagner/mlbserver/issues"
+  },
+  "homepage": "https://github.com/tonywagner/mlbserver#readme"
+}
