@@ -301,6 +301,20 @@ class sessionClass {
     }
   }
 
+  clear_multiview(folder) {
+    try {
+      var dir = path.join(__dirname, folder)
+      fs.rmdir(dir, { recursive: true }, (err) => {
+        if (err) {
+          this.halt('error clearing multiview files: ' + err.message)
+        }
+        this.createDirectory(dir)
+      })
+    } catch(e){
+      this.halt('clear multiview error : ' + e.message)
+    }
+  }
+
   save_credentials() {
     this.writeJsonToFile(JSON.stringify(this.credentials), CREDENTIALS_FILE)
     this.debuglog('credentials saved to file')

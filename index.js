@@ -10,6 +10,12 @@ const url = require('url')
 const assert = require('assert')
 var crypto = require('crypto')
 
+// More required Node packages, for multiview streaming
+const HLSServer = require('hls-server')
+const http = require('http')
+const httpAttach = require('http-attach')
+const ffmpeg = require('fluent-ffmpeg')
+
 // Declare our session class for API activity, from the included session.js file
 const sessionClass = require('./session.js')
 
@@ -86,11 +92,38 @@ var appname = path.basename(__dirname)
 // Declare server, will fill in IP and port next
 var server = ''
 
+// Multiview server variables
+var hls_base = 'multiview'
+var multiview_stream_name = 'master.m3u8'
+var ffmpeg_command
+var ffmpeg_status = false
+var multiview_url
+
 // Start web server listening on port
-app.listen(argv.port || 9999, function(addr) {
+// and also multiview server on the next port
+let port = argv.port || 9999
+let multiview_port = port + 1
+app.listen(port, function(addr) {
   server = 'http://' + addr
   session.log(appname + ' started at ' + server)
+
+  session.debuglog('multiview port ' + multiview_port)
+  var multiview_server = server.replace(':' + port, ':' + multiview_port)
+  multiview_url = multiview_server + '/' + hls_base + '/' + multiview_stream_name
+  session.log('multiview server started at ' + multiview_url)
+  session.clear_multiview(hls_base)
 })
+var multiview_app = http.createServer()
+var hls = new HLSServer(multiview_app, {
+  path: '/' + hls_base,
+  dir: hls_base
+})
+function corsMiddleware (req, res, next) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    next()
+}
+httpAttach(multiview_app, corsMiddleware)
+multiview_app.listen(multiview_port)
 
 // Listen for stream requests
 app.get('/stream.m3u8', async function(req, res) {
@@ -392,8 +425,8 @@ app.get('/playlist', function(req, res) {
       if ( (contentId) && ((inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0]))) {
         // If inning offsets don't exist, we'll force those options off
         if ( (typeof session.temp_cache[contentId] === 'undefined') || (typeof session.temp_cache[contentId].inning_offsets === 'undefined') ) {
-          inning_half = 'none'
-          inning_number = ''
+          inning_half = VALID_INNING_HALF[0]
+          inning_number = VALID_INNING_NUMBER[0]
           skip = 'off'
         } else {
           var time_counter = 0.0
@@ -417,13 +450,13 @@ app.get('/playlist', function(req, res) {
           if (line.indexOf('#EXTINF:') == 0) {
             time_counter += parseFloat(line.substring(8, line.length-1))
 
-            if ( (inning_half != 'none') || (inning_number != '') ) {
+            if ( (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) ) {
               let inning_index = 0
               if ( inning_number > 0 ) {
                 inning_index = (inning_number * 2)
                 if ( inning_half == 'top' ) inning_index = inning_index - 1
               }
-              if ( (typeof session.temp_cache[contentId].inning_offsets[inning_index].start !== 'undefined') && (time_counter < session.temp_cache[contentId].inning_offsets[inning_index].start) ) {
+              if ( (typeof session.temp_cache[contentId].inning_offsets[inning_index] !== 'undefined') && (typeof session.temp_cache[contentId].inning_offsets[inning_index].start !== 'undefined') && (time_counter < session.temp_cache[contentId].inning_offsets[inning_index].start) ) {
                 session.debuglog('skipping ' + time_counter + ' before ' + session.temp_cache[contentId].inning_offsets[inning_index].start)
                 skip_next = true
                 if ( discontinuity ) {
@@ -433,6 +466,7 @@ app.get('/playlist', function(req, res) {
                   return '#EXT-X-DISCONTINUITY'
                 }
               } else {
+                session.log('inning start time not found, ignoring')
                 inning_half = VALID_INNING_HALF[0]
                 inning_number = VALID_INNING_NUMBER[0]
               }
@@ -590,7 +624,17 @@ app.get('/', async function(req, res) {
       session.setScanMode(req.query.scan_mode)
     }
 
-    var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext{font-size:.8em}</style><script type="text/javascript">var date="' + gameDate + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var scan_mode="' + scan_mode + '";function reload(){var newurl="/?";if ((date != "' + VALID_DATES[0] + '") && (date != "' + session.liveDate(15) + '")){newurl+="date="+date+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+audio_track+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&"}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="Embed"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}window.location=newurl.substring(0,newurl.length-1)}</script></head><body><h1>' + appname + '</h1>' + "\n"
+    var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext,.multiview{font-size:.8em}</style><script type="text/javascript">' + "\n";
+
+    body += 'var date="' + gameDate + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var scan_mode="' + scan_mode + '";' + "\n"
+
+    body += 'function reload(){var newurl="/?";if ((date != "' + VALID_DATES[0] + '") && (date != "' + session.liveDate(15) + '")){newurl+="date="+date+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+audio_track+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&"}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="Embed"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+
+    body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){            callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
+
+    body += 'function parsemultiviewresponse(responsetext){if (responsetext == "started"){setTimeout(function(){document.getElementById("startmultiview").innerHTML="Started"},12000)}else if (responsetext == "stopped"){setTimeout(function(){document.getElementById("stopmultiview").innerHTML="Stopped"},3000)}else{alert(responsetext)}}function addmultiview(e){for(var i=1;i<5;i++){var valuefound = false;var oldvalue="";var newvalue=e.value;if(!e.checked){oldvalue=e.value;newvalue=""}if (document.getElementById("multiview" + i).value == oldvalue){document.getElementById("multiview" + i).value=newvalue;valuefound=true;break}}if(e.checked && !valuefound){e.checked=false}}function startmultiview(e){var count=0;var getstr="";for(var i=1;i<5;i++){if (document.getElementById("multiview"+i).value != ""){count++;getstr+="streams="+encodeURIComponent(document.getElementById("multiview"+i).value)+"&"}}if((count > 1) && (count < 5)){e.innerHTML="starting...";makeGETRequest("multiview?"+getstr, parsemultiviewresponse)}else{alert("Multiview requires between 2-4 streams to be selected")}return false}function stopmultiview(e){e.innerHTML="stopping...";makeGETRequest("multiview", parsemultiviewresponse);return false}' + "\n"
+
+		body += '</script></head><body><h1>' + appname + '</h1>' + "\n"
 
     body += '<p>Date: <input type="date" id="gameDate" value="' + gameDate + '"/> '
     for (var i = 0; i < VALID_DATES.length; i++) {
@@ -677,6 +721,7 @@ app.get('/', async function(req, res) {
     } else {
       force_vod = 'off'
     }
+    var thislink = '/' + link
 
     for (var j = 0; j < cache_data.dates[0].games.length; j++) {
       let awayteam = cache_data.dates[0].games[j].teams['away'].team.abbreviation
@@ -761,9 +806,9 @@ app.get('/', async function(req, res) {
                       body += teamabbr + ': <s>' + station + '</s>'
                     } else {
                       let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
-                      let thislink = '/' + link
                       let querystring
                       querystring = '?mediaId=' + mediaId
+                      var multiviewquerystring = querystring + '&resolution=360p&audio_track=English'
                       if ( linkType == 'embed' ) {
                         if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON' ) {
                           querystring += '&isLive=true'
@@ -771,20 +816,26 @@ app.get('/', async function(req, res) {
                         if ( startFrom != 'Beginning' ) querystring += '&startFrom=' + startFrom
                       }
                       if ( mediaType == 'MLBTV' ) {
-                        if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
-                        if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + audio_track
-                        if ( inning_half != 'none' ) querystring += '&inning_half=' + inning_half
+                        if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
                         if ( inning_number != '' ) querystring += '&inning_number=' + inning_number
                         if ( skip != 'off' ) querystring += '&skip=' + skip
-                        if ( (inning_half != 'none') || (inning_number != '') || (skip != 'off') ) {
+                        if ( (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0]) ) {
                           let contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
                           querystring += '&contentId=' + contentId
                         }
+                        if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+                        if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + audio_track
                       }
-                      if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') && (force_vod != 'off') ) {
-                        querystring += '&force_vod=' + force_vod
+                      if ( linkType == 'stream' ) {
+                        if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON' ) {
+                          if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+                        }
                       }
-                      body += teamabbr + ': <a href="' + thislink + querystring + '">' + station + '</a>' + ', '
+                      body += teamabbr + ': <a href="' + thislink + querystring + '">' + station + '</a>'
+                      if ( mediaType == 'MLBTV' ) {
+                        body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+                      }
+                      body += ', '
                     }
                   } else {
                     body += teamabbr + ': ' + station + ', '
@@ -845,6 +896,16 @@ app.get('/', async function(req, res) {
           body += 'onclick="skip=\'' + VALID_SKIP[i] + '\';reload()">' + VALID_SKIP[i] + '</button> '
         }
         body += '</p>' + "\n"
+
+        body += '<p><table><tr><td><table><tr><td>1</td><td>2</tr><tr><td>3</td><td>4</td></tr></table><td>Multiview: <a id="startmultiview" href="" onclick="startmultiview(this);return false">Start'
+        if ( ffmpeg_status ) body += 'ed'
+        body += '</a> | <a id="stopmultiview" href="" onclick="stopmultiview(this);return false">Stop</a><br/>' + "\n"
+        body += '<span class="tinytext">(requires ffmpeg; check boxes next to games to add, then click "Start";<br/>must click "Stop" link above when done, or manually kill ffmpeg)</span>'
+        for (var i=1; i<5; i++) {
+          body += '<br/>' + i + ': <textarea class="multiview" id="multiview' + i + '" rows=2 cols=60></textarea>'
+        }
+        body += '<br/>Watch: <a href="' + multiview_url + '">Stream</a> | <a href="/embed.html?src=' + encodeURIComponent(multiview_url) + '">Embed</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_url) + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_url) + '">Advanced</a>'
+        body += '</td></tr></table></p>' + "\n"
     }
 
     if ( (linkType == 'stream') && (gameDate == session.liveDate()) ) {
@@ -960,13 +1021,6 @@ app.get('/embed.html', function(req, res) {
 
   delete req.headers.host
 
-  let video_url = '/stream.m3u8'
-  let urlArray = req.url.split('?')
-  if ( (urlArray.length == 2) ) {
-    video_url += '?' + urlArray[1]
-  }
-  session.debuglog('embed src : ' + video_url)
-
   let startFrom = 'Beginning'
   if ( req.query.startFrom ) {
     startFrom = req.query.startFrom
@@ -976,6 +1030,19 @@ app.get('/embed.html', function(req, res) {
   if ( req.query.isLive ) {
     isLive = req.query.isLive
   }
+
+  let video_url = '/stream.m3u8'
+  if ( req.query.src && (req.query.src == multiview_url) ) {
+    video_url = multiview_url
+    startFrom = 'Live'
+    isLive = 'true'
+  } else {
+    let urlArray = req.url.split('?')
+    if ( (urlArray.length == 2) ) {
+      video_url += '?' + urlArray[1]
+    }
+  }
+  session.debuglog('embed src : ' + video_url)
 
   // Adapted from https://hls-js.netlify.app/demo/basic-usage.html
   var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><title>' + appname + ' player</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{background-color:black;color:lightgrey;font-family:Arial,Helvetica,sans-serif}video{width:100% !important;height:auto !important;max-width:1280px}input[type=number]::-webkit-inner-spin-button{opacity:1}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}</style><script>function goBack(){var prevPage=window.location.href;window.history.go(-1);setTimeout(function(){if(window.location.href==prevPage){window.location.href="/"}}, 500)}function toggleAudio(x){var elements=document.getElementsByClassName("audioButton");for(var i=0;i<elements.length;i++){elements[i].className="audioButton"}document.getElementById("audioButton"+x).className+=" default";hls.audioTrack=x}function changeTime(x){video.currentTime+=x}function changeRate(x){let newRate=Math.round((Number(document.getElementById("playback_rate").value)+x)*10)/10;if((newRate<=document.getElementById("playback_rate").max) && (newRate>=document.getElementById("playback_rate").min)){document.getElementById("playback_rate").value=newRate.toFixed(1);video.defaultPlaybackRate=video.playbackRate=document.getElementById("playback_rate").value}}function myKeyPress(e){if(e.key=="ArrowRight"){changeTime(10)}else if(e.key=="ArrowLeft"){changeTime(-10)}else if(e.key=="ArrowUp"){changeRate(0.1)}else if(e.key=="ArrowDown"){changeRate(-0.1)}}</script></head><body onkeydown="myKeyPress(event)"><script src="https://hls-js.netlify.app/dist/hls.js"></script><video id="video" controls></video><script>var video=document.getElementById("video");if(Hls.isSupported()){var hls=new Hls('
@@ -1001,13 +1068,18 @@ app.get('/advanced.html', function(req, res) {
   delete req.headers.host
 
   let video_url = '/stream.m3u8'
-  let urlArray = req.url.split('?')
-  if ( (urlArray.length == 2) ) {
-    video_url += '?' + urlArray[1]
+  if ( req.query.src && (req.query.src == multiview_url) ) {
+    video_url = multiview_url
+  } else {
+    let urlArray = req.url.split('?')
+    if ( (urlArray.length == 2) ) {
+      video_url += '?' + urlArray[1]
+    }
+    video_url = server + video_url
   }
   session.debuglog('advanced embed src : ' + video_url)
 
-  res.redirect('http://hls-js.netlify.app/demo/?src=' + encodeURIComponent(server + video_url))
+  res.redirect('http://hls-js.netlify.app/demo/?src=' + encodeURIComponent(video_url))
 })
 
 // Listen for Chromecast request, redirect to chromecast.link player
@@ -1017,14 +1089,19 @@ app.get('/chromecast.html', function(req, res) {
   delete req.headers.host
 
   let video_url = '/stream.m3u8'
-  let urlArray = req.url.split('?')
-  if ( (urlArray.length == 2) ) {
-    video_url += '?' + urlArray[1]
+  if ( req.query.src && (req.query.src == multiview_url) ) {
+    video_url = multiview_url
+  } else {
+    let urlArray = req.url.split('?')
+    if ( (urlArray.length == 2) ) {
+      video_url += '?' + urlArray[1]
+    }
+    video_url = server + video_url
   }
   session.debuglog('chromecast src : ' + video_url)
 
   // Include "server" with URL so it points to IP address (as Chromecast cannot resolve local domain names)
-  res.redirect('https://chromecast.link#title=' + appname + '&content=' + encodeURIComponent(server + video_url))
+  res.redirect('https://chromecast.link#title=' + appname + '&content=' + encodeURIComponent(video_url))
 })
 
 // Listen for live channels.m3u request
@@ -1121,3 +1198,131 @@ app.get('/favicon.svg', async function(req, res) {
   res.writeHead(200, {'Content-Type': 'image/svg+xml'})
   res.end(body)
 })
+
+// Listen for multiview requests
+app.get('/multiview', async function(req, res) {
+  try {
+    session.log('multiview request : ' + req.url)
+
+    delete req.headers.host
+
+    try {
+      ffmpeg_command.kill()
+      session.clear_multiview(hls_base)
+    } catch (e) {
+      //session.debuglog('error killing multiview command:' + e.message)
+    }
+
+    if ( req.query.streams ) {
+      // Wait to restart it
+      setTimeout(function() {
+        res.end(start_multiview_stream(req.query.streams))
+      }, 5000)
+    } else {
+      res.end('stopped')
+    }
+  } catch (e) {
+    session.log('multiview request error : ' + e.message)
+    res.end('multiview request error, check log')
+  }
+})
+
+function start_multiview_stream(streams) {
+  try {
+    ffmpeg_command = ffmpeg({ timeout: 432000 })
+
+    var stream_count = Math.min(streams.length, 4)
+
+    var complexFilter = []
+    var xstack_inputs = []
+    var xstack_layout = '0_0|w0_0'
+    var map_audio = ''
+    for (var i=0; i<stream_count; i++) {
+      let url = streams[i]
+      if ( url.indexOf('resolution=') == -1 ) {
+        url += '&resolution=360p'
+      }
+      if ( url.indexOf('audio_track=') == -1 ) {
+        url += '&audio_track=English'
+      }
+
+      // Stream URL for testing
+      //ffmpeg_command.input('https://www.radiantmediaplayer.com/media/rmp-segment/bbb-abr-aes/playlist.m3u8').native()
+
+      // Production
+      ffmpeg_command.input(url)
+      .native()
+      .addInputOption('-thread_queue_size', '1024')
+
+      complexFilter.push({
+        filter: 'setpts=PTS-STARTPTS',
+        inputs: i+':v',
+        outputs: 'v'+i
+      })
+      xstack_inputs.push('v'+i)
+    }
+    if ( stream_count > 2 ) xstack_layout += '|0_h0'
+    if ( stream_count > 3 ) xstack_layout += '|w0_h0'
+    complexFilter.push({
+      filter: 'xstack',
+      options: { inputs:stream_count, layout: xstack_layout, fill:'black' },
+      inputs: xstack_inputs,
+      outputs: 'out'
+    })
+
+    ffmpeg_command.complexFilter(complexFilter)
+    .addOutputOption('-map', '[out]:v')
+
+    var stream_map = 'v:0,agroup:aac'
+    for (var i=0; i<stream_count; i++) {
+      ffmpeg_command.addOutputOption('-map', i + ':a:0')
+      stream_map += ' a:' + i + ',agroup:aac,language:ENG'
+      if ( i == 0 ) stream_map += ',default:yes'
+    }
+    var bandwidth = 1040 * stream_count
+    ffmpeg_command.addOutputOption('-c:v', 'libx264')
+    .addOutputOption('-preset:v', 'superfast')
+    .addOutputOption('-r:v', '30')
+    .addOutputOption('-g:v', '150')
+    .addOutputOption('-keyint_min:v', '150')
+    .addOutputOption('-b:v', bandwidth.toString() + 'k')
+    .addOutputOption('-c:a', 'copy')
+    .addOutputOption('-sn')
+    .addOutputOption('-f', 'hls')
+    .addOutputOption('-hls_time', '5')
+    .addOutputOption('-hls_list_size', '12')
+    .addOutputOption('-hls_flags', 'delete_segments+independent_segments')
+    .addOutputOption('-start_number', '1')
+    .addOutputOption('-hls_segment_filename', hls_base + '/stream_%v_%d.ts')
+    .addOutputOption('-var_stream_map', stream_map)
+    .addOutputOption('-master_pl_name', multiview_stream_name)
+    .addOutputOption('-y')
+    .output(hls_base + '/stream-%v.m3u8')
+    .on('start', function() {
+      session.log('multiview stream started')
+      ffmpeg_status = true
+    })
+    .on('error', function(err) {
+      session.log('multiview stream error: ' + err.message)
+      ffmpeg_status = false
+    })
+    .on('end', function() {
+      session.log('multiview stream stopped')
+      ffmpeg_status = false
+    })
+    .run()
+
+    /*
+    .on('stderr', function(stderrLine) {
+      session.debuglog(stderrLine);
+    })
+    */
+
+    session.log('multiview stream command started')
+
+    return 'started'
+  } catch (e) {
+    session.log('multiview start error : ' + e.message)
+    return 'multiview start error, check log'
+  }
+}

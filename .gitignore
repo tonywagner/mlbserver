@@ -3,4 +3,5 @@ package-lock.json
 credentials.json
 cache
 data
+multiview
 .DS_Store
