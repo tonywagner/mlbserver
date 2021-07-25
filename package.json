@@ -1,12 +1,13 @@
 {
   "name": "mlbserver",
-  "version": "2021.7.19",
+  "version": "2021.7.24",
   "description": "",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tonywagner/mlbserver.git"
   },
   "dependencies": {
+    "ffmpeg-static": "^4.4.0",
     "fluent-ffmpeg": "^2.1.2",
     "hls-server": "^1.5.0",
     "http": "0.0.1-security",

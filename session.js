@@ -12,6 +12,7 @@ const parseString = require('xml2js').parseString
 // Define some file paths and names
 const DATA_DIRECTORY = path.join(__dirname, 'data')
 const CACHE_DIRECTORY = path.join(__dirname, 'cache')
+const MULTIVIEW_DIRECTORY = path.join(__dirname, 'multiview')
 
 const CREDENTIALS_FILE = path.join(__dirname, 'credentials.json')
 const COOKIE_FILE = path.join(DATA_DIRECTORY, 'cookies.json')
@@ -177,6 +178,17 @@ class sessionClass {
     return this.cache.dates[this.convertDateStringToObjectName(dateString)].updated
   }
 
+  setHighlightsCacheExpiry(cache_name, expiryDate) {
+    if ( !this.cache.highlights ) {
+      this.cache.highlights={}
+    }
+    if ( !this.cache.highlights[cache_name] ) {
+      this.cache.highlights[cache_name] = {}
+    }
+    this.cache.highlights[cache_name].highlightsCacheExpiry = expiryDate
+    this.save_cache_data()
+  }
+
   setDateCacheExpiry(cache_name, expiryDate) {
     if ( !this.cache.dates ) {
       this.cache.dates={}
@@ -301,18 +313,8 @@ class sessionClass {
     }
   }
 
-  clear_multiview(folder) {
-    try {
-      var dir = path.join(__dirname, folder)
-      fs.rmdir(dir, { recursive: true }, (err) => {
-        if (err) {
-          this.halt('error clearing multiview files: ' + err.message)
-        }
-        this.createDirectory(dir)
-      })
-    } catch(e){
-      this.halt('clear multiview error : ' + e.message)
-    }
+  get_multiview_directory() {
+    return MULTIVIEW_DIRECTORY
   }
 
   save_credentials() {
@@ -395,6 +397,32 @@ class sessionClass {
       'User-Agent': USER_AGENT
     }
     this.request(u, opts, cb)
+  }
+
+  // request to use when fetching audio playlist URL
+  async getAudioPlaylistURL(url) {
+    var playlistURL
+    let reqObj = {
+      url: url,
+      headers: {
+        'Authorization': this.data.bamAccessToken,
+        'User-Agent': USER_AGENT
+      }
+    }
+    var response = await this.httpGet(reqObj)
+    var body = response.toString().trim().split('\n')
+    for (var i=0; i<body.length; i++) {
+      if ( body[i][0] != '#' ) {
+        playlistURL = body[i]
+        break
+      }
+    }
+    if ( playlistURL ) {
+      return playlistURL
+    } else {
+      session.log('Failed to find audio playlist URL from ' + url)
+      return ''
+    }
   }
 
   async getXApiKey() {
@@ -839,6 +867,72 @@ class sessionClass {
       this.log('could not find mediaId')
     } catch(e) {
       this.log('getMediaId error : ' + e.message)
+    }
+  }
+
+  // get highlights for a game
+  async getHighlightsData(gamePk, gameDate) {
+    try {
+      this.debuglog('getHighlightsData for ' + gamePk)
+
+      let cache_data
+      let cache_name = 'h' + gamePk
+      let cache_file = path.join(CACHE_DIRECTORY, cache_name+'.json')
+      let currentDate = new Date()
+      if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.highlights || !this.cache.highlights[cache_name] || !this.cache.highlights[cache_name].highlightsCacheExpiry || (currentDate > new Date(this.cache.highlights[cache_name].highlightsCacheExpiry)) ) {
+        let reqObj = {
+          url: 'https://statsapi.mlb.com/api/v1/game/' + gamePk + '/content',
+          headers: {
+            'User-agent': USER_AGENT,
+            'Origin': 'https://www.mlb.com',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Content-type': 'application/json'
+          },
+          gzip: true
+        }
+        var response = await this.httpGet(reqObj)
+        if ( this.isValidJson(response) ) {
+          //this.debuglog(response)
+          cache_data = JSON.parse(response)
+          this.save_json_cache_file(cache_name, cache_data)
+
+          // Default cache period is 1 hour
+          let oneHourFromNow = new Date()
+          oneHourFromNow.setHours(oneHourFromNow.getHours()+1)
+          let cacheExpiry = oneHourFromNow
+
+          let today = this.liveDate()
+          let yesterday = this.yesterdayDate()
+          if ( gameDate == today ) {
+            if ( (cache_data.media) && (cache_data.media.epg) ) {
+              for (var i = 0; i < cache_data.media.epg.length; i++) {
+                if ( cache_data.media.epg[i].items && cache_data.media.epg[i].items[0] && cache_data.media.epg[i].items[0].mediaState && (cache_data.media.epg[i].items[0].mediaState == 'MEDIA_ON') ) {
+                  this.debuglog('setting cache expiry to 5 minute due to in progress games')
+                  currentDate.setMinutes(currentDate.getMinutes()+5)
+                  cacheExpiry = currentDate
+                  break
+                }
+              }
+            }
+          } else if ( gameDate < today ) {
+            this.debuglog('1+ days old, setting cache expiry to forever')
+            cacheExpiry = new Date(8640000000000000)
+          }
+
+          // finally save the setting
+          this.setHighlightsCacheExpiry(cache_name, cacheExpiry)
+        } else {
+          this.log('error : invalid json from url ' + getObj.url)
+        }
+      } else {
+        this.debuglog('using cached highlight data')
+        cache_data = this.readFileToJson(cache_file)
+      }
+      if (cache_data) {
+        return cache_data
+      }
+    } catch(e) {
+      this.log('getHighlightsData error : ' + e.message)
     }
   }
 
