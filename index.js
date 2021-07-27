@@ -637,6 +637,8 @@ app.get('/', async function(req, res) {
     var audio_url = DEFAULT_ALTERNATE_AUDIO_URL
     if ( req.query.audio_url ) {
       audio_url = req.query.audio_url
+      // If user copied embed URL, change it to stream
+      audio_url = audio_url.replace('embed.html', 'stream.m3u8')
     }
 
     var scan_mode = session.data.scan_mode
@@ -645,25 +647,42 @@ app.get('/', async function(req, res) {
       session.setScanMode(req.query.scan_mode)
     }
 
-    var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext,.textarea_url{font-size:.8em}.modal{display:none;position:fixed;z-index:1;padding-top:100px;left:0;top:0;width:100%;height:100%;overflow:auto;background-color:rgb(0,0,0);background-color:rgba(0,0,0,0.4)}.modal-content{background-color:#fefefe;margin:auto;padding:10px;border:1px solid #888;width:360px;color:black}#highlights a{color:black}.close{color:black;float:right;font-size:28px;font-weight:bold;}#highlights a:hover,#highlights a:focus,.close:hover,.close:focus{color:gray;text-decoration:none;cursor:pointer;}</style><script type="text/javascript">' + "\n";
+    var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:none}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext,.textarea_url{font-size:.8em}'
 
+    // Highlights CSS
+    body += '.modal{display:none;position:fixed;z-index:1;padding-top:100px;left:0;top:0;width:100%;max-height:calc(100vh-110px);overflow:auto;-webkit-overflow-scrolling:touch;background-color:rgb(0,0,0);background-color:rgba(0,0,0,0.4)}.modal-content{background-color:#fefefe;margin:auto;padding:10px;border:1px solid #888;width:360px;color:black}#highlights a{color:black}.close{color:black;float:right;font-size:28px;font-weight:bold;}#highlights a:hover,#highlights a:focus,.close:hover,.close:focus{color:gray;text-decoration:none;cursor:pointer;}'
+
+    // Tooltip CSS
+    body += '.tooltip{position:relative;display:inline-block;border-bottom: 1px dotted gray;}.tooltip .tooltiptext{font-size:.8em;visibility:hidden;width:360px;background-color:gray;color:white;text-align:left;padding:5px;border-radius:6px;position:absolute;z-index:1;top:100%;left:75%;margin-left:-30px;}.tooltip:hover .tooltiptext{visibility:visible;}'
+
+    body += '</style><script type="text/javascript">' + "\n";
+
+    // Define option variables in page
     body += 'var date="' + gameDate + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var audio_url="' + audio_url + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var scan_mode="' + scan_mode + '";' + "\n"
 
+    // Reload function, called after options change
     body += 'function reload(){var newurl="/?";if ((date != "' + VALID_DATES[0] + '") && (date != "' + session.liveDate(15) + '")){newurl+="date="+date+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+audio_track+"&"}if (audio_url != "' + DEFAULT_ALTERNATE_AUDIO_URL + '"){newurl+="audio_url="+encodeURIComponent(audio_url)+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&"}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="Embed"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
+    // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){            callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
 
+    // Multiview functions
     body += 'function parsemultiviewresponse(responsetext){if (responsetext == "started"){setTimeout(function(){document.getElementById("startmultiview").innerHTML="Started";document.getElementById("stopmultiview").innerHTML="Stop"},12000)}else if (responsetext == "stopped"){setTimeout(function(){document.getElementById("stopmultiview").innerHTML="Stopped";document.getElementById("startmultiview").innerHTML="Start"},3000)}else{alert(responsetext)}}function addmultiview(e){for(var i=1;i<5;i++){var valuefound = false;var oldvalue="";var newvalue=e.value;if(!e.checked){oldvalue=e.value;newvalue=""}if (document.getElementById("multiview" + i).value == oldvalue){document.getElementById("multiview" + i).value=newvalue;valuefound=true;break}}if(e.checked && !valuefound){e.checked=false}}function startmultiview(e){var count=0;var getstr="";for(var i=1;i<5;i++){if (document.getElementById("multiview"+i).value != ""){count++;getstr+="streams="+encodeURIComponent(document.getElementById("multiview"+i).value)+"&"}}if((count > 1) && (count < 5)){e.innerHTML="starting...";makeGETRequest("/multiview?"+getstr, parsemultiviewresponse)}else{alert("Multiview requires between 2-4 streams to be selected")}return false}function stopmultiview(e){e.innerHTML="stopping...";makeGETRequest("/multiview", parsemultiviewresponse);return false}' + "\n"
+
+    // Adds touch capability to hover tooltips
+    body += 'document.addEventListener("touchstart", function() {}, true);' + "\n"
 
 		body += '</script></head><body><h1>' + appname + '</h1>' + "\n"
 
-    body += '<p>Date: <input type="date" id="gameDate" value="' + gameDate + '"/> '
+    body += '<p><span class="tooltip tinytext">Hover over an option name for more details</span></p>' + "\n"
+
+    body += '<p><span class="tooltip">Date<span class="tooltiptext">Default is "today", and will show last night\'s games into the following morning (until 11:OO AM EST).</span></span>: <input type="date" id="gameDate" value="' + gameDate + '"/> '
     for (var i = 0; i < VALID_DATES.length; i++) {
       body += '<button onclick="date=\'' + VALID_DATES[i] + '\';reload()">' + VALID_DATES[i] + '</button> '
     }
     body += '</p>' + "\n" + '<p class="tinytext">Updated ' + session.getCacheUpdatedDate(gameDate) + '</p>' + "\n"
 
-    body += '<p>Media Type: '
+    body += '<p><span class="tooltip">Media Type<span class="tooltiptext">Video is TV broadcasts, Audio is English radio, and Spanish is Spanish radio (not available for all games).</span></span>: '
     for (var i = 0; i < VALID_MEDIA_TYPES.length; i++) {
       body += '<button '
       if ( mediaType == VALID_MEDIA_TYPES[i] ) body += 'class="default" '
@@ -671,7 +690,7 @@ app.get('/', async function(req, res) {
     }
     body += '</p>' + "\n"
 
-    body += '<p>Link Type: '
+    body += '<p><span class="tooltip">Link Type<span class="tooltiptext">Embed will play in your browser (with AirPlay support), Stream will give you a stream URL to open directly in media players like Kodi or VLC, Chromecast is a web-based casting tool, and Advanced will play in your browser with some extra tools and debugging information.</span></span>: '
     for (var i = 0; i < VALID_LINK_TYPES.length; i++) {
       body += '<button '
       if ( linkType == VALID_LINK_TYPES[i] ) body += 'class="default" '
@@ -681,7 +700,7 @@ app.get('/', async function(req, res) {
 
     body += '<p>'
     if ( linkType == 'Embed' ) {
-      body += 'Start From: '
+      body += '<span class="tooltip">Start From<span class="tooltiptext">For the embedded player only: Beginning will start playback at the beginning of the stream (may be 1 hour before game time for live games), and Live will start at the live point (if the event is live -- archive games should always start at the beginning). You can still seek anywhere.</span></span>: '
       for (var i = 0; i < VALID_START_FROM.length; i++) {
         body += '<button '
         if ( startFrom == VALID_START_FROM[i] ) body += 'class="default" '
@@ -694,7 +713,7 @@ app.get('/', async function(req, res) {
       if ( linkType == 'Embed' ) {
         body += 'or '
       }
-      body += 'Inning: '
+      body += '<span class="tooltip">Inning<span class="tooltiptext">For video streams only: choose the inning to start with. If specified, seeking to an earlier point will not be possible. Default is the beginning of the stream. Inning 0 (zero) should be the broadcast start time, if specified.</span></span>: '
       body += '<select id="inning_half" onchange="inning_half=this.value;reload()">'
       for (var i = 0; i < VALID_INNING_HALF.length; i++) {
         body += '<option value="' + VALID_INNING_HALF[i] + '"'
@@ -713,7 +732,7 @@ app.get('/', async function(req, res) {
       body += '</select></p>' + "\n"
     }
 
-    body += '<p>Scores: '
+    body += '<p><span class="tooltip">Scores<span class="tooltiptext">Choose whether to show scores on this web page.</span></span>: '
     for (var i = 0; i < VALID_SCORES.length; i++) {
       body += '<button '
       if ( scores == VALID_SCORES[i] ) body += 'class="default" '
@@ -789,13 +808,13 @@ app.get('/', async function(req, res) {
       if ( (cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.lastName) || (cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.lastName) ) {
         pitchers = "<br/>"
         if ( cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.lastName ) {
-          pitchers += cache_data.dates[0].games[j].teams['away'].probablePitcher.lastName
+          pitchers += '<a href="https://mlb.com/player/' + cache_data.dates[0].games[j].teams['away'].probablePitcher.nameSlug + '" target="_blank">' + cache_data.dates[0].games[j].teams['away'].probablePitcher.lastName + '</a>'
         } else {
           pitchers += 'TBD'
         }
         pitchers += ' vs '
         if ( cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.lastName ) {
-          pitchers += cache_data.dates[0].games[j].teams['home'].probablePitcher.lastName
+          pitchers += '<a href="https://mlb.com/player/' + cache_data.dates[0].games[j].teams['home'].probablePitcher.nameSlug + '" target="_blank">' +cache_data.dates[0].games[j].teams['home'].probablePitcher.lastName + '</a>'
         } else {
           pitchers += 'TBD'
         }
@@ -892,7 +911,7 @@ app.get('/', async function(req, res) {
     }
 
     if ( mediaType == 'Video' ) {
-        body += '<p>Video: '
+        body += '<p><span class="tooltip">Video<span class="tooltiptext">For video streams only: you can manually specifiy a video track (resolution) to use. Adaptive will let your client choose. 720p60 is the best quality. 540p is default for multiview (see below).<br/><br/>None will allow to remove the video tracks, if you just want to listen to the audio while using the "start at inning" or "skip breaks" options enabled.</span></span>: '
         for (var i = 0; i < VALID_RESOLUTIONS.length; i++) {
           body += '<button '
           if ( resolution == VALID_RESOLUTIONS[i] ) body += 'class="default" '
@@ -904,16 +923,16 @@ app.get('/', async function(req, res) {
         }
         body += '</p>' + "\n"
 
-        body += '<p>Audio: '
+        body += '<p><span class="tooltip">Audio<span class="tooltiptext">For video streams only: you can manually specifiy which audio track to include. Some media players can accept them all and let you choose. English is the TV broadcast audio, and the default for multiview (see below).<br/><br/>If you select "none" for video above, picking an audio track here will make it an audio-only feed that supports the inning start and skip breaks options.</span></span>: '
         for (var i = 0; i < VALID_AUDIO_TRACKS.length; i++) {
           body += '<button '
           if ( audio_track == VALID_AUDIO_TRACKS[i] ) body += 'class="default" '
           body += 'onclick="audio_track=\'' + VALID_AUDIO_TRACKS[i] + '\';reload()">' + VALID_AUDIO_TRACKS[i] + '</button> '
         }
-        body += '<br/>or enter a separate audio URL: <span class="tinytext">(copy a stream URL from the <a href="?mediaType=Audio" target="_blank">radio page</a>)</span><br/><textarea class="textarea_url" id="audio_url" rows=2 cols=60>' + audio_url + '</textarea><br/><button onclick="audio_url=document.getElementById(\'audio_url\').value;reload()">Update Audio URL</button> <button onclick="audio_url=\'\';reload()">Reset Audio URL</button><br/>'
+        body += '<br/><span class="tooltip">or enter a separate audio URL<span class="tooltiptext">For video streams only: you can also include a separate audio stream URL as an alternate audio track. This is useful if you want to pair the road radio feed with a national TV broadcast (which only includes home radio feeds by default).<br/><br/>After entering the audio stream URL, click the Update button to include it in the video links above; click the Reset button when done with this option.</span></span>: <span class="tinytext">(copy a stream URL from the <a href="?mediaType=Audio" target="_blank">radio page</a>)</span><br/><textarea class="textarea_url" id="audio_url" rows=2 cols=60>' + audio_url + '</textarea><br/><button onclick="audio_url=document.getElementById(\'audio_url\').value;reload()">Update Audio URL</button> <button onclick="audio_url=\'\';reload()">Reset Audio URL</button><br/>'
         body += '</p>' + "\n"
 
-        body += '<p>Skip: '
+        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove inning breaks or non-decision pitches/plays from the stream (the latter is useful to make your own "condensed games"). Can take a few seconds to generate.<br/><br/>NOTE: timings are only generated when the stream is loaded -- so for live games, it will only skip up to the current time.</span></span>: '
         for (var i = 0; i < VALID_SKIP.length; i++) {
           body += '<button '
           if ( skip == VALID_SKIP[i] ) body += 'class="default" '
@@ -921,12 +940,12 @@ app.get('/', async function(req, res) {
         }
         body += '</p>' + "\n"
 
-        body += '<p><table><tr><td><table><tr><td>1</td><td>2</tr><tr><td>3</td><td>4</td></tr></table><td>Multiview: <a id="startmultiview" href="" onclick="startmultiview(this);return false">Start'
+        body += '<p><table><tr><td><table><tr><td>1</td><td>2</tr><tr><td>3</td><td>4</td></tr></table><td><span class="tooltip">Multiview<span class="tooltiptext">For video streams only: create a new stream combining 2-4 separate video streams in the layout specified at left. Check the boxes next to feeds above to add/remove them, and click "Start" when ready, and "Stop" when done. May take up to 15 seconds to begin.<br/><br/>Will use your server CPU for encoding. Multiview does no scaling: default is 540p video with TV (English) audio for each stream, combining to make one 1080p stream. You can also manually enter streams from other sources like <a href="https://www.npmjs.com/package/milbserver" target="_blank">milbserver</a> in the boxes below.<br/><br/>WARNING: if mlbserver dies or gets restarted while multiview is active, the ffmpeg process will be orphaned and must be killed manually.</span></span>: <a id="startmultiview" href="" onclick="startmultiview(this);return false">Start'
         if ( ffmpeg_status ) body += 'ed'
         body += '</a> | <a id="stopmultiview" href="" onclick="stopmultiview(this);return false">Stop'
         if ( !ffmpeg_status ) body += 'ped'
         body += '</a><br/>' + "\n"
-        body += '<span class="tinytext">(requires ffmpeg; check boxes next to games to add, then click "Start";<br/>must click "Stop" link above when done, or manually kill ffmpeg)</span>'
+        body += '<span class="tinytext">(check boxes next to games to add, then click "Start";<br/>must click "Stop" link above when done, or manually kill ffmpeg)</span>'
         for (var i=1; i<5; i++) {
           body += '<br/>' + i + ': <textarea class="textarea_url" id="multiview' + i + '" rows=2 cols=60></textarea>'
         }
@@ -935,7 +954,7 @@ app.get('/', async function(req, res) {
     }
 
     if ( (linkType == 'stream') && (gameDate == session.liveDate()) ) {
-      body += '<p>Force VOD: '
+      body += '<p><span class="tooltip">Force VOD<span class="tooltiptext">For streams only: if your client does not support seeking in mlbserver live streams (like Kodi), turning this on will make the stream look like a VOD stream instead, allowing Kodi to start at the beginning and allowing the user to seek within it. You will need to reload the stream to watch/view past the current time, though.</span></span>: '
       for (var i = 0; i < VALID_FORCE_VOD.length; i++) {
         body += '<button '
         if ( force_vod == VALID_FORCE_VOD[i] ) body += 'class="default" '
@@ -945,13 +964,13 @@ app.get('/', async function(req, res) {
     }
 
     let media_center_link = '/live-stream-games/' + gameDate.replace(/-/g,'/') + '?linkType=' + linkType
-    body += '<p><a href="' + media_center_link + '">Media Center View</a></p>' + "\n"
+    body += '<p><span class="tooltip"><a href="' + media_center_link + '">Media Center View</a><span class="tooltiptext">Allows you to use the MLB Media Center page format for nagivation. However, only the "Link Type" option is supported.</span></span></p>' + "\n"
 
     body += '<table><tr><td>' + "\n"
 
-    body += '<p>Live Channel Playlist and XMLTV Guide:<p>' + "\n"
+    body += '<p><span class="tooltip">Live Channel Playlist and XMLTV Guide<span class="tooltiptext">Allows you to generate a M3U playlist of channels, and an XML file of guide listings for those channels, to import into TV/DVR/PVR software like Tvheadend.<br/><br/>NOTE: May be helpful to specify a resolution above.</span></span>:<p>' + "\n"
 
-    body += '<p>Scan Mode: '
+    body += '<p><span class="tooltip">Scan Mode<span class="tooltiptext">During setup, Tvheadend has to be able to play video on a channel in order for a user to add it. Turning Scan Mode ON will return a sample stream for all stream requests, thus satisfying Tvheadend without overloading mlbserver or excluding teams which aren\'t currently live. Once the channels are set up, turning Scan Mode OFF will restore normal stream behavior.<br/><br/>WARNING: Be sure your TV/DVR/PVR software doesn\'t periodically scan all channels automatically or you might overload mlbserver.</span></span>: '
     let options = ['off', 'on']
     for (var i = 0; i < options.length; i++) {
       body += '<button '
@@ -962,21 +981,24 @@ app.get('/', async function(req, res) {
 
     body += '<p>All: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '">guide.xml</a></p>' + "\n"
 
-    body += '<p>By team: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=ari">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=ari">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team will include that team\'s broadcasts, not their opponent\'s broadcasts or national TV broadcasts.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=ari">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=ari">guide.xml</a></p>' + "\n"
 
-    body += '<p>Exclude a team + national: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=ari,national">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=ari,national">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for exluding games you may be blacked out from. Excluding a team will exclude every game involving that team. National refers to USA national TV broadcasts.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=ari,national">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=ari,national">guide.xml</a></p>' + "\n"
 
     body += '</td></tr></table>' + "\n"
 
-    body += '<p>Sample video: <a href="/embed.html">Embed</a> | <a href="/stream.m3u8">Stream</a> | <a href="/chromecast.html">Chromecast</a> | <a href="/advanced.html">Advanced</a></p>' + "\n"
+    body += '<p><span class="tooltip">Sample video<span class="tooltiptext">A sample stream. Useful for testing and troubleshooting.</span></span>: <a href="/embed.html">Embed</a> | <a href="/stream.m3u8">Stream</a> | <a href="/chromecast.html">Chromecast</a> | <a href="/advanced.html">Advanced</a></p>' + "\n"
 
-    body += '<p>Bookmarklets for MLB.com: <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}})();">Boxscore</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Scoreboard</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Linescore</a> | <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">All</a></p>' + "\n"
+    body += '<p><span class="tooltip">Bookmarklets for MLB.com<span class="tooltiptext">If you watch at MLB.com, drag these bookmarklets to your bookmarks toolbar and use them to hide parts of the interface.</span></span>: <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}})();">Boxscore</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Scoreboard</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Linescore</a> | <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">All</a></p>' + "\n"
 
+    // Datepicker functions
     body += '<script>var datePicker=document.getElementById("gameDate");function changeDate(e){date=datePicker.value;reload()}function removeDate(e){datePicker.removeEventListener("change",changeDate,false);datePicker.addEventListener("blur",changeDate,false);if(e.keyCode===13){date=datePicker.value;reload()}}datePicker.addEventListener("change",changeDate,false);datePicker.addEventListener("keypress",removeDate,false)</script>' + "\n"
 
-    body += '<div id="myModal" class="modal"><div class="modal-content"><span class="close">&times;</span><div id="highlights">Some text in the Modal..</div></div></div>'
+    // Highlights modal defintion
+    body += '<div id="myModal" class="modal"><div class="modal-content"><span class="close">&times;</span><div id="highlights"></div></div></div>'
 
-    body += '<script type="text/javascript">var modal = document.getElementById("myModal");var highlightsModal = document.getElementById("highlights");var span = document.getElementsByClassName("close")[0];function parsehighlightsresponse(responsetext) { try { var highlightsData = JSON.parse(responsetext);var modaltext = "<ul>"; if (highlightsData.highlights && highlightsData.highlights.highlights && highlightsData.highlights.highlights.items && highlightsData.highlights.highlights.items[0]) { for (var i = 0; i < highlightsData.highlights.highlights.items.length; i++) { modaltext += "<li><a href=\'' + link + '?src=" + encodeURIComponent(highlightsData.highlights.highlights.items[i].playbacks[3].url) + "&resolution=" + resolution + "\'>" + highlightsData.highlights.highlights.items[i].headline + "</a><span class=\'tinytext\'> (<a href=\'" + highlightsData.highlights.highlights.items[i].playbacks[0].url + "\'>MP4</a>)</span></li>" } } else { modaltext += "No highlights available yet.";}modaltext += "</ul>";highlightsModal.innerHTML = modaltext;modal.style.display = "block"} catch (e) { console.log("Error processing highlights: " + e.message)}} function showhighlights(gamePk, gameDate) { makeGETRequest("/highlights?gamePk=" + gamePk + "&gameDate=" + gameDate, parsehighlightsresponse);return false} span.onclick = function() {modal.style.display = "none";}' + "\n"
+    // Highlights modal functions
+    body += '<script type="text/javascript">var modal = document.getElementById("myModal");var highlightsModal = document.getElementById("highlights");var span = document.getElementsByClassName("close")[0];function parsehighlightsresponse(responsetext) { try { var highlightsData = JSON.parse(responsetext);var modaltext = "<ul>"; if (highlightsData.highlights && highlightsData.highlights.highlights && highlightsData.highlights.highlights.items && highlightsData.highlights.highlights.items[0]) { for (var i = 0; i < highlightsData.highlights.highlights.items.length; i++) { modaltext += "<li><a href=\'' + link + '?src=" + encodeURIComponent(highlightsData.highlights.highlights.items[i].playbacks[3].url) + "&resolution=" + resolution + "\'>" + highlightsData.highlights.highlights.items[i].headline + "</a><span class=\'tinytext\'> (<a href=\'" + highlightsData.highlights.highlights.items[i].playbacks[0].url + "\'>MP4</a>)</span></li>" } } else { modaltext += "No highlights available for this game.";}modaltext += "</ul>";highlightsModal.innerHTML = modaltext;modal.style.display = "block"} catch (e) { alert("Error processing highlights: " + e.message)}} function showhighlights(gamePk, gameDate) { makeGETRequest("/highlights?gamePk=" + gamePk + "&gameDate=" + gameDate, parsehighlightsresponse);return false} span.onclick = function() {modal.style.display = "none";}' + "\n"
     body += 'window.onclick = function(event) { if (event.target == modal) { modal.style.display = "none"; } }</script>' + "\n"
 
     body += "</body></html>"
