@@ -27,6 +27,9 @@ const PLATFORM = "macintosh"
 const BAM_SDK_VERSION = '4.3'
 const BAM_TOKEN_URL = 'https://us.edge.bamgrid.com/token'
 
+// Default date handling
+const TODAY_UTC_HOURS = 8 // UTC hours (EST + 4) into tomorrow to still use today's date
+
 class sessionClass {
   // Initialize the class
   constructor(debug = false) {
@@ -143,8 +146,12 @@ class sessionClass {
     return curDate.toLocaleString()
   }
 
-  // the live date is today's date, or if before a specified hour UTC time, then use yesterday's date
-  liveDate(hour = 10) {
+  getTodayUTCHours() {
+    return TODAY_UTC_HOURS
+  }
+
+  // the live date is today's date, or if before a specified hour (UTC time), then use yesterday's date
+  liveDate(hour = TODAY_UTC_HOURS) {
     let curDate = new Date()
     if ( curDate.getUTCHours() < hour ) {
       curDate.setDate(curDate.getDate()-1)
@@ -264,6 +271,7 @@ class sessionClass {
     this.createMediaCache(mediaId)
     this.log('saving blackout error to prevent repeated access attempts')
     this.data.media[mediaId].blackout = true
+    this.data.media[mediaId].blackoutExpiry = Date.now() + 60*60*1000
     this.save_session_data()
   }
 
@@ -397,6 +405,11 @@ class sessionClass {
       'User-Agent': USER_AGENT
     }
     this.request(u, opts, cb)
+    .catch(function(e) {
+      console.error('stream video failed : ' + e.message)
+      console.error(u)
+      process.exit(1)
+    })
   }
 
   // request to use when fetching audio playlist URL
@@ -534,7 +547,7 @@ class sessionClass {
     if ( this.data.media && this.data.media[mediaId] && this.data.media[mediaId].streamURL && this.data.media[mediaId].streamURLExpiry && (Date.now() < this.data.media[mediaId].streamURLExpiry) ) {
       this.debuglog('using cached streamURL')
       return this.data.media[mediaId].streamURL
-    } else if ( this.data.media && this.data.media[mediaId] && this.data.media[mediaId].blackout ) {
+    } else if ( this.data.media && this.data.media[mediaId] && this.data.media[mediaId].blackout && this.data.media[mediaId].blackoutExpiry && (Date.now() < this.data.media[mediaId].blackoutExpiry) ) {
       this.log('mediaId previously blacked out, skipping')
     } else {
       let playbackURL = 'https://edge.svcs.mlb.com/media/' + mediaId + '/scenarios/browser~csai'
