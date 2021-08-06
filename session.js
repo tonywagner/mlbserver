@@ -45,9 +45,10 @@ class sessionClass {
       this.save_credentials()
     }
 
-    // Create cookies json file if it doesn't exist
+    // Create storage directories if they don't already exist
     this.createDirectory(DATA_DIRECTORY)
     this.createFile(COOKIE_FILE)
+    this.createDirectory(MULTIVIEW_DIRECTORY)
 
     // Set up http requests with the cookie jar
     this.request = require('request-promise')
@@ -300,7 +301,7 @@ class sessionClass {
     try {
       fs.unlinkSync(CREDENTIALS_FILE)
     } catch(e){
-      //this.halt('logout error : ' + e.message)
+      this.halt('logout error : ' + e.message)
     }
   }
 
@@ -309,7 +310,7 @@ class sessionClass {
       fs.unlinkSync(COOKIE_FILE)
       fs.unlinkSync(DATA_FILE)
     } catch(e){
-      //this.halt('reset session error : ' + e.message)
+      this.halt('reset session error : ' + e.message)
     }
   }
 
@@ -317,12 +318,41 @@ class sessionClass {
     try {
       fs.unlinkSync(CACHE_FILE)
     } catch(e){
-      //this.halt('clear cache error : ' + e.message)
+      this.halt('clear cache error : ' + e.message)
     }
   }
 
   get_multiview_directory() {
     return MULTIVIEW_DIRECTORY
+  }
+
+  clear_multiview_files() {
+    try {
+      if ( MULTIVIEW_DIRECTORY ) {
+        fs.rmdir(MULTIVIEW_DIRECTORY, { recursive: true }, (err) => {
+          if (err) throw err;
+
+          this.createDirectory(MULTIVIEW_DIRECTORY)
+        })
+      }
+    } catch(e){
+      this.debuglog('recursive clear multiview files error: ' + e.message)
+      try {
+        if ( MULTIVIEW_DIRECTORY ) {
+          fs.readdir(MULTIVIEW_DIRECTORY, (err, files) => {
+            if (err) throw err
+
+            for (const file of files) {
+              fs.unlink(path.join(MULTIVIEW_DIRECTORY, file), err => {
+                if (err) throw err
+              })
+            }
+          })
+        }
+      } catch(e){
+        this.halt('clear multiview files error : ' + e.message)
+      }
+    }
   }
 
   save_credentials() {
@@ -398,7 +428,7 @@ class sessionClass {
   }
 
   // request to use when fetching videos
-  streamVideo(u, opts, cb) {
+  streamVideo(u, opts, tries, cb) {
     opts.jar = this.jar
     opts.headers = {
       'Authorization': this.data.bamAccessToken,
@@ -408,7 +438,7 @@ class sessionClass {
     .catch(function(e) {
       console.error('stream video failed : ' + e.message)
       console.error(u)
-      process.exit(1)
+      if ( tries == 1 ) process.exit(1)
     })
   }
 
@@ -909,7 +939,7 @@ class sessionClass {
           cache_data = JSON.parse(response)
           this.save_json_cache_file(cache_name, cache_data)
 
-          // Default cache period is 1 hour
+          // Default cache period is 1 hour from now
           let oneHourFromNow = new Date()
           oneHourFromNow.setHours(oneHourFromNow.getHours()+1)
           let cacheExpiry = oneHourFromNow
@@ -975,7 +1005,7 @@ class sessionClass {
           cache_data = JSON.parse(response)
           this.save_json_cache_file(dateString, cache_data)
 
-          // Default cache period is 1 hour
+          // Default cache period is 1 hour from now
           let oneHourFromNow = new Date()
           oneHourFromNow.setHours(oneHourFromNow.getHours()+1)
           let cacheExpiry = oneHourFromNow
@@ -994,8 +1024,8 @@ class sessionClass {
                 finals = true
               } else if ( (finals == false) && (cache_data.dates[0].games[i].status.startTimeTBD == false) ) {
                 let nextGameDate = new Date(cache_data.dates[0].games[i].gameDate)
-                nextGameDate.setMinutes(nextGameDate.getMinutes()-15)
-                this.debuglog('setting cache expiry to 15 minutes before next live game')
+                nextGameDate.setHours(nextGameDate.getHours()-1)
+                this.debuglog('setting cache expiry to 1 hour before next live game')
                 cacheExpiry = nextGameDate
                 break
               }
@@ -1444,7 +1474,7 @@ class sessionClass {
           }
           this.save_json_cache_file(contentId, cache_data)
 
-          // Default cache period is 1 hour
+          // Default cache period is 1 hour from now
           let oneHourFromNow = new Date()
           oneHourFromNow.setHours(oneHourFromNow.getHours()+1)
           let cacheExpiry = oneHourFromNow
@@ -1555,7 +1585,7 @@ class sessionClass {
           cache_data = response
           this.save_xml_cache_file(cache_name, cache_data)
 
-          // Default cache period is 1 hour
+          // Default cache period is 1 hour from now
           let oneHourFromNow = new Date()
           oneHourFromNow.setHours(oneHourFromNow.getHours()+1)
           let cacheExpiry = oneHourFromNow

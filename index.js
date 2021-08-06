@@ -23,7 +23,7 @@ const sessionClass = require('./session.js')
 
 // Define some valid variable values, the first one being the default
 const VALID_DATES = [ 'today', 'yesterday' ]
-const YESTERDAY_UTC_HOURS = 15 // UTC hours (EST + 4) to change home page default date from yesterday to today
+const YESTERDAY_UTC_HOURS = 14 // UTC hours (EST + 4) to change home page default date from yesterday to today
 const VALID_MEDIA_TYPES = [ 'Video', 'Audio', 'Spanish' ]
 const VALID_LINK_TYPES = [ 'Embed', 'Stream', 'Chromecast', 'Advanced' ]
 const VALID_START_FROM = [ 'Beginning', 'Live' ]
@@ -118,6 +118,7 @@ app.listen(port, function(addr) {
   var multiview_server = server.replace(':' + port, ':' + multiview_port)
   multiview_url = multiview_server + '/' + hls_base + '/' + multiview_stream_name
   session.log('multiview server started at ' + multiview_url)
+  session.clear_multiview_files()
 })
 var multiview_app = http.createServer()
 var hls = new HLSServer(multiview_app, {
@@ -257,12 +258,13 @@ var respond = function(proxy, res, body) {
   res.end(body)
 }
 
-// Retry request function, up to 10 times
+// Retry request function, up to 2 times
 var requestRetry = function(u, opts, cb) {
-  var tries = 10
+  var tries = 2
   var action = function() {
-    session.streamVideo(u, opts, function(err, res) {
+    session.streamVideo(u, opts, tries, function(err, res) {
       if (err) {
+        if ( tries < 2 ) session.log('try ' + (3 - tries) + ' for ' + u)
         if (tries-- > 0) return setTimeout(action, 1000)
         return cb(err)
       }
@@ -334,6 +336,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( audio_track == 'none') return
           if ( (resolution == 'none') && (line.indexOf(',URI=') < 0) ) return
           if ( (audio_track != 'all') && ((line.indexOf('NAME="'+audio_track+'"') > 0) || (line.indexOf('NAME="'+audio_track.substring(0,audio_track.length-1)+'"') > 0)) ) {
+            audio_track_matched = true
             line = line.replace('AUTOSELECT=NO','AUTOSELECT=YES')
             if ( line.indexOf(',DEFAULT=YES') < 0 ) line = line.replace('AUTOSELECT=YES','AUTOSELECT=YES,DEFAULT=YES')
           } else if ( (audio_track != 'all') && ((line.indexOf('NAME="'+audio_track+'"') === -1) || (line.indexOf('NAME="'+audio_track.substring(0,audio_track.length-1)+'"') === -1)) ) {
@@ -486,7 +489,7 @@ app.get('/playlist', function(req, res) {
                   return '#EXT-X-DISCONTINUITY'
                 }
               } else {
-                session.log('inning start time not found, ignoring')
+                session.debuglog('inning start time not found or duplicate request made, ignoring: ' + u)
                 inning_half = VALID_INNING_HALF[0]
                 inning_number = VALID_INNING_NUMBER[0]
               }
@@ -587,6 +590,7 @@ app.get('/', async function(req, res) {
     session.debuglog('homepage request : ' + req.url)
 
     let gameDate = session.liveDate()
+    let todayUTCHours = session.getTodayUTCHours()
     if ( req.query.date ) {
       if ( req.query.date == VALID_DATES[1] ) {
         gameDate = session.yesterdayDate()
@@ -596,7 +600,7 @@ app.get('/', async function(req, res) {
     } else {
       let curDate = new Date()
       let utcHours = curDate.getUTCHours()
-      if ( (utcHours >= session.getTodayUTCHours()) && (utcHours < YESTERDAY_UTC_HOURS) ) {
+      if ( (utcHours >= todayUTCHours) && (utcHours < YESTERDAY_UTC_HOURS) ) {
         gameDate = session.yesterdayDate()
       }
     }
@@ -646,8 +650,6 @@ app.get('/', async function(req, res) {
     var audio_url = ''
     if ( req.query.audio_url ) {
       audio_url = req.query.audio_url
-      // If user copied embed URL, change it to stream
-      audio_url = audio_url.replace('embed.html', 'stream.m3u8')
     }
 
     var scan_mode = session.data.scan_mode
@@ -656,10 +658,11 @@ app.get('/', async function(req, res) {
       session.setScanMode(req.query.scan_mode)
     }
 
-    var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:none}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext,.textarea_url{font-size:.8em}'
+    var body = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:none}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext,textarea,input[type="number"]{font-size:.8em}textarea{width:380px}'
 
     // Highlights CSS
-    body += '.modal{display:none;position:fixed;z-index:1;padding-top:100px;left:0;top:0;width:100%;max-height:calc(100vh-110px);overflow:auto;-webkit-overflow-scrolling:touch;background-color:rgb(0,0,0);background-color:rgba(0,0,0,0.4)}.modal-content{background-color:#fefefe;margin:auto;padding:10px;border:1px solid #888;width:360px;color:black}#highlights a{color:black}.close{color:black;float:right;font-size:28px;font-weight:bold;}#highlights a:hover,#highlights a:focus,.close:hover,.close:focus{color:gray;text-decoration:none;cursor:pointer;}'
+    //max-height:calc(100vh-110px);
+    body += '.modal{display:none;position:fixed;z-index:1;padding-top:100px;left:0;top:0;width:100%;height:100%;overflow:auto;-webkit-overflow-scrolling:touch;background-color:rgb(0,0,0);background-color:rgba(0,0,0,0.4)}.modal-content{background-color:#fefefe;margin:auto;padding:10px;border:1px solid #888;width:360px;color:black}#highlights a{color:black}.close{color:black;float:right;font-size:28px;font-weight:bold;}#highlights a:hover,#highlights a:focus,.close:hover,.close:focus{color:gray;text-decoration:none;cursor:pointer;}'
 
     // Tooltip CSS
     body += '.tooltip{position:relative;display:inline-block;border-bottom: 1px dotted gray;}.tooltip .tooltiptext{font-size:.8em;visibility:hidden;width:360px;background-color:gray;color:white;text-align:left;padding:5px;border-radius:6px;position:absolute;z-index:1;top:100%;left:75%;margin-left:-30px;}.tooltip:hover .tooltiptext{visibility:visible;}'
@@ -670,26 +673,32 @@ app.get('/', async function(req, res) {
     body += 'var date="' + gameDate + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var audio_url="' + audio_url + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var scan_mode="' + scan_mode + '";' + "\n"
 
     // Reload function, called after options change
-    body += 'var defaultDate="' + VALID_DATES[0] + '";let curDate=new Date();let utcHours=curDate.getUTCHours();if ((utcHours >= ' + session.getTodayUTCHours() + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + VALID_DATES[1] + '"}function reload(){var newurl="/?";if (date != defaultDate){newurl+="date="+date+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+audio_track+"&"}if (audio_url != ""){newurl+="audio_url="+encodeURIComponent(audio_url)+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&"}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="Embed"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+    body += 'var defaultDate="' + VALID_DATES[0] + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + VALID_DATES[1] + '"}function reload(){var newurl="/?";if (date != defaultDate){newurl+="date="+date+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}if (audio_url != ""){newurl+="audio_url="+encodeURIComponent(audio_url)+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&"}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="Embed"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
     // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){            callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
 
     // Multiview functions
-    body += 'function parsemultiviewresponse(responsetext){if (responsetext == "started"){setTimeout(function(){document.getElementById("startmultiview").innerHTML="Started";document.getElementById("stopmultiview").innerHTML="Stop"},12000)}else if (responsetext == "stopped"){setTimeout(function(){document.getElementById("stopmultiview").innerHTML="Stopped";document.getElementById("startmultiview").innerHTML="Start"},3000)}else{alert(responsetext)}}function addmultiview(e){for(var i=1;i<5;i++){var valuefound = false;var oldvalue="";var newvalue=e.value;if(!e.checked){oldvalue=e.value;newvalue=""}if (document.getElementById("multiview" + i).value == oldvalue){document.getElementById("multiview" + i).value=newvalue;valuefound=true;break}}if(e.checked && !valuefound){e.checked=false}}function startmultiview(e){var count=0;var getstr="";for(var i=1;i<5;i++){if (document.getElementById("multiview"+i).value != ""){count++;getstr+="streams="+encodeURIComponent(document.getElementById("multiview"+i).value)+"&"}}if((count > 1) && (count < 5)){e.innerHTML="starting...";makeGETRequest("/multiview?"+getstr, parsemultiviewresponse)}else{alert("Multiview requires between 2-4 streams to be selected")}return false}function stopmultiview(e){e.innerHTML="stopping...";makeGETRequest("/multiview", parsemultiviewresponse);return false}' + "\n"
+    body += 'function parsemultiviewresponse(responsetext){if (responsetext == "started"){setTimeout(function(){document.getElementById("startmultiview").innerHTML="Started";document.getElementById("stopmultiview").innerHTML="Stop"},15000)}else if (responsetext == "stopped"){setTimeout(function(){document.getElementById("stopmultiview").innerHTML="Stopped";document.getElementById("startmultiview").innerHTML="Start"},3000)}else{alert(responsetext)}}function addmultiview(e){for(var i=1;i<=4;i++){var valuefound = false;var oldvalue="";var newvalue=e.value;if(!e.checked){oldvalue=e.value;newvalue=""}if (document.getElementById("multiview" + i).value == oldvalue){document.getElementById("multiview" + i).value=newvalue;valuefound=true;break}}if(e.checked && !valuefound){e.checked=false}}function startmultiview(e){var count=0;var getstr="";for(var i=1;i<=4;i++){if (document.getElementById("multiview"+i).value != ""){count++;getstr+="streams="+encodeURIComponent(document.getElementById("multiview"+i).value)+"&sync="+encodeURIComponent(document.getElementById("sync"+i).value)+"&"}}if((count >= 1) && (count <= 4)){if (document.getElementById("dvr").checked){getstr+="&dvr=true"}e.innerHTML="starting...";makeGETRequest("/multiview?"+getstr, parsemultiviewresponse)}else{alert("Multiview requires between 1-4 streams to be selected")}return false}function stopmultiview(e){e.innerHTML="stopping...";makeGETRequest("/multiview", parsemultiviewresponse);return false}' + "\n"
+
+    // Function to switch URLs to stream URLs, where necessary
+    body += 'function stream_substitution(url){return url.replace(/\\/([a-zA-Z]+\.html)/,"/stream.m3u8")}' + "\n"
 
     // Adds touch capability to hover tooltips
     body += 'document.addEventListener("touchstart", function() {}, true);' + "\n"
 
 		body += '</script></head><body><h1>' + appname + '</h1>' + "\n"
 
-    body += '<p><span class="tooltip tinytext">Hover over an option name for more details</span></p>' + "\n"
+    body += '<p><span class="tooltip tinytext">Touch or hover over an option name for more details</span></p>' + "\n"
 
-    body += '<p><span class="tooltip">Date<span class="tooltiptext">"today" lasts until 4 AM EST. Will default to "yesterday" between 4 AM - 11 AM EST.</span></span>: <input type="date" id="gameDate" value="' + gameDate + '"/> '
+    todayUTCHours -= 4
+    body += '<p><span class="tooltip">Date<span class="tooltiptext">"today" lasts until ' + todayUTCHours + ' AM EST. Home page will default to yesterday between ' + todayUTCHours + ' AM - ' + (YESTERDAY_UTC_HOURS - 4) + ' AM EST.</span></span>: <input type="date" id="gameDate" value="' + gameDate + '"/> '
     for (var i = 0; i < VALID_DATES.length; i++) {
-      body += '<button onclick="date=\'' + VALID_DATES[i] + '\';reload()">' + VALID_DATES[i] + '</button> '
+      body += '<button '
+      if ( ((VALID_DATES[i] == 'today') && (gameDate == session.liveDate())) || ((VALID_DATES[i] == 'yesterday') && (gameDate == session.yesterdayDate())) ) body += 'class="default" '
+      body += 'onclick="date=\'' + VALID_DATES[i] + '\';reload()">' + VALID_DATES[i] + '</button> '
     }
-    body += '</p>' + "\n" + '<p class="tinytext">Updated ' + session.getCacheUpdatedDate(gameDate) + '</p>' + "\n"
+    body += '</p>' + "\n" + '<p><span class="tinytext">Updated ' + session.getCacheUpdatedDate(gameDate) + '</span></p>' + "\n"
 
     body += '<p><span class="tooltip">Media Type<span class="tooltiptext">Video is TV broadcasts, Audio is English radio, and Spanish is Spanish radio (not available for all games).</span></span>: '
     for (var i = 0; i < VALID_MEDIA_TYPES.length; i++) {
@@ -738,8 +747,9 @@ app.get('/', async function(req, res) {
         if ( inning_number == VALID_INNING_NUMBER[i] ) body += ' selected'
         body += '>' + VALID_INNING_NUMBER[i] + '</option> '
       }
-      body += '</select></p>' + "\n"
+      body += '</select>'
     }
+    body += '</p>' + "\n"
 
     body += '<p><span class="tooltip">Scores<span class="tooltiptext">Choose whether to show scores on this web page.</span></span>: '
     for (var i = 0; i < VALID_SCORES.length; i++) {
@@ -749,7 +759,7 @@ app.get('/', async function(req, res) {
     }
     body += '</p>' + "\n"
 
-    body += "<p><table>" + "\n"
+    body += "<table>" + "\n"
 
     // Rename some parameters before display links
     var mediaFeedType = 'mediaFeedType'
@@ -800,6 +810,11 @@ app.get('/', async function(req, res) {
           state = "<br/>" + cache_data.dates[0].games[j].linescore.inningHalf.substr(0,1) + cache_data.dates[0].games[j].linescore.currentInning
         } else if ( cache_data.dates[0].games[j].gameUtils.isFinal ) {
           state = "<br/>" + detailedState
+        }
+        if ( cache_data.dates[0].games[j].flags.perfectGame == 'true'  ) {
+          state = "<br/>Perfect Game"
+        } else if ( cache_data.dates[0].games[j].flags.noHitter == 'true'  ) {
+          state = "<br/>No-Hitter"
         }
       } else if ( cache_data.dates[0].games[j].gameUtils.isCancelled || cache_data.dates[0].games[j].gameUtils.isPostponed || cache_data.dates[0].games[j].gameUtils.isSuspended ) {
         state = "<br/>" + detailedState
@@ -862,9 +877,6 @@ app.get('/', async function(req, res) {
                       querystring = '?mediaId=' + mediaId
                       var multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
                       if ( linkType == 'embed' ) {
-                        if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON' ) {
-                          querystring += '&isLive=true'
-                        }
                         if ( startFrom != 'Beginning' ) querystring += '&startFrom=' + startFrom
                       }
                       if ( mediaType == 'MLBTV' ) {
@@ -876,7 +888,7 @@ app.get('/', async function(req, res) {
                           querystring += '&contentId=' + contentId
                         }
                         if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
-                        if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + audio_track
+                        if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + encodeURIComponent(audio_track)
                         if ( audio_url != '' ) querystring += '&audio_url=' + encodeURIComponent(audio_url)
                       }
                       if ( linkType == 'stream' ) {
@@ -912,7 +924,7 @@ app.get('/', async function(req, res) {
         body += "</tr>" + "\n"
       }
     }
-    body += "</table></p>" + "\n"
+    body += "</table>" + "\n"
 
     // Rename parameter back before displaying further links
     if ( mediaType == 'MLBTV' ) {
@@ -938,7 +950,7 @@ app.get('/', async function(req, res) {
           if ( audio_track == VALID_AUDIO_TRACKS[i] ) body += 'class="default" '
           body += 'onclick="audio_track=\'' + VALID_AUDIO_TRACKS[i] + '\';reload()">' + VALID_AUDIO_TRACKS[i] + '</button> '
         }
-        body += '<br/><span class="tooltip">or enter a separate audio URL<span class="tooltiptext">For video streams only: you can also include a separate audio stream URL as an alternate audio track. This is useful if you want to pair the road radio feed with a national TV broadcast (which only includes home radio feeds by default).<br/><br/>After entering the audio stream URL, click the Update button to include it in the video links above; click the Reset button when done with this option.</span></span>: <span class="tinytext">(copy a stream URL from the <a href="?mediaType=Audio" target="_blank">radio page</a>)</span><br/><textarea class="textarea_url" id="audio_url" rows=2 cols=60>' + audio_url + '</textarea><br/><button onclick="audio_url=document.getElementById(\'audio_url\').value;reload()">Update Audio URL</button> <button onclick="audio_url=\'\';reload()">Reset Audio URL</button><br/>'
+        body += '<br/><span class="tooltip">or enter a separate audio stream URL<span class="tooltiptext">For video streams only: you can also include a separate audio stream URL as an alternate audio track. This is useful if you want to pair the road radio feed with a national TV broadcast (which only includes home radio feeds by default).<br/><br/>After entering the audio stream URL, click the Update button to include it in the video links above; click the Reset button when done with this option.</span></span>: <span class="tinytext">(copy one from the <button onclick="mediaType=\'Audio\';reload()">Audio</button> page</a>)</span><br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)">' + audio_url + '</textarea><br/><button onclick="audio_url=document.getElementById(\'audio_url\').value;reload()">Update Audio URL</button> <button onclick="audio_url=\'\';reload()">Reset Audio URL</button><br/>'
         body += '</p>' + "\n"
 
         body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove inning breaks or non-decision pitches/plays from the stream (the latter is useful to make your own "condensed games"). Can take a few seconds to generate.<br/><br/>NOTE: timings are only generated when the stream is loaded -- so for live games, it will only skip up to the current time.</span></span>: '
@@ -949,21 +961,24 @@ app.get('/', async function(req, res) {
         }
         body += '</p>' + "\n"
 
-        body += '<p><table><tr><td><table><tr><td>1</td><td>2</tr><tr><td>3</td><td>4</td></tr></table><td><span class="tooltip">Multiview<span class="tooltiptext">For video streams only: create a new stream combining 2-4 separate video streams in the layout specified at left. Check the boxes next to feeds above to add/remove them, and click "Start" when ready, and "Stop" when done. May take up to 15 seconds to begin.<br/><br/>Will use your server CPU for encoding. Multiview does no scaling: default is 540p video with TV (English) audio for each stream, combining to make one 1080p stream. You can also manually enter streams from other sources like <a href="https://www.npmjs.com/package/milbserver" target="_blank">milbserver</a> in the boxes below.<br/><br/>WARNING: if mlbserver dies or gets restarted while multiview is active, the ffmpeg process will be orphaned and must be killed manually.</span></span>: <a id="startmultiview" href="" onclick="startmultiview(this);return false">Start'
+        body += '<table><tr><td><table><tr><td>1</td><td>2</tr><tr><td>3</td><td>4</td></tr></table><td><span class="tooltip">Multiview + Audio Sync<span class="tooltiptext">For video streams only: create a new live stream combining 1-4 separate video streams in the layout shown at left. Check the boxes next to feeds above to add/remove them, then click "Start" when ready, and "Stop" when done. May take up to 15 seconds before it is ready to play.<br/><br/>This will use your server CPU for encoding. No video scaling is performed: defaults to 540p video for each stream, which can combine to make one 1080p stream.<br/><br/>Audio defaults to English (TV) audio. If you specify a radio audio track instead, you can use the box after each URL below to adjust the sync in seconds (use positive values if audio is early, negative if audio is late.) TIP: You can enter just 1 stream here to take advantage of the audio sync feature -- the video will not be re-encoded and will be presented at full resolution.<br/><br/>You can also manually enter streams from other sources like <a href="https://www.npmjs.com/package/milbserver" target="_blank">milbserver</a> in the boxes below.<br/><br/>WARNING: if mlbserver dies or gets restarted while multiview is active, the ffmpeg encoding process will be orphaned and must be killed manually.</span></span>: <a id="startmultiview" href="" onclick="startmultiview(this);return false">Start'
         if ( ffmpeg_status ) body += 'ed'
         body += '</a> | <a id="stopmultiview" href="" onclick="stopmultiview(this);return false">Stop'
         if ( !ffmpeg_status ) body += 'ped'
         body += '</a><br/>' + "\n"
-        body += '<span class="tinytext">(check boxes next to games to add, then click "Start";<br/>must click "Stop" link above when done, or manually kill ffmpeg)</span>'
-        for (var i=1; i<5; i++) {
-          body += '<br/>' + i + ': <textarea class="textarea_url" id="multiview' + i + '" rows=2 cols=60></textarea>'
+        body += '<span class="tinytext">(check boxes next to games to add, then click "Start";<br/>must click "Stop" link above when done, or manually kill ffmpeg)</span></td></tr><tr><td colspan="2">' + "\n"
+        body += '<input type="checkbox" id="dvr"/> DVR: allow pausing/seeking multiview <span class="tinytext">(uses more disk space)</span><br/>'
+        for (var i=1; i<=4; i++) {
+          body += i + ': <textarea id="multiview' + i + '" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)"></textarea>'
+          body += '<input type="number" id="sync' + i + '" value="0.0" step=".1" style="vertical-align:top;font-size:.8em;width:3em"/>'
+          body += '<br/>' + "\n"
         }
-        body += '<br/>Watch: <a href="' + multiview_url + '">Stream</a> | <a href="/embed.html?src=' + encodeURIComponent(multiview_url) + '">Embed</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_url) + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_url) + '">Advanced</a>'
-        body += '</td></tr></table></p>' + "\n"
+        body += '<br/>Watch: <a href="/embed.html?src=' + encodeURIComponent(multiview_url) + '">Embed</a> | <a href="' + multiview_url + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_url) + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_url) + '">Advanced</a><br/><span class="tinytext">Kodi STRM file: <a href="/multiview.strm">Matrix/19</a> | <a href="/multiview.strm?version=18">Leia/18</a></span>'
+        body += '</td></tr></table>' + "\n"
     }
 
     if ( (linkType == 'stream') && (gameDate == session.liveDate()) ) {
-      body += '<p><span class="tooltip">Force VOD<span class="tooltiptext">For streams only: if your client does not support seeking in mlbserver live streams (like Kodi), turning this on will make the stream look like a VOD stream instead, allowing Kodi to start at the beginning and allowing the user to seek within it. You will need to reload the stream to watch/view past the current time, though.</span></span>: '
+      body += '<p><span class="tooltip">Force VOD<span class="tooltiptext">For streams only: if your client does not support seeking in mlbserver live streams, turning this on will make the stream look like a VOD stream instead, allowing the client to start at the beginning and allowing the user to seek within it. You will need to reload the stream to watch/view past the current time, though.</span></span>: '
       for (var i = 0; i < VALID_FORCE_VOD.length; i++) {
         body += '<button '
         if ( force_vod == VALID_FORCE_VOD[i] ) body += 'class="default" '
@@ -977,7 +992,7 @@ app.get('/', async function(req, res) {
 
     body += '<table><tr><td>' + "\n"
 
-    body += '<p><span class="tooltip">Live Channel Playlist and XMLTV Guide<span class="tooltiptext">Allows you to generate a M3U playlist of channels, and an XML file of guide listings for those channels, to import into TV/DVR/PVR software like Tvheadend or Jellyfin.<br/><br/>NOTE: May be helpful to specify a resolution above.</span></span>:<p>' + "\n"
+    body += '<p><span class="tooltip">Live Channel Playlist and XMLTV Guide<span class="tooltiptext">Allows you to generate a M3U playlist of channels, and an XML file of guide listings for those channels, to import into TV/DVR/PVR software like Tvheadend or Jellyfin.<br/><br/>NOTE: May be helpful to specify a resolution above.</span></span>:</p>' + "\n"
 
     body += '<p><span class="tooltip">Scan Mode<span class="tooltiptext">During setup, some TV/DVR/PVR software will attempt to load all stream URLs. Turning Scan Mode ON will return a sample stream for all stream requests, thus satisfying that software without overloading mlbserver or excluding streams which aren\'t currently live. Once the channels are set up, turning Scan Mode OFF will restore normal stream behavior.<br/><br/>WARNING: Be sure your TV/DVR/PVR software doesn\'t periodically scan all channels automatically or you might overload mlbserver.</span></span>: '
     let options = ['off', 'on']
@@ -1088,16 +1103,10 @@ app.get('/embed.html', function(req, res) {
     startFrom = req.query.startFrom
   }
 
-  let isLive = 'false'
-  if ( req.query.isLive ) {
-    isLive = req.query.isLive
-  }
-
   let video_url = '/stream.m3u8'
   if ( req.query.src && (req.query.src == multiview_url) ) {
     video_url = req.query.src
     startFrom = 'Live'
-    isLive = 'true'
   } else {
     let urlArray = req.url.split('?')
     if ( (urlArray.length == 2) ) {
@@ -1115,9 +1124,7 @@ app.get('/embed.html', function(req, res) {
 
   body += ');hls.loadSource("' + video_url + '");hls.attachMedia(video);hls.on(Hls.Events.MEDIA_ATTACHED,function(){video.muted=true;video.play()});hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, function(){var audioSpan=document.getElementById("audioSpan");var audioButtons="";for(var i=0;i<hls.audioTracks.length;i++){audioButtons+=\'<button id="audioButton\'+i+\'" class="audioButton\';if(i==0){audioButtons+=\' default\'}audioButtons+=\'" onclick="toggleAudio(\'+i+\')">\'+hls.audioTracks[i]["name"]+"</button> "}audioSpan.innerHTML=audioButtons})}else if(video.canPlayType("application/vnd.apple.mpegurl")){video.src="' + video_url + '";video.addEventListener("canplay",function(){video.play()})}</script><p>Skip: <button onclick="changeTime(-10)">- 10 s</button> <button onclick="changeTime(10)">+ 10 s</button> <button onclick="changeTime(30)">+ 30 s</button> <button onclick="changeTime(90)">+ 90 s</button>  <button onclick="changeTime(120)">+ 120 s</button> '
 
-  if ( isLive == 'true' ) {
-    body += '<button onclick="changeTime(video.duration-10)">Live</button> '
-  }
+  body += '<button onclick="changeTime(video.duration-10)">Latest</button> '
 
   body += '<button id="airplay">AirPlay</button></p><p>Playback rate: <input type="number" value=1.0 min=0.1 max=16.0 step=0.1 id="playback_rate" size="8" style="width: 4em" onchange="video.defaultPlaybackRate=video.playbackRate=this.value"></p><p>Audio: <button onclick="video.muted=!video.muted">Toggle Mute</button> <span id="audioSpan"></span></p><p><button onclick="goBack()">Back</button></p><script>var airPlay=document.getElementById("airplay");if(window.WebKitPlaybackTargetAvailabilityEvent){video.addEventListener("webkitplaybacktargetavailabilitychanged",function(event){switch(event.availability){case "available":airPlay.style.display="inline";break;default:airPlay.style.display="none"}airPlay.addEventListener("click",function(){video.webkitShowPlaybackTargetPicker()})})}else{airPlay.style.display="none"}</script></body></html>'
   res.end(body)
@@ -1288,14 +1295,23 @@ app.get('/multiview', async function(req, res) {
 
     try {
       ffmpeg_command.kill()
+      session.clear_multiview_files()
     } catch (e) {
       //session.debuglog('error killing multiview command:' + e.message)
     }
 
     if ( req.query.streams ) {
+      let sync = []
+      if ( req.query.sync ) {
+        sync = req.query.sync
+      }
+      let dvr = false
+      if ( req.query.dvr ) {
+        dvr = req.query.dvr
+      }
       // Wait to restart it
       setTimeout(function() {
-        res.end(start_multiview_stream(req.query.streams))
+        res.end(start_multiview_stream(req.query.streams, sync, dvr))
       }, 5000)
     } else {
       res.end('stopped')
@@ -1306,16 +1322,23 @@ app.get('/multiview', async function(req, res) {
   }
 })
 
-function start_multiview_stream(streams) {
+function start_multiview_stream(streams, sync, dvr) {
   try {
     ffmpeg_command = ffmpeg({ timeout: 432000 })
 
+    // If it's not already an array (only 1 parameter was passed in URL), convert it
+    if ( !Array.isArray(streams) ) streams = [streams]
+    if ( !Array.isArray(sync) ) sync = [sync]
+
+    // Max 4 streams
     var stream_count = Math.min(streams.length, 4)
 
     var complexFilter = []
     var xstack_inputs = []
     var xstack_layout = '0_0|w0_0'
     var map_audio = ''
+
+    let video_output = '0'
     for (var i=0; i<stream_count; i++) {
       let url = streams[i]
 
@@ -1327,46 +1350,98 @@ function start_multiview_stream(streams) {
       .native()
       .addInputOption('-thread_queue_size', '4096')
 
-      complexFilter.push({
-        filter: 'setpts=PTS-STARTPTS',
-        inputs: i+':v',
-        outputs: 'v'+i
-      })
-      xstack_inputs.push('v'+i)
+      // Only apply video filters if more than 1 stream
+      if ( stream_count > 1 ) {
+        complexFilter.push({
+          filter: 'setpts=PTS-STARTPTS',
+          inputs: i+':v',
+          outputs: 'v'+i
+        })
+        xstack_inputs.push('v'+i)
+      }
     }
-    if ( stream_count > 2 ) xstack_layout += '|0_h0'
-    if ( stream_count > 3 ) xstack_layout += '|w0_h0'
-    complexFilter.push({
-      filter: 'xstack',
-      options: { inputs:stream_count, layout: xstack_layout, fill:'black' },
-      inputs: xstack_inputs,
-      outputs: 'out'
-    })
+
+    // Only apply video filters if more than 1 stream
+    if ( stream_count > 1 ) {
+      video_output = 'out'
+      if ( stream_count > 2 ) xstack_layout += '|0_h0'
+      if ( stream_count > 3 ) xstack_layout += '|w0_h0'
+      complexFilter.push({
+        filter: 'xstack',
+        options: { inputs:stream_count, layout: xstack_layout, fill:'black' },
+        inputs: xstack_inputs,
+        outputs: video_output
+      })
+      video_output = '[' + video_output + ']'
+    }
+
+    // Audio filters
+    for (var i=0; i<stream_count; i++) {
+      let audio_input = i + ':a:0'
+      let filter = ''
+      if ( sync[i] ) {
+        if ( sync[i] > 0 ) {
+          session.log('delaying audio for stream ' + (i+1) + ' by ' + sync[i] + ' seconds')
+          filter = 'adelay=' + (sync[i] * 1000) + ','
+        } else if ( sync[i] < 0 ) {
+          session.log('trimming audio for stream ' + (i+1) + ' by ' + sync[i] + ' seconds')
+          filter = 'atrim=start=' + (sync[i] * -1) + 's,'
+        }
+      }
+      // Resampling adds silence to preserve timestamps, and padding makes its length match the video track
+      complexFilter.push({
+        filter: 'aresample=async=1:first_pts=0,' + filter + 'asetpts=PTS-STARTPTS,apad',
+        inputs: audio_input,
+        outputs: 'out' + i
+      })
+    }
 
     ffmpeg_command.complexFilter(complexFilter)
-    .addOutputOption('-map', '[out]:v')
+    .addOutputOption('-map', video_output + ':v')
 
     var var_stream_map = 'v:0,agroup:aac'
     for (var i=0; i<stream_count; i++) {
-      ffmpeg_command.addOutputOption('-map', i + ':a:0?')
+      ffmpeg_command.addOutputOption('-map', '[out' + i + ']')
       var_stream_map += ' a:' + i + ',agroup:aac,language:ENG'
       if ( i == 0 ) var_stream_map += ',default:yes'
     }
-    var bandwidth = 1040 * stream_count
-    ffmpeg_command.addOutputOption('-c:v', 'libx264')
-    .addOutputOption('-preset:v', 'superfast')
-    .addOutputOption('-r:v', '30')
-    .addOutputOption('-g:v', '150')
-    .addOutputOption('-keyint_min:v', '150')
-    .addOutputOption('-b:v', bandwidth.toString() + 'k')
-    .addOutputOption('-c:a', 'copy')
+
+    // Default to keep only 12 segments (1 minute) on disk, unless dvr is specified
+    var hls_list_size = 12
+    var delete_segments = 'delete_segments+'
+    if ( dvr ) {
+      hls_list_size = 0
+      delete_segments = ''
+    }
+
+    if ( stream_count > 1 ) {
+      // Only re-encode video if there is more than 1 stream
+      let bandwidth = 1040 * stream_count
+      ffmpeg_command.addOutputOption('-c:v', 'libx264')
+      .addOutputOption('-preset:v', 'superfast')
+      .addOutputOption('-r:v', '30')
+      .addOutputOption('-g:v', '150')
+      .addOutputOption('-keyint_min:v', '150')
+      .addOutputOption('-b:v', bandwidth.toString() + 'k')
+    } else {
+      // If only 1 stream, just copy the video without re-encoding
+      ffmpeg_command.addOutputOption('-c:v', 'copy')
+    }
+    ffmpeg_command.addOutputOption('-c:a', 'aac')
+    .addOutputOption('-strict', 'experimental')
     .addOutputOption('-sn')
+    .addOutputOption('-shortest')
     .addOutputOption('-f', 'hls')
     .addOutputOption('-hls_time', '5')
-    .addOutputOption('-hls_list_size', '12')
+    .addOutputOption('-hls_list_size', hls_list_size)
     .addOutputOption('-hls_allow_cache', '0')
-    .addOutputOption('-hls_flags', 'delete_segments+independent_segments+discont_start')
-    .addOutputOption('-start_number', '1')
+    .addOutputOption('-hls_flags', delete_segments + 'independent_segments+discont_start+program_date_time')
+
+    if ( dvr ) {
+      ffmpeg_command.addOutputOption('-hls_playlist_type', 'event')
+    }
+
+    ffmpeg_command.addOutputOption('-start_number', '1')
     .addOutputOption('-hls_segment_filename', session.get_multiview_directory() + '/stream_%v_%d.ts')
     .addOutputOption('-var_stream_map', var_stream_map)
     .addOutputOption('-master_pl_name', multiview_stream_name)
@@ -1377,20 +1452,18 @@ function start_multiview_stream(streams) {
       ffmpeg_status = true
     })
     .on('error', function(err) {
-      session.log('multiview stream error: ' + err.message)
+      session.log('multiview stream stopped: ' + err.message)
       ffmpeg_status = false
     })
     .on('end', function() {
-      session.log('multiview stream stopped')
+      session.log('multiview stream ended')
       ffmpeg_status = false
     })
-    .run()
+    /*.on('stderr', function(stderrLine) {
+      session.log(stderrLine);
+    })*/
 
-    /*
-    .on('stderr', function(stderrLine) {
-      session.debuglog(stderrLine);
-    })
-    */
+    ffmpeg_command.run()
 
     session.log('multiview stream command started')
 
@@ -1400,3 +1473,29 @@ function start_multiview_stream(streams) {
     return 'multiview start error, check log'
   }
 }
+
+// Listen for multiview Kodi STRM file requests
+app.get('/multiview.strm', async function(req, res) {
+  try {
+    session.log('multiview.strm request : ' + req.url)
+
+    delete req.headers.host
+
+    var inputstream_property_name = 'inputstreamaddon'
+    if ( req.query.version && (req.query.version == '18') ) {
+      inputstream_property_name = 'inputstream.adaptive'
+    }
+
+    var body = '#KODIPROP:mimetype=application/vnd.apple.mpegurl' + "\n" + '#KODIPROP:' + inputstream_property_name + '=inputstream.adaptive' + "\n" + '#KODIPROP:inputstream.adaptive.manifest_type=hls' + "\n" + multiview_url
+
+    var download_headers = {
+      'Content-Disposition': 'attachment; filename="multiview.strm"'
+    }
+    res.writeHead(200, download_headers)
+
+    res.end(body)
+  } catch (e) {
+    session.log('multiview.strm request error : ' + e.message)
+    res.end('multiview.strm request error, check log')
+  }
+})
