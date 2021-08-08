@@ -877,7 +877,7 @@ class sessionClass {
                 for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
                   if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE')) ) {
                     if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
-                      if ( (team.indexOf('NATIONAL ') == 0) && (cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') ) {
+                      if ( (team.indexOf('NATIONAL.') == 0) && (cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') ) {
                         nationalCount += 1
                         let nationalArray = team.split('.')
                         if ( (nationalArray.length == 2) && (nationalArray[1] == nationalCount) ) {
