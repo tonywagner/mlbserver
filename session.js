@@ -888,7 +888,7 @@ class sessionClass {
                         }
                       } else {
                         let teamType = cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType].toLowerCase()
-                        if ( (team == cache_data.dates[0].games[j].teams[teamType].team.abbreviation) ) {
+                        if ( (teamType != 'national') && (team == cache_data.dates[0].games[j].teams[teamType].team.abbreviation) ) {
                           this.debuglog('matched team for active live event')
                           mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
                           contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
