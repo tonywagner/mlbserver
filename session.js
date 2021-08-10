@@ -875,7 +875,7 @@ class sessionClass {
               if ( mediaId ) break
               if ( cache_data.dates[0].games[j].content.media.epg[k].title == mediaType ) {
                 for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
-                  if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE')) ) {
+                  if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal)) ) {
                     if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
                       if ( (team.indexOf('NATIONAL.') == 0) && (cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') ) {
                         nationalCount += 1

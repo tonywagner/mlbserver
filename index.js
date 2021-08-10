@@ -866,13 +866,12 @@ app.get('/', async function(req, res) {
                     }
                   }
                   let station = cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters
-                  if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') ) {
+                  if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal ) {
                     game_started = true
                     let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
                     if ( (mediaType == 'MLBTV') && session.data.media && session.data.media[mediaId] && session.data.media[mediaId].blackout && session.data.media[mediaId].blackoutExpiry && (Date.now() < session.data.media[mediaId].blackoutExpiry) ) {
                       body += teamabbr + ': <s>' + station + '</s>'
                     } else {
-                      let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
                       let querystring
                       querystring = '?mediaId=' + mediaId
                       var multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
