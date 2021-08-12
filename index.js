@@ -14,9 +14,7 @@ var crypto = require('crypto')
 const HLSServer = require('hls-server')
 const http = require('http')
 const httpAttach = require('http-attach')
-const pathToFfmpeg = require('ffmpeg-static')
 const ffmpeg = require('fluent-ffmpeg')
-ffmpeg.setFfmpegPath(pathToFfmpeg)
 
 // Declare our session class for API activity, from the included session.js file
 const sessionClass = require('./session.js')
@@ -51,33 +49,38 @@ const SAMPLE_STREAM_URL = 'https://www.radiantmediaplayer.com/media/rmp-segment/
 var argv = minimist(process.argv, {
   alias: {
     p: 'port',
+    m: 'multiview_port',
+    a: 'multiview_path',
+    f: 'ffmpeg_path',
+    e: 'ffmpeg_encoder',
+    g: 'ffmpeg_logging',
     d: 'debug',
     l: 'logout',
     s: 'session',
     c: 'cache',
     v: 'version'
   },
-  booleans: ['debug']
+  booleans: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version']
 })
 
 // Version
 if (argv.version) return console.log(require('./package').version)
 
-// Declare a session, pass debug flag to it
-var session = new sessionClass(argv.debug)
+// Declare a session, pass arguments to it
+var session = new sessionClass(argv)
 
 // Clear cache (cache data, not images)
 if (argv.cache) {
   session.log('Clearing cache...')
   session.clear_cache()
-  session = new sessionClass(argv.debug)
+  session = new sessionClass(argv)
 }
 
 // Clear session
 if (argv.session) {
   session.log('Clearing session data...')
   session.clear_session_data()
-  session = new sessionClass(argv.debug)
+  session = new sessionClass(argv)
 }
 
 // Logout (also implies clearing session)
@@ -87,8 +90,15 @@ if (argv.logout) {
   if (!argv.session) {
     session.clear_session_data()
   }
-  session = new sessionClass(argv.debug)
+  session = new sessionClass(argv)
 }
+
+// Set FFMPEG path, download if necessary
+const pathToFfmpeg = argv.ffmpeg_path || require('ffmpeg-static')
+ffmpeg.setFfmpegPath(pathToFfmpeg)
+
+// Set FFMPEG encoder, use libx264 if not specified
+const ffmpegEncoder = argv.ffmpeg_encoder || 'libx264'
 
 // Declare web server
 var app = root()
@@ -109,7 +119,7 @@ var multiview_url
 // Start web server listening on port
 // and also multiview server on the next port
 let port = argv.port || 9999
-let multiview_port = port + 1
+let multiview_port = argv.multiview_port || port + 1
 app.listen(port, function(addr) {
   server = 'http://' + addr
   session.log(appname + ' started at ' + server)
@@ -1416,7 +1426,8 @@ function start_multiview_stream(streams, sync, dvr) {
     if ( stream_count > 1 ) {
       // Only re-encode video if there is more than 1 stream
       let bandwidth = 1040 * stream_count
-      ffmpeg_command.addOutputOption('-c:v', 'libx264')
+      ffmpeg_command.addOutputOption('-c:v', ffmpegEncoder)
+      .addOutputOption('-pix_fmt:v', 'yuv420p')
       .addOutputOption('-preset:v', 'superfast')
       .addOutputOption('-r:v', '30')
       .addOutputOption('-g:v', '150')
@@ -1458,9 +1469,13 @@ function start_multiview_stream(streams, sync, dvr) {
       session.log('multiview stream ended')
       ffmpeg_status = false
     })
-    /*.on('stderr', function(stderrLine) {
-      session.log(stderrLine);
-    })*/
+
+    if ( argv.ffmpeg_logging ) {
+      session.log('ffmpeg output logging enabled')
+      ffmpeg_command.on('stderr', function(stderrLine) {
+        session.log(stderrLine);
+      })
+    }
 
     ffmpeg_command.run()
 

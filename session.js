@@ -12,7 +12,7 @@ const parseString = require('xml2js').parseString
 // Define some file paths and names
 const DATA_DIRECTORY = path.join(__dirname, 'data')
 const CACHE_DIRECTORY = path.join(__dirname, 'cache')
-const MULTIVIEW_DIRECTORY = path.join(__dirname, 'multiview')
+const MULTIVIEW_DIRECTORY_NAME = 'multiview'
 
 const CREDENTIALS_FILE = path.join(__dirname, 'credentials.json')
 const COOKIE_FILE = path.join(DATA_DIRECTORY, 'cookies.json')
@@ -32,8 +32,8 @@ const TODAY_UTC_HOURS = 8 // UTC hours (EST + 4) into tomorrow to still use toda
 
 class sessionClass {
   // Initialize the class
-  constructor(debug = false) {
-    this.debug = debug
+  constructor(argv = {}) {
+    this.debug = argv.debug
 
     // Read credentials from file, if present
     this.credentials = this.readFileToJson(CREDENTIALS_FILE) || {}
@@ -48,7 +48,16 @@ class sessionClass {
     // Create storage directories if they don't already exist
     this.createDirectory(DATA_DIRECTORY)
     this.createFile(COOKIE_FILE)
-    this.createDirectory(MULTIVIEW_DIRECTORY)
+
+    // Set multiview path
+    if ( argv.multiview_path ) {
+      this.multiview_path = path.join(argv.multiview_path, path.basename(__dirname))
+      this.createDirectory(this.multiview_path)
+      this.multiview_path = path.join(this.multiview_path, MULTIVIEW_DIRECTORY_NAME)
+    } else {
+      this.multiview_path = path.join(__dirname, MULTIVIEW_DIRECTORY_NAME)
+    }
+    this.createDirectory(this.multiview_path)
 
     // Set up http requests with the cookie jar
     this.request = require('request-promise')
@@ -323,27 +332,27 @@ class sessionClass {
   }
 
   get_multiview_directory() {
-    return MULTIVIEW_DIRECTORY
+    return this.multiview_path
   }
 
   clear_multiview_files() {
     try {
-      if ( MULTIVIEW_DIRECTORY ) {
-        fs.rmdir(MULTIVIEW_DIRECTORY, { recursive: true }, (err) => {
+      if ( this.multiview_path ) {
+        fs.rmdir(this.multiview_path, { recursive: true }, (err) => {
           if (err) throw err;
 
-          this.createDirectory(MULTIVIEW_DIRECTORY)
+          this.createDirectory(this.multiview_path)
         })
       }
     } catch(e){
       this.debuglog('recursive clear multiview files error: ' + e.message)
       try {
-        if ( MULTIVIEW_DIRECTORY ) {
-          fs.readdir(MULTIVIEW_DIRECTORY, (err, files) => {
+        if ( this.multiview_path ) {
+          fs.readdir(this.multiview_path, (err, files) => {
             if (err) throw err
 
             for (const file of files) {
-              fs.unlink(path.join(MULTIVIEW_DIRECTORY, file), err => {
+              fs.unlink(path.join(this.multiview_path, file), err => {
                 if (err) throw err
               })
             }
