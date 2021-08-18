@@ -853,7 +853,7 @@ class sessionClass {
   }
 
   // get mediaId for a live channel request
-  async getMediaId(team, mediaType, mediaDate) {
+  async getMediaId(team, mediaType, mediaDate, gameNumber) {
     try {
       this.debuglog('getMediaId')
 
@@ -886,22 +886,27 @@ class sessionClass {
                 for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
                   if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal)) ) {
                     if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
-                      if ( (team.indexOf('NATIONAL.') == 0) && (cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') ) {
+                      if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && (cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') ) {
                         nationalCount += 1
                         let nationalArray = team.split('.')
                         if ( (nationalArray.length == 2) && (nationalArray[1] == nationalCount) ) {
-                          this.debuglog('matched active national live event')
+                          this.debuglog('matched national event')
                           mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
                           contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
                           break
                         }
                       } else {
                         let teamType = cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType].toLowerCase()
-                        if ( (teamType != 'national') && (team == cache_data.dates[0].games[j].teams[teamType].team.abbreviation) ) {
-                          this.debuglog('matched team for active live event')
-                          mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
-                          contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
-                          break
+                        if ( (teamType != 'national') && (team.toUpperCase() == cache_data.dates[0].games[j].teams[teamType].team.abbreviation) ) {
+                          if ( gameNumber && (gameNumber > 1) ) {
+                            this.debuglog('matched team for game number 1')
+                            gameNumber--
+                          } else {
+                            this.debuglog('matched team for event')
+                            mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
+                            contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
+                            break
+                          }
                         }
                       }
                     }
@@ -980,11 +985,23 @@ class sessionClass {
         this.debuglog('using cached highlight data')
         cache_data = this.readFileToJson(cache_file)
       }
-      if (cache_data) {
-        return cache_data
+      if (cache_data && cache_data.highlights && cache_data.highlights.highlights && cache_data.highlights.highlights.items) {
+        var array = cache_data.highlights.highlights.items
+        return array.sort(this.GetSortOrder('date'))
       }
     } catch(e) {
       this.log('getHighlightsData error : ' + e.message)
+    }
+  }
+
+  GetSortOrder(prop) {
+    return function(a, b) {
+      if (a[prop] > b[prop]) {
+        return 1
+      } else if (a[prop] < b[prop]) {
+        return -1
+      }
+      return 0
     }
   }
 
@@ -1490,14 +1507,15 @@ class sessionClass {
 
           let today = this.liveDate()
           let game_date = new Date(cache_data.data.Airings[0].startDate)
+          let compare_date = game_date.getFullYear() + '-' + (game_date.getMonth()+1).toString().padStart(2, '0') + '-' + game_date.getDate().toString().padStart(2, '0')
 
-          if ( game_date.toLocaleString("en-CA").substring(0,10) == today ) {
+          if ( compare_date == today ) {
             if ( (cache_data.data.Airings[0].mediaConfig.productType == 'LIVE') || ((typeof cache_data.data.Airings[0].milestones !== 'undefined') && (typeof cache_data.data.Airings[0].milestones[0] !== 'undefined') && (typeof cache_data.data.Airings[0].milestones[0].milestoneTime !== 'undefined') && (typeof cache_data.data.Airings[0].milestones[0].milestoneTime[0].start !== 'undefined') && ((cache_data.data.Airings[0].milestones[0].milestoneTime[0].start > 20*60) || (cache_data.data.Airings[0].milestones[0].milestoneTime[1].start > 20*60))) ) {
               this.debuglog('setting cache expiry to 5 minutes for live or untrimmed games today')
               currentDate.setMinutes(currentDate.getMinutes()+5)
               cacheExpiry = currentDate
             }
-          } else if ( game_date.toLocaleString("en-CA").substring(0,10) < today ) {
+          } else if ( compare_date < today ) {
             this.debuglog('setting cache expiry to forever for past games')
             cacheExpiry = new Date(8640000000000000)
           }
@@ -1519,19 +1537,20 @@ class sessionClass {
     }
   }
 
-  // Get data for a game (team data to determine Gameday URL)
-  async getGameData(contentId) {
+  // Get gameday data for a game (pitch data)
+  async getGamedayData(contentId) {
     try {
-      this.debuglog('getGameData')
+      this.debuglog('getGamedayData')
 
       let gamePk = await this.getGamePkFromContentId(contentId)
 
       let cache_data
-      let cache_name = gamePk
+      let cache_name = 'g' + gamePk
       let cache_file = path.join(CACHE_DIRECTORY, cache_name+'.json')
-      if ( !fs.existsSync(cache_file) ) {
+      let currentDate = new Date()
+      if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.gameday || !this.cache.gameday[cache_name] || !this.cache.gameday[cache_name].gamedayCacheExpiry || (currentDate > new Date(this.cache.gameday[cache_name].gamedayCacheExpiry)) ) {
         let reqObj = {
-          url: 'https://statsapi.mlb.com/api/v1/schedule?sportId=1&gamePk=' + gamePk + '&hydrate=team',
+          url: 'http://statsapi.mlb.com/api/v1.1/game/' + gamePk + '/feed/live',
           headers: {
             'User-agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
@@ -1544,70 +1563,21 @@ class sessionClass {
         if ( this.isValidJson(response) ) {
           this.debuglog(response)
           cache_data = JSON.parse(response)
-          this.save_json_cache_file(gamePk, cache_data)
-        } else {
-          this.log('error : invalid response from url ' + getObj.url)
-        }
-      } else {
-        this.debuglog('using cached game data')
-        cache_data = this.readFileToJson(cache_file)
-      }
-      if (cache_data) {
-        return cache_data
-      }
-    } catch(e) {
-      this.log('getGameData error : ' + e.message)
-    }
-  }
-
-  // Get gameday data for a game (pitch data)
-  async getGamedayData(contentId) {
-    try {
-      this.debuglog('getGamedayData')
-
-      let game_data = await this.getGameData(contentId)
-      let game = {}
-      game.year = game_data.dates[0].date.substring(0,4)
-      game.month = game_data.dates[0].date.substring(5,7)
-      game.day = game_data.dates[0].date.substring(8,10)
-      game.away = game_data.dates[0].games[0].teams['away'].team.teamCode
-      game.home = game_data.dates[0].games[0].teams['home'].team.teamCode
-      game.game = game_data.dates[0].games[0].gameNumber
-
-      let cache_data
-      let cache_name = 'g' + game.year + game.month + game.day + game.away + game.home + game.game
-      let cache_file = path.join(CACHE_DIRECTORY, cache_name+'.xml')
-      let currentDate = new Date()
-      if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.gameday || !this.cache.gameday[cache_name] || !this.cache.gameday[cache_name].gamedayCacheExpiry || (currentDate > new Date(this.cache.gameday[cache_name].gamedayCacheExpiry)) ) {
-        let reqObj = {
-          url: 'http://gd2.mlb.com/components/game/mlb/year_' + game.year + '/month_' + game.month + '/day_' + game.day + '/gid_' + game.year + '_' + game.month + '_' + game.day + '_' + game.away + 'mlb_' + game.home + 'mlb_' + game.game + '/inning/inning_all.xml',
-          headers: {
-            'User-agent': USER_AGENT,
-            'Origin': 'https://www.mlb.com',
-            'Accept-Encoding': 'gzip, deflate, br'
-          },
-          gzip: true
-        }
-        var response = await this.httpGet(reqObj)
-        if ( response ) {
-          this.debuglog(response)
-          cache_data = response
-          this.save_xml_cache_file(cache_name, cache_data)
+          this.save_json_cache_file(cache_name, cache_data)
 
           // Default cache period is 1 hour from now
           let oneHourFromNow = new Date()
           oneHourFromNow.setHours(oneHourFromNow.getHours()+1)
           let cacheExpiry = oneHourFromNow
 
-          if ( this.temp_cache[contentId].productType == 'LIVE' ) {
+          if ( (cache_data.gameData.status.abstractGameState == 'Live') && (cache_data.gameData.status.detailedState.indexOf('Suspended') != 0) ) {
             this.debuglog('setting cache expiry to 5 minutes for live game')
             currentDate.setMinutes(currentDate.getMinutes()+5)
             cacheExpiry = currentDate
           } else {
             let today = this.liveDate()
-            let gameday_date = game.year + '-' + game.month + '-' + game.day
 
-            if ( gameday_date < today ) {
+            if ( cache_data.gameData.datetime.officialDate < today ) {
               this.debuglog('setting cache expiry to forever for past games')
               cacheExpiry = new Date(8640000000000000)
             }
@@ -1620,7 +1590,7 @@ class sessionClass {
         }
       } else {
         this.debuglog('using cached gameday data')
-        cache_data = fs.readFileSync(cache_file)
+        cache_data = this.readFileToJson(cache_file)
       }
       if (cache_data) {
         return cache_data
@@ -1630,10 +1600,10 @@ class sessionClass {
     }
   }
 
-  // Get inning offsets into temporary cache
-  async getInningOffsets(contentId) {
+  // Get broadcast start timestamp
+  async getBroadcastStart(contentId) {
     try {
-      this.debuglog('getInningOffsets')
+      this.debuglog('getBroadcastStart')
 
       if ( !this.temp_cache[contentId] ) {
         this.temp_cache[contentId] = {}
@@ -1642,172 +1612,175 @@ class sessionClass {
       let cache_data = await this.getAiringsData(contentId)
       // If VOD and we have fewer than 2 milestones, use the gamePk to look for more milestones in a different airing
       if ( cache_data.data.Airings[0].mediaConfig.productType && (cache_data.data.Airings[0].mediaConfig.productType == 'VOD') && cache_data.data.Airings[0].milestones && (cache_data.data.Airings[0].milestones.length < 2) ) {
-        this.debuglog('too few milestones, looking for more')
+        this.log('too few milestones, looking for more')
         this.cache.airings[this.stringWithoutDashes(contentId)] = {}
         cache_data = await this.getAiringsData(contentId, cache_data.data.Airings[0].partnerProgramId)
       }
 
-      let productType
-      let inning_offsets = []
+      let broadcast_start_offset
       let broadcast_start_timestamp
-      // Pad times by these amounts
-      let pad_start = 5
-      let pad_end = 10
-      // Assume this break length if times not available
-      let break_length = 120
-      if ( cache_data.data.Airings[0].mediaConfig.productType ) productType = cache_data.data.Airings[0].mediaConfig.productType
+
       if ( cache_data.data.Airings[0].milestones ) {
         for (var j = 0; j < cache_data.data.Airings[0].milestones.length; j++) {
-          let offset_index = 1
-          let offset
-          if ( cache_data.data.Airings[0].milestones[j].milestoneTime[0].type == 'offset' ) {
-            offset_index = 0
-          }
-          offset = cache_data.data.Airings[0].milestones[j].milestoneTime[offset_index].start
+          if ( cache_data.data.Airings[0].milestones[j].milestoneType == 'BROADCAST_START' ) {
+            let offset_index = 1
+            let offset
+            if ( cache_data.data.Airings[0].milestones[j].milestoneTime[0].type == 'offset' ) {
+              offset_index = 0
+            }
+            broadcast_start_offset = cache_data.data.Airings[0].milestones[j].milestoneTime[offset_index].start
 
-          // Broadcast start
-          if ( j == 0 ) {
-            inning_offsets.push({})
-            inning_offsets[0].start = offset
+            // Broadcast start
             broadcast_start_timestamp = new Date(cache_data.data.Airings[0].milestones[j].milestoneTime[(offset_index == 0 ? 1 : 0)].startDatetime)
             this.debuglog('broadcast start time detected as ' + broadcast_start_timestamp)
-            this.debuglog('adjusting by ' + offset)
-            broadcast_start_timestamp.setSeconds(broadcast_start_timestamp.getSeconds()-offset)
+            this.debuglog('offset detected as ' + broadcast_start_offset)
+            broadcast_start_timestamp.setSeconds(broadcast_start_timestamp.getSeconds()-broadcast_start_offset)
             this.debuglog('new start time is ' + broadcast_start_timestamp)
-            if ( cache_data.data.Airings[0].milestones[j].milestoneType == 'BROADCAST_START' ) {
-              continue
-            }
-          }
-
-          // Populate array with inning start and end times as available
-          let inning_index
-          let inning_number_index = 1
-          if ( cache_data.data.Airings[0].milestones[j].keywords[0].type == 'inning' ) {
-            inning_index = cache_data.data.Airings[0].milestones[j].keywords[0].value * 2
-            inning_number_index = 0
-          } else {
-            inning_index = cache_data.data.Airings[0].milestones[j].keywords[1].value * 2
-          }
-
-          // top
-          if ( cache_data.data.Airings[0].milestones[j].keywords[(inning_number_index == 0 ? 1 : 0)].value == 'true' ) {
-            inning_index = inning_index - 1
-          }
-          if ( typeof inning_offsets[inning_index] === 'undefined' ) inning_offsets.push({})
-
-          if ( cache_data.data.Airings[0].milestones[j].milestoneType == 'INNING_START' ) {
-            inning_offsets[inning_index].start = offset - pad_start
-          } else {
-            inning_offsets[inning_index].end = offset + pad_end
-            // If end time, fill in start time if it doesn't already exist
-            if ( inning_index > 1 ) {
-              if ( typeof inning_offsets[inning_index].start === 'undefined' ) {
-                if ( typeof inning_offsets[inning_index-1].end !== 'undefined' ) {
-                  inning_offsets[inning_index].start = inning_offsets[inning_index-1].end + break_length
-                }
-              }
-            }
-          }
-
-          // Fill in previous end time if it doesn't already exist
-          if ( inning_index > 1 ) {
-            if ( typeof inning_offsets[inning_index-1].end === 'undefined' ) {
-              inning_offsets[inning_index-1].end = inning_offsets[inning_index].start - break_length
-            }
+            break
           }
         }
-
-        this.temp_cache[contentId].productType = productType
-        this.debuglog('inning offsets: ' + JSON.stringify(inning_offsets))
-        this.temp_cache[contentId].inning_offsets = inning_offsets
-        this.temp_cache[contentId].broadcast_start_timestamp = broadcast_start_timestamp
       }
 
-      return true
+      if ( broadcast_start_offset && broadcast_start_timestamp ) {
+        return { broadcast_start_offset, broadcast_start_timestamp }
+      }
     } catch(e) {
-      this.log('getInningOffsets error : ' + e.message)
+      this.log('getBroadcastStart error : ' + e.message)
     }
   }
 
-  // Get pitch offsets into temporary cache
-  async getPitchOffsets(contentId) {
+  // Get event offsets into temporary cache
+  async getEventOffsets(contentId, skip_type, skip_adjust = 0) {
     try {
-      this.debuglog('getPitchOffsets')
+      this.debuglog('getEventOffsets')
+
+      if ( skip_adjust != 0 ) session.log('manual adjustment of ' + skip_adjust + ' seconds being applied')
+
+      let broadcast_start = await this.getBroadcastStart(contentId)
+      let broadcast_start_offset = broadcast_start.broadcast_start_offset
+      let broadcast_start_timestamp = broadcast_start.broadcast_start_timestamp
+      this.debuglog('broadcast start detected as ' + broadcast_start_timestamp + ', offset ' + broadcast_start_offset)
 
       let cache_data = await this.getGamedayData(contentId)
 
-      let inning_types = ['top','bottom']
       let action_types = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Out', 'Balk', 'Defensive Indiff']
 
-      let broadcast_start_timestamp = this.temp_cache[contentId].broadcast_start_timestamp
-      this.debuglog('broadcast start detected as ' + broadcast_start_timestamp)
-      let pitch_offsets = [{start:0}]
+      let break_types = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
+
+      let inning_offsets = [{start:broadcast_start_offset}]
+      let event_offsets = [{start:0}]
       let last_event = 0
 
       // Pad times by these amounts
       let pad_start = 0
       let pad_end = 15
+      let pad_adjust = 10
 
-      parseString(cache_data, function (err, result) {
-        for (var i=0; i < result.game.inning.length; i++) {
-          for (var j=0; j < inning_types.length; j++) {
-            if ( typeof result.game.inning[i][inning_types[j]] !== 'undefined' ) {
-              let actions = []
-              if ( typeof result.game.inning[i][inning_types[j]][0].action !== 'undefined' ) {
-                for (var k=0; k < result.game.inning[i][inning_types[j]][0].action.length; k++) {
-                  if ( action_types.some(v => result.game.inning[i][inning_types[j]][0].action[k]['$'].event.includes(v)) ) {
-                    let this_action = {}
-                    this_action.event_num = result.game.inning[i][inning_types[j]][0].action[k]['$'].event_num
-                    this_action.pitch = result.game.inning[i][inning_types[j]][0].action[k]['$'].pitch
-                    actions.push(this_action)
-                  }
+      let last_inning = 0
+      let last_inning_half = ''
+
+      for (var i=0; i < cache_data.liveData.plays.allPlays.length; i++) {
+
+        // Get inning offsets
+        if ( cache_data.liveData.plays.allPlays[i].about && cache_data.liveData.plays.allPlays[i].about.inning && ((cache_data.liveData.plays.allPlays[i].about.inning != last_inning) || (cache_data.liveData.plays.allPlays[i].about.halfInning != last_inning_half)) ) {
+          let inning_index = cache_data.liveData.plays.allPlays[i].about.inning * 2
+          // top
+          if ( cache_data.liveData.plays.allPlays[i].about.halfInning == 'top' ) {
+            inning_index = inning_index - 1
+          }
+          if ( typeof inning_offsets[inning_index] === 'undefined' ) inning_offsets.push({})
+          for (var j=0; j < cache_data.liveData.plays.allPlays[i].playEvents.length; j++) {
+            if ( cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && (break_types.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
+              // ignore break events
+            } else {
+              inning_offsets[inning_index].start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[j].startTime) - broadcast_start_timestamp) / 1000) - pad_start + skip_adjust
+              break
+            }
+          }
+          last_inning = cache_data.liveData.plays.allPlays[i].about.inning
+          last_inning_half = cache_data.liveData.plays.allPlays[i].about.halfInning
+        }
+
+        // Get event offsets, if necessary
+        if ( skip_type != '' ) {
+          let actions = []
+          for (var j=0; j < cache_data.liveData.plays.allPlays[i].playEvents.length; j++) {
+            if ( skip_type == 'breaks' ) {
+              if ( cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && (break_types.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
+                // ignore break events
+              } else {
+                actions.push(j)
+              }
+            } else if ( cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && (action_types.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
+              actions.push(j)
+            }
+          }
+          if ( skip_type == 'breaks' ) {
+            let this_event = {}
+            let event_in_atbat = false
+            let endx = 0
+            for (var x=0; x < actions.length; x++) {
+              let this_pad_start = 0
+              let this_pad_end = 0
+              if ( typeof this_event.start === 'undefined' ) {
+                this_event.start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) - pad_start + skip_adjust
+                // For events within at-bats, adjust the padding
+                if ( event_in_atbat ) {
+                  this_event.start -= pad_adjust
                 }
               }
-              let event_complete = false
-              for (var k=0; k < result.game.inning[i][inning_types[j]][0].atbat.length; k++) {
-                if (event_complete) {
-                  event_complete = false
-                  continue
-                }
-                let this_event = {}
-                let pitch_index
-                for (var x=0; x < actions.length; x++) {
-                  if ( (actions[x].event_num > last_event) && (actions[x].event_num < result.game.inning[i][inning_types[j]][0].atbat[k]['$'].event_num) ) {
-                    pitch_index = actions[x].pitch - 1
-                    this_event.start = ((new Date(result.game.inning[i][inning_types[j]][0].atbat[k].pitch[pitch_index]['$'].tfs_zulu) - broadcast_start_timestamp) / 1000) - pad_start
-                    if ( actions[x].pitch < result.game.inning[i][inning_types[j]][0].atbat[k].pitch.length ) {
-                      pitch_index = actions[x].pitch
-                      this_event.end = ((new Date(result.game.inning[i][inning_types[j]][0].atbat[k].pitch[pitch_index]['$'].tfs_zulu) - broadcast_start_timestamp) / 1000) + pad_end
-                      pitch_offsets.push(this_event)
-                      this_event = {}
-                    } else {
-                      this_event.end = ((new Date(result.game.inning[i][inning_types[j]][0].atbat[k]['$'].end_tfs_zulu) - broadcast_start_timestamp) / 1000) + pad_end
-                      pitch_offsets.push(this_event)
-                      this_event = {}
-                      event_complete = true
-                      break
-                    }
-                  }
-                }
-                if ( typeof result.game.inning[i][inning_types[j]][0].atbat[k].pitch !== 'undefined' ) {
-                  pitch_index = result.game.inning[i][inning_types[j]][0].atbat[k].pitch.length - 1
-                  this_event.start = ((new Date(result.game.inning[i][inning_types[j]][0].atbat[k].pitch[pitch_index]['$'].tfs_zulu) - broadcast_start_timestamp) / 1000) - pad_start
-                  this_event.end = ((new Date(result.game.inning[i][inning_types[j]][0].atbat[k]['$'].end_tfs_zulu) - broadcast_start_timestamp) / 1000) + pad_end
-                  pitch_offsets.push(this_event)
-                  last_event = result.game.inning[i][inning_types[j]][0].atbat[k].pitch[pitch_index]['$'].event_num
+              if ( cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime ) {
+                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime) - broadcast_start_timestamp) / 1000) + pad_end + skip_adjust
+              } else {
+                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) + pad_end + skip_adjust
+              }
+              if ( x > 0 ) {
+                if ( actions[x] > (actions[x-1]+1) ) {
+                  // For events within at-bats, adjust the padding
+                  event_in_atbat = true
+                  this_event.end += pad_adjust
+                  event_offsets.push(this_event)
+                  this_event = {}
                 }
               }
+              endx = x
+            }
+            if ( typeof this_event.end !== 'undefined' ) {
+              event_offsets.push(this_event)
+            }
+          } else {
+            if ( (actions.length == 0) || (actions[(actions.length-1)] < (cache_data.liveData.plays.allPlays[i].playEvents.length-1)) ) {
+              actions.push(cache_data.liveData.plays.allPlays[i].playEvents.length-1)
+            }
+            for (var x=0; x < actions.length; x++) {
+              let this_event = {}
+              let this_pad_start = pad_start
+              let this_pad_end = pad_end
+              // For events within at-bats, adjust the padding
+              if ( x < (actions.length-1) ) {
+                this_pad_start += pad_adjust
+                this_pad_end -= pad_adjust
+              }
+              this_event.start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) - this_pad_start + skip_adjust
+              if ( cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime ) {
+                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime) - broadcast_start_timestamp) / 1000) + this_pad_end + skip_adjust
+              } else {
+                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) + this_pad_end + skip_adjust
+              }
+              event_offsets.push(this_event)
             }
           }
         }
-      });
+      }
 
-      this.debuglog('pitch offsets: ' + JSON.stringify(pitch_offsets))
-      this.temp_cache[contentId].pitch_offsets = pitch_offsets
+      this.debuglog('inning offsets: ' + JSON.stringify(inning_offsets))
+      this.temp_cache[contentId].inning_offsets = inning_offsets
+      this.debuglog('event offsets: ' + JSON.stringify(event_offsets))
+      this.temp_cache[contentId].event_offsets = event_offsets
 
       return true
     } catch(e) {
-      this.log('getPitchOffsets error : ' + e.message)
+      this.log('getEventOffsets error : ' + e.message)
     }
   }
 
