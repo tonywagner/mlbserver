@@ -40,12 +40,19 @@ const VALID_FORCE_VOD = [ 'off', 'on' ]
 const SAMPLE_STREAM_URL = 'https://www.radiantmediaplayer.com/media/rmp-segment/bbb-abr-aes/playlist.m3u8'
 
 // Process command line arguments, if specified:
-// --port or -p (default 9999)
+// --port or -p (primary port to run on; defaults to 9999 if not specified)
+// --multiview_port or -m (port for multiview streaming; defaults to 1 more than primary port, or 10000)
+// --multiview_path or -a (where to create the folder for multiview encoded files; defaults to app directory)
+// --ffmpeg_path or -f (path to ffmpeg binary to use for multiview encoding; default downloads a binary using ffmpeg-static)
+// --ffmpeg_encoder or -a (ffmpeg video encoder to use for multiview; default is the software encoder libx264)
+// --ffmpeg_logging or -g (if present, logs all ffmpeg output -- useful for experimenting or troubleshooting)
+// --username or -u (username to protect pages; default is no protection)
+// --password or -w (password to protect pages; default is no protection)
 // --debug or -d (false if not specified)
+// --version or -v (returns package version number)
 // --logout or -l (logs out and clears session)
 // --session or -s (clears session)
 // --cache or -c (clears cache)
-// --version or -v (returns package version number)
 var argv = minimist(process.argv, {
   alias: {
     p: 'port',
@@ -54,6 +61,8 @@ var argv = minimist(process.argv, {
     f: 'ffmpeg_path',
     e: 'ffmpeg_encoder',
     g: 'ffmpeg_logging',
+    u: 'username',
+    w: 'password',
     d: 'debug',
     l: 'logout',
     s: 'session',
@@ -127,6 +136,7 @@ app.listen(port, function(addr) {
   session.debuglog('multiview port ' + multiview_port)
   var multiview_server = server.replace(':' + port, ':' + multiview_port)
   multiview_url = multiview_server + '/' + hls_base + '/' + multiview_stream_name
+  session.setMultiviewStreamURL(multiview_url)
   session.log('multiview server started at ' + multiview_url)
   session.clear_multiview_files()
 })
@@ -167,12 +177,10 @@ app.get('/stream.m3u8', async function(req, res) {
       options.audio_url = req.query.audio_url || ''
       options.force_vod = req.query.force_vod || VALID_FORCE_VOD[0]
 
-      options.inning_half = req.query.inning_half || VALID_INNING_HALF[0]
-      options.inning_number = req.query.inning_number || VALID_INNING_NUMBER[0]
-      options.skip = req.query.skip || VALID_SKIP[0]
-
       if ( req.query.src ) {
         streamURL = req.query.src
+      } else if ( req.query.type && (req.query.type.toUpperCase() == 'BIGINNING') ) {
+        streamURL = await session.getBigInningStreamURL()
       } else {
         if ( req.query.contentId ) {
           contentId = req.query.contentId
@@ -201,10 +209,21 @@ app.get('/stream.m3u8', async function(req, res) {
         } else {
           session.debuglog('mediaId : ' + mediaId)
 
+          options.inning_half = req.query.inning_half || VALID_INNING_HALF[0]
+          options.inning_number = req.query.inning_number || VALID_INNING_NUMBER[0]
+          options.skip = req.query.skip || VALID_SKIP[0]
+
           if ( (contentId) && ((options.inning_half != VALID_INNING_HALF[0]) || (options.inning_number != VALID_INNING_NUMBER[0]) || (options.skip != VALID_SKIP[0])) ) {
             options.contentId = contentId
             let skip_adjust = req.query.skip_adjust || 0
-            await session.getEventOffsets(contentId, options.skip, skip_adjust)
+            let skip_types = []
+            if ( (options.inning_half != VALID_INNING_HALF[0]) || (options.inning_number != VALID_INNING_NUMBER[0]) ) {
+              skip_types.push('innings')
+            }
+            if ( options.skip != VALID_SKIP[0] ) {
+              skip_types.push(options.skip)
+            }
+            await session.getEventOffsets(contentId, skip_types, skip_adjust)
           }
 
           streamURL = await session.getStreamURL(mediaId)
@@ -596,9 +615,33 @@ app.get('/ts', function(req, res) {
   })
 })
 
+// Password protect pages
+async function protect(req, res) {
+  if (argv.username && argv.password) {
+    const reject = () => {
+      res.setHeader('www-authenticate', 'Basic')
+      res.error(401, ' Not Authorized')
+    }
+
+    const authorization = req.headers.authorization
+
+    if(!authorization) {
+      return reject()
+    }
+
+    const [username, password] = Buffer.from(authorization.replace('Basic ', ''), 'base64').toString().split(':')
+
+    if(! (username === argv.username && password === argv.password)) {
+      return reject()
+    }
+  }
+}
+
 // Server homepage, base URL
 app.get('/', async function(req, res) {
   try {
+    await protect(req, res)
+
     session.debuglog('homepage request : ' + req.url)
 
     let gameDate = session.liveDate()
@@ -617,6 +660,10 @@ app.get('/', async function(req, res) {
       }
     }
     var cache_data = await session.getDayData(gameDate)
+    var big_inning
+    if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
+      big_inning = await session.getBigInningSchedule(gameDate)
+    }
 
     var linkType = VALID_LINK_TYPES[0]
     if ( req.query.linkType ) {
@@ -802,6 +849,26 @@ app.get('/', async function(req, res) {
     }
     var thislink = '/' + link
 
+
+    if ( (mediaType == 'MLBTV') && big_inning && big_inning.start ) {
+      body += '<tr><td>' + new Date(big_inning.start).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + new Date(big_inning.end).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '</td><td>'
+      let currentDate = new Date()
+      let compareStart = new Date(big_inning.start)
+      compareStart.setMinutes(compareStart.getMinutes()-10)
+      let compareEnd = new Date(big_inning.end)
+      compareEnd.setHours(compareEnd.getHours()+1)
+      if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
+        let querystring = '?type=biginning'
+        let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+        if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+        body += '<a href="' + thislink + querystring + '">Big Inning</a>'
+        body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+      } else {
+        body += 'Big Inning'
+      }
+      body += '</td></tr>' + "\n"
+    }
+
     for (var j = 0; j < cache_data.dates[0].games.length; j++) {
       let game_started = false
 
@@ -930,7 +997,7 @@ app.get('/', async function(req, res) {
                     } else {
                       let querystring
                       querystring = '?mediaId=' + mediaId
-                      var multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
+                      let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
                       if ( linkType == 'embed' ) {
                         if ( startFrom != 'Beginning' ) querystring += '&startFrom=' + startFrom
                       }
@@ -1034,7 +1101,7 @@ app.get('/', async function(req, res) {
         body += '<input type="checkbox" id="dvr"/> <span class="tooltip">DVR: allow pausing/seeking multiview<span class="tooltiptext">If this is enabled, it will use more disk space but you will be able to pause and seek in the multiview stream. Not necessary if you are strictly watching live.</span></span><br/>'
         body += '<input type="checkbox" id="faster" onchange="if (this.checked){document.getElementById(\'dvr\').checked=true}"/> <span class="tooltip">Encode faster than real-time<span class="tooltiptext">Implies DVR. Not necessary for live streams (which are only delivered in real-time), but if you want to seek ahead in archive streams using multiview, you may want to enable this. WARNING: ffmpeg may approach 100% CPU usage if you use this while combining multiple archive video streams in multiview.</span></span><br/>' + "\n"
         body += '<hr><span class="tooltip">Alternate audio URL and sync<span class="tooltiptext">Optional: you can also include a separate audio-only URL as an additional alternate audio track. This is useful if you want to pair the road radio feed with a national TV broadcast (which only includes home radio feeds by default). Archive games will likely require a very large negative sync value, as the radio broadcasts may not be trimmed like the video archives.</span></span>:<br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)"></textarea><input id="audio_url_seek" type="number" value="0" style="vertical-align:top;font-size:.8em;width:4em"/>'
-        body += '<hr>Watch: <a href="/embed.html?src=' + encodeURIComponent(multiview_url) + '">Embed</a> | <a href="' + multiview_url + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_url) + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_url) + '">Advanced</a><br/><span class="tinytext">Download: <a href="/kodi.strm?type=multiview">Kodi STRM file</a> (<a href="/kodi.strm?version=18&type=multiview">Leia/18</a>)</span>'
+        body += '<hr>Watch: <a href="/embed.html?src=' + encodeURIComponent(multiview_url) + '">Embed</a> | <a href="' + multiview_url + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_url) + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_url) + '">Advanced</a><br/><span class="tinytext">Download: <a href="/kodi.strm?src=' + encodeURIComponent(multiview_url) + '">Kodi STRM file</a> (<a href="/kodi.strm?version=18&src=' + encodeURIComponent(multiview_url) + '">Leia/18</a>)</span>'
         body += '</td></tr></table><br/>' + "\n"
     }
 
@@ -1066,6 +1133,10 @@ app.get('/', async function(req, res) {
     body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team will include that team\'s broadcasts, not their opponent\'s broadcasts or national TV broadcasts.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=ari">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=ari">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from. Excluding a team will exclude every game involving that team. National refers to USA national TV broadcasts.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=ari,national">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=ari,national">guide.xml</a></p>' + "\n"
+
+    body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning">guide.xml</a></p>' + "\n"
+
+    body += '<p><span class="tooltip">Include (or exclude) Multiview<span class="tooltiptext">Requires starting and stopping the multiview stream from the web interface.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=multiview">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=multiview">guide.xml</a></p>' + "\n"
 
     body += '</td></tr></table><br/>' + "\n"
 
@@ -1140,6 +1211,8 @@ app.options('*', function(req, res) {
 
 // Listen for live-stream-games (schedule) page requests, return the page after local url substitution
 app.get('/live-stream-games*', async function(req, res) {
+  await protect(req, res)
+
   session.debuglog('schedule request : ' + req.url)
 
   // check for a linkType parameter in the url
@@ -1163,7 +1236,7 @@ app.get('/live-stream-games*', async function(req, res) {
   let reqObj = {
     url: 'https://www.mlb.com' + remote_url,
     headers: {
-      'User-Agent': session.USER_AGENT,
+      'User-Agent': session.getUserAgent(),
       'Origin': 'https://www.mlb.com',
       'Accept-Encoding': 'gzip, deflate, br'
     },
@@ -1182,7 +1255,9 @@ app.get('/live-stream-games*', async function(req, res) {
 })
 
 // Listen for embed request, respond with embedded hls.js player
-app.get('/embed.html', function(req, res) {
+app.get('/embed.html', async function(req, res) {
+  await protect(req, res)
+
   session.log('embed.html request : ' + req.url)
 
   delete req.headers.host
@@ -1220,7 +1295,9 @@ app.get('/embed.html', function(req, res) {
 })
 
 // Listen for advanced embed request, redirect to online demo hls.js player
-app.get('/advanced.html', function(req, res) {
+app.get('/advanced.html', async function(req, res) {
+  await protect(req, res)
+
   session.log('advanced embed request : ' + req.url)
 
   delete req.headers.host
@@ -1241,7 +1318,9 @@ app.get('/advanced.html', function(req, res) {
 })
 
 // Listen for Chromecast request, redirect to chromecast.link player
-app.get('/chromecast.html', function(req, res) {
+app.get('/chromecast.html', async function(req, res) {
+  await protect(req, res)
+
   session.log('chromecast request : ' + req.url)
 
   delete req.headers.host
@@ -1359,6 +1438,8 @@ app.get('/favicon.svg', async function(req, res) {
 
 // Listen for highlights requests
 app.get('/highlights', async function(req, res) {
+  await protect(req, res)
+
   try {
     session.log('highlights request : ' + req.url)
 
@@ -1377,6 +1458,8 @@ app.get('/highlights', async function(req, res) {
 
 // Listen for multiview requests
 app.get('/multiview', async function(req, res) {
+  await protect(req, res)
+
   try {
     session.log('multiview request : ' + req.url)
 
@@ -1613,6 +1696,8 @@ function start_multiview_stream(streams, sync, dvr, faster, audio_url, audio_url
 
 // Listen for Kodi STRM file requests
 app.get('/kodi.strm', async function(req, res) {
+  await protect(req, res)
+
   try {
     session.log('kodi.strm request : ' + req.url)
 

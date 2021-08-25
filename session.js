@@ -95,6 +95,12 @@ class sessionClass {
     this.save_session_data()
   }
 
+  // Set the multiview stream URL
+  setMultiviewStreamURL(url) {
+    this.data.multiviewStreamURL = url
+    this.save_session_data()
+  }
+
   // Some basic self-explanatory functions
   createDirectory(directoryPath) {
     if (fs.existsSync(directoryPath) && !fs.lstatSync(directoryPath).isDirectory() ){
@@ -160,6 +166,10 @@ class sessionClass {
     return TODAY_UTC_HOURS
   }
 
+  getUserAgent() {
+    return USER_AGENT
+  }
+
   // the live date is today's date, or if before a specified hour (UTC time), then use yesterday's date
   liveDate(hour = TODAY_UTC_HOURS) {
     let curDate = new Date()
@@ -187,12 +197,8 @@ class sessionClass {
     return newDate
   }
 
-  convertDateStringToObjectName(dateString) {
-    return 'd' + this.dateWithoutDashes(dateString)
-  }
-
   getCacheUpdatedDate(dateString) {
-    return this.cache.dates[this.convertDateStringToObjectName(dateString)].updated
+    return this.cache.dates[dateString].updated
   }
 
   setHighlightsCacheExpiry(cache_name, expiryDate) {
@@ -283,14 +289,6 @@ class sessionClass {
     this.data.media[mediaId].blackout = true
     this.data.media[mediaId].blackoutExpiry = Date.now() + 60*60*1000
     this.save_session_data()
-  }
-
-  dateWithoutDashes(dateString) {
-    return dateString.substr(0,4) + dateString.substr(5,2) + dateString.substr(8,2)
-  }
-
-  stringWithoutDashes(str) {
-    return str.replace(/-/g, '')
   }
 
   log(msg) {
@@ -384,12 +382,6 @@ class sessionClass {
   save_json_cache_file(cache_name, cache_data) {
     this.createDirectory(CACHE_DIRECTORY)
     this.writeJsonToFile(JSON.stringify(cache_data), path.join(CACHE_DIRECTORY, cache_name+'.json'))
-    this.debuglog('cache file saved')
-  }
-
-  save_xml_cache_file(cache_name, cache_data) {
-    this.createDirectory(CACHE_DIRECTORY)
-    fs.writeFileSync(path.join(CACHE_DIRECTORY, cache_name+'.xml'), cache_data)
     this.debuglog('cache file saved')
   }
 
@@ -1011,7 +1003,7 @@ class sessionClass {
       this.debuglog('getDayData for ' + dateString)
 
       let cache_data
-      let cache_name = this.convertDateStringToObjectName(dateString)
+      let cache_name = dateString
       let cache_file = path.join(CACHE_DIRECTORY, dateString+'.json')
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.dates || !this.cache.dates[cache_name] || !this.cache.dates[cache_name].dateCacheExpiry || (currentDate > new Date(this.cache.dates[cache_name].dateCacheExpiry)) ) {
@@ -1229,6 +1221,47 @@ class sessionClass {
         }
         channels = this.sortObj(channels)
         channels = Object.assign(channels, nationalChannels)
+
+        // Big Inning
+        if ( mediaType == 'MLBTV' ) {
+          if ( (excludeTeams.length > 0) && excludeTeams.includes('BIGINNING') ) {
+            // do nothing
+          } else if ( (includeTeams.length == 0) || includeTeams.includes('BIGINNING') ) {
+            let extraChannels = {}
+            let channelid = mediaType + '.BIGINNING'
+            let icon = server + '/image.svg?teamId=MLB'
+            let stream = server + '/stream.m3u8?type=biginning&mediaType=Video&resolution=' + resolution
+            if ( pipe == 'true' ) {
+              stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
+            }
+            extraChannels[channelid] = {}
+            extraChannels[channelid].channellogo = icon
+            extraChannels[channelid].stream = stream
+            extraChannels[channelid].mediatype = mediaType
+            channels = Object.assign(channels, extraChannels)
+          }
+        }
+
+        // Multiview
+        if ( (mediaType == 'MLBTV') && (typeof this.data.multiviewStreamURL !== 'undefined') ) {
+          if ( (excludeTeams.length > 0) && excludeTeams.includes('MULTIVIEW') ) {
+            // do nothing
+          } else if ( (includeTeams.length == 0) || includeTeams.includes('MULTIVIEW') ) {
+            let extraChannels = {}
+            let channelid = mediaType + '.MULTIVIEW'
+            let icon = server + '/image.svg?teamId=MLB'
+            let stream = this.data.multiviewStreamURL
+            if ( pipe == 'true' ) {
+              stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
+            }
+            extraChannels[channelid] = {}
+            extraChannels[channelid].channellogo = icon
+            extraChannels[channelid].stream = stream
+            extraChannels[channelid].mediatype = mediaType
+            channels = Object.assign(channels, extraChannels)
+          }
+        }
+
         let channelnumber = startingChannelNumber
         var body = '#EXTM3U' + "\n"
         //body += '#EXTINF:-1 CUID="MLBSERVER.SAMPLE.VIDEO" tvg-id="MLBSERVER.SAMPLE.VIDEO" tvg-name="MLBSERVER.SAMPLE.VIDEO",MLBSERVER SAMPLE VIDEO' + "\n"
@@ -1371,6 +1404,69 @@ class sessionClass {
             }
           }
         }
+
+        // Big Inning
+        if ( mediaType == 'MLBTV' ) {
+          if ( (excludeTeams.length > 0) && excludeTeams.includes('BIGINNING') ) {
+            // do nothing
+          } else if ( (includeTeams.length == 0) || includeTeams.includes('BIGINNING') ) {
+            let icon = server + '/image.svg?teamId=MLB'
+            let channelid = mediaType + '.BIGINNING'
+            channels[channelid] = {}
+            channels[channelid].name = channelid
+            channels[channelid].icon = icon
+
+            let title = 'MLB Big Inning'
+            let description = 'Live look-ins and big moments from around the league'
+
+            await this.getBigInningSchedule()
+            for (var i = 0; i < cache_data.dates.length; i++) {
+              let gameDate = cache_data.dates[i].date
+              if ( this.cache.bigInningSchedule[gameDate] && this.cache.bigInningSchedule[gameDate].start ) {
+                let start = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].start))
+                let stop = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].end))
+
+                programs += "\n" + '    <programme channel="' + channelid + '" start="' + start + '" stop="' + stop + '">' + "\n" +
+                '      <title lang="en">' + title + '</title>' + "\n" +
+                '      <desc lang="en">' + description.trim() + '</desc>' + "\n" +
+                '      <category lang="en">Sports</category>' + "\n" +
+                '      <icon src="' + icon + '"></icon>' + "\n" +
+                '    </programme>'
+              }
+            }
+          }
+        }
+
+        // Multiview
+        if ( (mediaType == 'MLBTV') && (typeof this.data.multiviewStreamURL !== 'undefined') ) {
+          if ( (excludeTeams.length > 0) && excludeTeams.includes('MULTIVIEW') ) {
+            // do nothing
+          } else if ( (includeTeams.length == 0) || includeTeams.includes('MULTIVIEW') ) {
+            let icon = server + '/image.svg?teamId=MLB'
+            let channelid = mediaType + '.MULTIVIEW'
+            channels[channelid] = {}
+            channels[channelid].name = channelid
+            channels[channelid].icon = icon
+
+            let title = 'MLB Multiview'
+            let description = 'Watch up to 4 games at once. Requires starting the multiview stream in the web interface first, and stopping it when done.'
+
+            for (var i = 0; i < cache_data.dates.length; i++) {
+              let gameDate = new Date(cache_data.dates[i].date + 'T00:00:00.000')
+              let start = this.convertDateToXMLTV(gameDate)
+              gameDate.setDate(gameDate.getDate()+1)
+              let stop = this.convertDateToXMLTV(gameDate)
+
+              programs += "\n" + '    <programme channel="' + channelid + '" start="' + start + '" stop="' + stop + '">' + "\n" +
+              '      <title lang="en">' + title + '</title>' + "\n" +
+              '      <desc lang="en">' + description.trim() + '</desc>' + "\n" +
+              '      <category lang="en">Sports</category>' + "\n" +
+              '      <icon src="' + icon + '"></icon>' + "\n" +
+              '    </programme>'
+            }
+          }
+        }
+
         var body = '<?xml version="1.0" encoding="UTF-8"?>' + "\n" +
         '<!DOCTYPE tv SYSTEM "xmltv.dd">' + "\n" +
         '  <tv generator-info-name="mlbserver" source-info-name="mlbserver">'
@@ -1420,12 +1516,12 @@ class sessionClass {
   }
 
   // Get airings data for a game
-  async getAiringsData(contentId, gamePk) {
+  async getAiringsData(contentId, gamePk = false) {
     try {
       this.debuglog('getAiringsData')
 
       let cache_data
-      let cache_name = this.stringWithoutDashes(contentId)
+      let cache_name = contentId
       let cache_file = path.join(CACHE_DIRECTORY, contentId+'.json')
       let url = 'https://search-api-mlbtv.mlb.com/svc/search/v2/graphql/persisted/query/core/Airings'
       let qs = { variables: '%7B%22contentId%22%3A%22' + contentId + '%22%7D' }
@@ -1537,7 +1633,7 @@ class sessionClass {
     }
   }
 
-  // Get gameday data for a game (pitch data)
+  // Get gameday data for a game (play and pitch data)
   async getGamedayData(contentId) {
     try {
       this.debuglog('getGamedayData')
@@ -1613,7 +1709,7 @@ class sessionClass {
       // If VOD and we have fewer than 2 milestones, use the gamePk to look for more milestones in a different airing
       if ( cache_data.data.Airings[0].mediaConfig.productType && (cache_data.data.Airings[0].mediaConfig.productType == 'VOD') && cache_data.data.Airings[0].milestones && (cache_data.data.Airings[0].milestones.length < 2) ) {
         this.log('too few milestones, looking for more')
-        this.cache.airings[this.stringWithoutDashes(contentId)] = {}
+        this.cache.airings[contentId] = {}
         cache_data = await this.getAiringsData(contentId, cache_data.data.Airings[0].partnerProgramId)
       }
 
@@ -1650,12 +1746,13 @@ class sessionClass {
   }
 
   // Get event offsets into temporary cache
-  async getEventOffsets(contentId, skip_type, skip_adjust = 0) {
+  async getEventOffsets(contentId, skip_types, skip_adjust = 0) {
     try {
       this.debuglog('getEventOffsets')
 
       if ( skip_adjust != 0 ) session.log('manual adjustment of ' + skip_adjust + ' seconds being applied')
 
+      // Get the broadcast start time first -- event times will be relative to this
       let broadcast_start = await this.getBroadcastStart(contentId)
       let broadcast_start_offset = broadcast_start.broadcast_start_offset
       let broadcast_start_timestamp = broadcast_start.broadcast_start_timestamp
@@ -1663,9 +1760,11 @@ class sessionClass {
 
       let cache_data = await this.getGamedayData(contentId)
 
-      let action_types = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Out', 'Balk', 'Defensive Indiff']
-
+      // There are the events to ignore, if we're skipping breaks
       let break_types = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
+
+      // There are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
+      let action_types = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Out', 'Balk', 'Defensive Indiff']
 
       let inning_offsets = [{start:broadcast_start_offset}]
       let event_offsets = [{start:0}]
@@ -1674,38 +1773,48 @@ class sessionClass {
       // Pad times by these amounts
       let pad_start = 0
       let pad_end = 15
-      let pad_adjust = 10
+      let pad_adjust = 20
 
+      // Inning counters
       let last_inning = 0
       let last_inning_half = ''
 
+      // Loop through all plays
       for (var i=0; i < cache_data.liveData.plays.allPlays.length; i++) {
 
-        // Get inning offsets
-        if ( cache_data.liveData.plays.allPlays[i].about && cache_data.liveData.plays.allPlays[i].about.inning && ((cache_data.liveData.plays.allPlays[i].about.inning != last_inning) || (cache_data.liveData.plays.allPlays[i].about.halfInning != last_inning_half)) ) {
-          let inning_index = cache_data.liveData.plays.allPlays[i].about.inning * 2
-          // top
-          if ( cache_data.liveData.plays.allPlays[i].about.halfInning == 'top' ) {
-            inning_index = inning_index - 1
-          }
-          if ( typeof inning_offsets[inning_index] === 'undefined' ) inning_offsets.push({})
-          for (var j=0; j < cache_data.liveData.plays.allPlays[i].playEvents.length; j++) {
-            if ( cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && (break_types.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
-              // ignore break events
-            } else {
-              inning_offsets[inning_index].start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[j].startTime) - broadcast_start_timestamp) / 1000) - pad_start + skip_adjust
-              break
+        // If requested, calculate inning offsets
+        if ( skip_types.includes('innings') ) {
+          // Look for a change from our inning counters
+          if ( cache_data.liveData.plays.allPlays[i].about && cache_data.liveData.plays.allPlays[i].about.inning && ((cache_data.liveData.plays.allPlays[i].about.inning != last_inning) || (cache_data.liveData.plays.allPlays[i].about.halfInning != last_inning_half)) ) {
+            let inning_index = cache_data.liveData.plays.allPlays[i].about.inning * 2
+            // top
+            if ( cache_data.liveData.plays.allPlays[i].about.halfInning == 'top' ) {
+              inning_index = inning_index - 1
             }
+            if ( typeof inning_offsets[inning_index] === 'undefined' ) inning_offsets.push({})
+            for (var j=0; j < cache_data.liveData.plays.allPlays[i].playEvents.length; j++) {
+              if ( cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && (break_types.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
+                // ignore break events
+              } else {
+                inning_offsets[inning_index].start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[j].startTime) - broadcast_start_timestamp) / 1000) - pad_start + skip_adjust
+                break
+              }
+            }
+            // Update inning counters
+            last_inning = cache_data.liveData.plays.allPlays[i].about.inning
+            last_inning_half = cache_data.liveData.plays.allPlays[i].about.halfInning
           }
-          last_inning = cache_data.liveData.plays.allPlays[i].about.inning
-          last_inning_half = cache_data.liveData.plays.allPlays[i].about.halfInning
         }
 
         // Get event offsets, if necessary
-        if ( skip_type != '' ) {
+        if ( skip_types.includes('breaks') || skip_types.includes('pitches') ) {
+
+          // Loop through play events, looking for actions
           let actions = []
           for (var j=0; j < cache_data.liveData.plays.allPlays[i].playEvents.length; j++) {
-            if ( skip_type == 'breaks' ) {
+            // If skipping breaks, everything is an action except break types
+            // otherwise, only action types are included (skipping pitches)
+            if ( skip_types.includes('breaks') ) {
               if ( cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && (break_types.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
                 // ignore break events
               } else {
@@ -1715,13 +1824,15 @@ class sessionClass {
               actions.push(j)
             }
           }
-          if ( skip_type == 'breaks' ) {
+
+          // Process breaks
+          if ( skip_types.includes('breaks') ) {
             let this_event = {}
             let event_in_atbat = false
-            let endx = 0
             for (var x=0; x < actions.length; x++) {
               let this_pad_start = 0
               let this_pad_end = 0
+              // Once we define each event's start time, we won't change it
               if ( typeof this_event.start === 'undefined' ) {
                 this_event.start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) - pad_start + skip_adjust
                 // For events within at-bats, adjust the padding
@@ -1729,29 +1840,29 @@ class sessionClass {
                   this_event.start -= pad_adjust
                 }
               }
+              // Update the end time, if available
               if ( cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime ) {
                 this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime) - broadcast_start_timestamp) / 1000) + pad_end + skip_adjust
-              } else {
-                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) + pad_end + skip_adjust
               }
-              if ( x > 0 ) {
-                if ( actions[x] > (actions[x-1]+1) ) {
+              // Check if we have skipped a play event (indicating a break inside an at-bat), in which case push this event and start another one
+              if ( (x > 0) && (actions[x] > (actions[x-1]+1)) && (typeof this_event.end !== 'undefined') ) {
                   // For events within at-bats, adjust the padding
                   event_in_atbat = true
                   this_event.end += pad_adjust
                   event_offsets.push(this_event)
                   this_event = {}
-                }
               }
-              endx = x
             }
+            // Once we've finished our loop through a play's events, push the event as long as we got an end time
             if ( typeof this_event.end !== 'undefined' ) {
               event_offsets.push(this_event)
             }
-          } else {
-            if ( (actions.length == 0) || (actions[(actions.length-1)] < (cache_data.liveData.plays.allPlays[i].playEvents.length-1)) ) {
+          } else if ( skip_types.includes('pitches') ) {
+            // If we're skipping pitches, but we didn't detect any action events, use the last play event
+            if ( (cache_data.liveData.plays.allPlays[i].playEvents.length > 0) && ((actions.length == 0) || (actions[(actions.length-1)] < (cache_data.liveData.plays.allPlays[i].playEvents.length-1))) ) {
               actions.push(cache_data.liveData.plays.allPlays[i].playEvents.length-1)
             }
+            // Loop through the actions
             for (var x=0; x < actions.length; x++) {
               let this_event = {}
               let this_pad_start = pad_start
@@ -1762,25 +1873,289 @@ class sessionClass {
                 this_pad_end -= pad_adjust
               }
               this_event.start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) - this_pad_start + skip_adjust
+              // If play event end time is available, set it and push this event
               if ( cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime ) {
                 this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime) - broadcast_start_timestamp) / 1000) + this_pad_end + skip_adjust
-              } else {
-                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) + this_pad_end + skip_adjust
+                event_offsets.push(this_event)
               }
-              event_offsets.push(this_event)
             }
           }
         }
       }
 
-      this.debuglog('inning offsets: ' + JSON.stringify(inning_offsets))
+      if ( skip_types.includes('innings') ) {
+        this.debuglog('inning offsets: ' + JSON.stringify(inning_offsets))
+      }
       this.temp_cache[contentId].inning_offsets = inning_offsets
-      this.debuglog('event offsets: ' + JSON.stringify(event_offsets))
+
+      if ( skip_types.includes('breaks') || skip_types.includes('pitches') ) {
+        this.debuglog('event offsets: ' + JSON.stringify(event_offsets))
+      }
       this.temp_cache[contentId].event_offsets = event_offsets
 
       return true
     } catch(e) {
       this.log('getEventOffsets error : ' + e.message)
+    }
+  }
+
+  // Get Big Inning schedule, if available
+  async getBigInningSchedule(dateString = false) {
+    try {
+      this.debuglog('getBigInningSchedule')
+
+      let currentDate = new Date()
+      if ( !this.cache || !this.cache.bigInningScheduleCacheExpiry || (currentDate > new Date(this.cache.bigInningScheduleCacheExpiry)) ) {
+        if ( !this.cache.bigInningSchedule ) this.cache.bigInningSchedule = {}
+        let reqObj = {
+          url: 'https://www.mlb.com/live-stream-games/big-inning',
+          headers: {
+            'User-Agent': this.USER_AGENT,
+            'Origin': 'https://www.mlb.com',
+            'Referer': 'https://www.mlb.com',
+            'Accept-Encoding': 'gzip, deflate, br'
+          },
+          gzip: true
+        }
+        var response = await this.httpGet(reqObj)
+        if ( response ) {
+          //this.debuglog(response)
+          // break HTML into array based on table rows
+          var rows = response.split('<tr>')
+          // start iterating at 2 (after header row)
+          for (var i=2; i<rows.length; i++) {
+            // split HTML row into array with columns
+            let cols = rows[i].split('<td>')
+
+            // define some variables that persist for each row
+            let parts
+            let year
+            let month
+            let day
+            let this_datestring
+            let add_date = 0
+            let d
+
+            for (var j=1; j<cols.length; j++) {
+              // split on closing bracket to get column text at resulting array index 0
+              let col = cols[j].split('<')
+              switch(j){
+                // first column is date
+                case 1:
+                  // split date into array
+                  parts = col[0].split(' ')
+                  year = parts[2]
+                  // get month index, zero-based
+                  month = new Date(Date.parse(parts[0] +" 1, 2021")).getMonth()
+                  day = parts[1].substring(0,parts[1].length-3)
+                  this_datestring = new Date(year, month, day).toISOString().substring(0,10)
+                  this.cache.bigInningSchedule[this_datestring] = {}
+                  // increment month index (not zero-based)
+                  month += 1
+                  break
+                // remaining columns are times
+                default:
+                  let hour
+                  let minute = '00'
+                  let ampm
+                  // if time has colon, split into array on that to get hour and minute parts
+                  if ( col[0].indexOf(':') > 0 ) {
+                    parts = col[0].split(':')
+                    hour = parseInt(parts[0])
+                    minute = parts[1].substring(0,2)
+                  } else {
+                    hour = parseInt(col[0].substring(0,col[0].length-2))
+                  }
+                  ampm = col[0].substring(col[0].length-2,col[0].length)
+                  // convert hour to 24-hour format
+                  if ( ampm == 'PM' ) {
+                    hour += 12
+                  }
+                  // these times are EDT so add 4 for UTC
+                  hour += 4
+                  // if hour is beyond 23, note we will have to add 1 day
+                  if ( hour > 23 ) {
+                    add_date = 1
+                    hour -= 24
+                  }
+
+                  d = new Date(this_datestring + 'T' + hour.toString().padStart(2, '0') + ':' + minute.toString().padStart(2, '0') + ':00.000+00:00')
+                  d.setDate(d.getDate()+add_date)
+                  switch(j){
+                    // 2nd column is start time
+                    case 2:
+                      this.cache.bigInningSchedule[this_datestring].start = d
+                      break
+                    // 3rd column is end time
+                    case 3:
+                      this.cache.bigInningSchedule[this_datestring].end = d
+                      break
+                  }
+                  break
+              }
+            }
+          }
+          this.debuglog(this.cache.bigInningSchedule)
+
+          // Default cache period is 1 day from now
+          let oneDayFromNow = new Date()
+          oneDayFromNow.setDate(oneDayFromNow.getDate()+1)
+          let cacheExpiry = oneDayFromNow
+          this.cache.bigInningScheduleCacheExpiry = cacheExpiry
+
+          this.save_cache_data()
+        } else {
+          this.log('error : invalid response from url ' + getObj.url)
+        }
+      } else {
+        this.debuglog('using cached big inning schedule')
+      }
+      // If we requested the schedule for a specific date, and it exists, return it
+      if ( dateString ) {
+        if ( this.cache.bigInningSchedule && this.cache.bigInningSchedule[dateString] ) {
+          return this.cache.bigInningSchedule[dateString]
+        }
+      }
+    } catch(e) {
+      this.log('getBigInningSchedule error : ' + e.message)
+    }
+  }
+
+  // Get Big Inning URL, used to determine the stream URL if available
+  async getBigInningURL() {
+    try {
+      this.debuglog('getBigInningURL')
+
+      let cache_data
+      let currentDate = new Date()
+      if ( !this.cache || !this.cache.bigInningURLCacheExpiry || (currentDate > new Date(this.cache.bigInningURLCacheExpiry)) ) {
+        let reqObj = {
+          url: 'https://dapi.cms.mlbinfra.com/v2/content/en-us/vsmcontents/live-now-mlb-big-inning',
+          headers: {
+            'User-Agent': this.USER_AGENT,
+            'Origin': 'https://www.mlb.com',
+            'Referer': 'https://www.mlb.com',
+            'Content-Type': 'application/json',
+            'Accept-Encoding': 'gzip, deflate, br'
+          },
+          gzip: true
+        }
+        var response = await this.httpGet(reqObj)
+        if ( this.isValidJson(response) ) {
+          this.debuglog(response)
+          cache_data = JSON.parse(response)
+
+          // Default cache period is 1 day from now
+          let oneDayFromNow = new Date()
+          oneDayFromNow.setDate(oneDayFromNow.getDate()+1)
+          let cacheExpiry = oneDayFromNow
+
+          let today = this.liveDate()
+
+          if ( cache_data.title && (cache_data.title == 'LIVE NOW: MLB Big Inning') ) {
+            this.debuglog('active big inning url')
+            this.cache.bigInningURL = cache_data.references.video[0].fields.url
+
+            if ( this.cache.bigInningSchedule[today] && (currentDate < this.cache.bigInningSchedule[today].end ) ) {
+              let scheduledEnd = new Date(this.cache.bigInningSchedule[today].end)
+              scheduledEnd.setHours(scheduledEnd.getHours()+1)
+              this.debuglog('setting cache expiry to scheduled end plus 1 hour: ' + scheduledEnd)
+              cacheExpiry = scheduledEnd
+            } else {
+              // if it's not in our schedule, we can find the end time by parsing the time from the slug text, then adding the duration
+              let slug_array = cache_data.references.video[0].slug.split('-')
+              let et_hour = parseInt(slug_array[0])
+              let et_minute
+              if ( slug_array[1].indexOf('pm') ) {
+                et_minute = slug_array[1].replace('pm','')
+                et_hour += 12
+                if ( et_hour == 24 ) et_hour = 0
+              } else {
+                et_minute = slug_array[1].replace('am','')
+              }
+              let scheduledEnd = new Date(today + 'T' + et_hour.toString().padStart(2,'0') + ':' + et_minute.padStart(2,'0') + ':00.000-04:00')
+
+              let duration_array = cache_data.references.video[0].fields.duration.split(':')
+              scheduledEnd.setHours(scheduledEnd.getHours()+(parseInt(duration_array[0])-1))
+              scheduledEnd.setMinutes(scheduledEnd.getMinutes()+parseInt(duration_array[1]))
+
+              this.debuglog('setting cache expiry to duration: ' + scheduledEnd.toISOString())
+              cacheExpiry = scheduledEnd
+            }
+          } else {
+            this.debuglog('no active big inning url')
+            this.cache.bigInningURL = ''
+            // check when next big inning is scheduled to start, within 5 days
+            let counter = 5
+            let checkDate = today
+            await this.getBigInningSchedule()
+            while ( counter < 5 ) {
+              if ( this.cache.bigInningSchedule[checkDate] && (currentDate < this.cache.bigInningSchedule[checkDate].start ) ) {
+                this.debuglog('setting cache expiry to next scheduled start: ' + this.cache.bigInningSchedule[checkDate].start)
+                cacheExpiry = this.cache.bigInningSchedule[checkDate].start
+                break
+              }
+              checkDate = new Date(checkDate).setDate(checkDate.getDate()+1).toISOString().substring(0,10)
+              counter++
+            }
+          }
+
+          // finally save the setting
+          this.cache.bigInningURLCacheExpiry = cacheExpiry
+          this.save_cache_data()
+        } else {
+          this.log('error : invalid json from url ' + getObj.url)
+        }
+      }
+      if ( this.cache.bigInningURL != '' ) {
+        return this.cache.bigInningURL
+      }
+    } catch(e) {
+      this.log('getBigInningURL error : ' + e.message)
+    }
+  }
+
+  // Get Big Inning stream URL
+  async getBigInningStreamURL() {
+    this.debuglog('getBigInningStreamURL')
+    if ( this.cache.bigInningStreamURL && this.cache.bigInningStreamURLExpiry && (Date.now() < this.cache.bigInningStreamURLExpiry) ) {
+      this.log('using cached bigInningStreamURL')
+      return this.cache.bigInningStreamURL
+    } else {
+      var playbackURL = await this.getBigInningURL()
+      if ( !playbackURL ) {
+        this.debuglog('no active big inning url')
+      } else {
+        this.debuglog('getBigInningStreamURL from ' + playbackURL)
+        let reqObj = {
+          url: playbackURL,
+          simple: false,
+          headers: {
+            'Authorization': 'Bearer ' + await this.getOktaAccessToken() || this.halt('missing OktaAccessToken'),
+            'User-agent': USER_AGENT,
+            'Accept': '*/*',
+            'Origin': 'https://www.mlb.com',
+            'Referer': 'https://www.mlb.com/',
+            'Accept-Encoding': 'gzip, deflate, br'
+          },
+          gzip: true
+        }
+        var response = await this.httpGet(reqObj)
+        if ( this.isValidJson(response) ) {
+          this.debuglog('getBigInningStreamURL response : ' + response)
+          let obj = JSON.parse(response)
+          if ( obj.success && (obj.success == true) ) {
+            this.cache.bigInningStreamURL = obj.data[0].value
+            this.debuglog('getBigInningStreamURL : ' + this.cache.bigInningStreamURL)
+            this.cache.bigInningStreamURLExpiry = Date.now() + 60*1000
+            return this.cache.bigInningStreamURL
+          } else {
+            this.log('getBigInningStreamURL error')
+            this.log(obj.errorCode)
+            this.log(obj.message)
+          }
+        }
+      }
     }
   }
 
