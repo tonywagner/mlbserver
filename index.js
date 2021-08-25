@@ -621,6 +621,7 @@ async function protect(req, res) {
     const reject = () => {
       res.setHeader('www-authenticate', 'Basic')
       res.error(401, ' Not Authorized')
+      return false
     }
 
     const authorization = req.headers.authorization
@@ -635,12 +636,13 @@ async function protect(req, res) {
       return reject()
     }
   }
+  return true
 }
 
 // Server homepage, base URL
 app.get('/', async function(req, res) {
   try {
-    await protect(req, res)
+    if ( ! (await protect(req, res)) ) return
 
     session.debuglog('homepage request : ' + req.url)
 
@@ -1211,7 +1213,7 @@ app.options('*', function(req, res) {
 
 // Listen for live-stream-games (schedule) page requests, return the page after local url substitution
 app.get('/live-stream-games*', async function(req, res) {
-  await protect(req, res)
+  if ( ! (await protect(req, res)) ) return
 
   session.debuglog('schedule request : ' + req.url)
 
@@ -1256,7 +1258,7 @@ app.get('/live-stream-games*', async function(req, res) {
 
 // Listen for embed request, respond with embedded hls.js player
 app.get('/embed.html', async function(req, res) {
-  await protect(req, res)
+  if ( ! (await protect(req, res)) ) return
 
   session.log('embed.html request : ' + req.url)
 
@@ -1296,7 +1298,7 @@ app.get('/embed.html', async function(req, res) {
 
 // Listen for advanced embed request, redirect to online demo hls.js player
 app.get('/advanced.html', async function(req, res) {
-  await protect(req, res)
+  if ( ! (await protect(req, res)) ) return
 
   session.log('advanced embed request : ' + req.url)
 
@@ -1319,7 +1321,7 @@ app.get('/advanced.html', async function(req, res) {
 
 // Listen for Chromecast request, redirect to chromecast.link player
 app.get('/chromecast.html', async function(req, res) {
-  await protect(req, res)
+  if ( ! (await protect(req, res)) ) return
 
   session.log('chromecast request : ' + req.url)
 
@@ -1438,7 +1440,7 @@ app.get('/favicon.svg', async function(req, res) {
 
 // Listen for highlights requests
 app.get('/highlights', async function(req, res) {
-  await protect(req, res)
+  if ( ! (await protect(req, res)) ) return
 
   try {
     session.log('highlights request : ' + req.url)
@@ -1458,7 +1460,7 @@ app.get('/highlights', async function(req, res) {
 
 // Listen for multiview requests
 app.get('/multiview', async function(req, res) {
-  await protect(req, res)
+  if ( ! (await protect(req, res)) ) return
 
   try {
     session.log('multiview request : ' + req.url)
@@ -1696,7 +1698,7 @@ function start_multiview_stream(streams, sync, dvr, faster, audio_url, audio_url
 
 // Listen for Kodi STRM file requests
 app.get('/kodi.strm', async function(req, res) {
-  await protect(req, res)
+  if ( ! (await protect(req, res)) ) return
 
   try {
     session.log('kodi.strm request : ' + req.url)
