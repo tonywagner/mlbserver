@@ -115,29 +115,23 @@ var app = root()
 // Get appname from directory
 var appname = path.basename(__dirname)
 
-// Declare server, will fill in IP and port next
-var server = ''
-
 // Multiview server variables
 var hls_base = 'multiview'
 var multiview_stream_name = 'master.m3u8'
+var multiview_url_path = '/' + hls_base + '/' + multiview_stream_name
+session.setMultiviewStreamURLPath(multiview_url_path)
 var ffmpeg_command
 var ffmpeg_status = false
-var multiview_url
 
 // Start web server listening on port
-// and also multiview server on the next port
+// and also multiview server on its port (next one if not defined otherwise)
 let port = argv.port || 9999
 let multiview_port = argv.multiview_port || port + 1
+session.setPorts(port, multiview_port)
 app.listen(port, function(addr) {
-  server = 'http://' + addr
-  session.log(appname + ' started at ' + server)
-
+  session.log(appname + ' started at http://' + addr)
   session.debuglog('multiview port ' + multiview_port)
-  var multiview_server = server.replace(':' + port, ':' + multiview_port)
-  multiview_url = multiview_server + '/' + hls_base + '/' + multiview_stream_name
-  session.setMultiviewStreamURL(multiview_url)
-  session.log('multiview server started at ' + multiview_url)
+  session.log('multiview server started at http://' + addr.replace(':' + port, ':' + multiview_port) + multiview_url_path)
   session.clear_multiview_files()
 })
 var multiview_app = http.createServer()
@@ -177,8 +171,14 @@ app.get('/stream.m3u8', async function(req, res) {
       options.audio_url = req.query.audio_url || ''
       options.force_vod = req.query.force_vod || VALID_FORCE_VOD[0]
 
+      options.inning_half = req.query.inning_half || VALID_INNING_HALF[0]
+      options.inning_number = req.query.inning_number || VALID_INNING_NUMBER[0]
+      options.skip = req.query.skip || VALID_SKIP[0]
+
       if ( req.query.src ) {
         streamURL = req.query.src
+      } else if ( req.query.highlight_src ) {
+        streamURL = req.query.highlight_src
       } else if ( req.query.type && (req.query.type.toUpperCase() == 'BIGINNING') ) {
         streamURL = await session.getBigInningStreamURL()
       } else {
@@ -191,9 +191,7 @@ app.get('/stream.m3u8', async function(req, res) {
           mediaId = await session.getMediaIdFromContentId(contentId);
         } else if ( req.query.team ) {
           let mediaType = req.query.mediaType || VALID_MEDIA_TYPES[0]
-          let mediaDate = req.query.date || false
-          let gameNumber = req.query.game || false
-          let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), mediaType, mediaDate, gameNumber)
+          let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), mediaType, req.query.date, req.query.game)
           if ( mediaInfo ) {
             mediaId = mediaInfo.mediaId
             contentId = mediaInfo.contentId
@@ -208,24 +206,6 @@ app.get('/stream.m3u8', async function(req, res) {
           return
         } else {
           session.debuglog('mediaId : ' + mediaId)
-
-          options.inning_half = req.query.inning_half || VALID_INNING_HALF[0]
-          options.inning_number = req.query.inning_number || VALID_INNING_NUMBER[0]
-          options.skip = req.query.skip || VALID_SKIP[0]
-
-          if ( (contentId) && ((options.inning_half != VALID_INNING_HALF[0]) || (options.inning_number != VALID_INNING_NUMBER[0]) || (options.skip != VALID_SKIP[0])) ) {
-            options.contentId = contentId
-            let skip_adjust = req.query.skip_adjust || 0
-            let skip_types = []
-            if ( (options.inning_half != VALID_INNING_HALF[0]) || (options.inning_number != VALID_INNING_NUMBER[0]) ) {
-              skip_types.push('innings')
-            }
-            if ( options.skip != VALID_SKIP[0] ) {
-              skip_types.push(options.skip)
-            }
-            await session.getEventOffsets(contentId, skip_types, skip_adjust)
-          }
-
           streamURL = await session.getStreamURL(mediaId)
         }
       }
@@ -240,6 +220,22 @@ app.get('/stream.m3u8', async function(req, res) {
 
       if ( req.query.audio_url && (req.query.audio_url != '') ) {
         options.audio_url = await session.getAudioPlaylistURL(req.query.audio_url)
+      }
+
+      if ( (options.inning_half != VALID_INNING_HALF[0]) || (options.inning_number != VALID_INNING_NUMBER[0]) || (options.skip != VALID_SKIP[0]) ) {
+        if ( contentId ) {
+          options.contentId = contentId
+
+          let skip_adjust = req.query.skip_adjust || 0
+          let skip_types = []
+          if ( (options.inning_half != VALID_INNING_HALF[0]) || (options.inning_number != VALID_INNING_NUMBER[0]) ) {
+            skip_types.push('innings')
+          }
+          if ( options.skip != VALID_SKIP[0] ) {
+            skip_types.push(options.skip)
+          }
+          await session.getEventOffsets(contentId, skip_types, skip_adjust)
+        }
       }
 
       getMasterPlaylist(streamURL, req, res, options)
@@ -646,6 +642,9 @@ app.get('/', async function(req, res) {
 
     session.debuglog('homepage request : ' + req.url)
 
+    let server = 'http://' + req.headers.host
+    let multiview_server = server.replace(':' + session.data.port, ':' + session.data.multiviewPort)
+
     let gameDate = session.liveDate()
     let todayUTCHours = session.getTodayUTCHours()
     if ( req.query.date ) {
@@ -777,7 +776,7 @@ app.get('/', async function(req, res) {
     }
     body += '</p>' + "\n"
 
-    body += '<p><span class="tooltip">Link Type<span class="tooltiptext">Embed will play in your browser (with AirPlay support), Stream will give you a stream URL to open directly in media players like Kodi or VLC, Chromecast is a desktop browser-based casting tool, and Advanced will play in your desktop browser with some extra tools and debugging information (Advanced may require you to disable mixed content blocking in your browser).</span></span>: '
+    body += '<p><span class="tooltip">Link Type<span class="tooltiptext">Embed will play in your browser (with AirPlay support), Stream will give you a stream URL to open directly in media players like Kodi or VLC, Chromecast is a desktop browser-based casting site, and Advanced will play in your desktop browser with some extra tools and debugging information (Advanced may require you to disable mixed content blocking in your browser).<br><br>NOTE: Chromecast may not be able to resolve local domain names; if so, you can simply access this page using an IP address instead.</span></span>: '
     for (var i = 0; i < VALID_LINK_TYPES.length; i++) {
       body += '<button '
       if ( linkType == VALID_LINK_TYPES[i] ) body += 'class="default" '
@@ -994,7 +993,7 @@ app.get('/', async function(req, res) {
                   if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal ) {
                     game_started = true
                     let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
-                    if ( (mediaType == 'MLBTV') && session.data.media && session.data.media[mediaId] && session.data.media[mediaId].blackout && session.data.media[mediaId].blackoutExpiry && (Date.now() < session.data.media[mediaId].blackoutExpiry) ) {
+                    if ( (mediaType == 'MLBTV') && session.cache.media && session.cache.media[mediaId] && session.cache.media[mediaId].blackout && session.cache.media[mediaId].blackoutExpiry && (Date.parse(session.cache.media[mediaId].blackoutExpiry) < new Date()) ) {
                       body += teamabbr + ': <s>' + station + '</s>'
                     } else {
                       let querystring
@@ -1103,7 +1102,7 @@ app.get('/', async function(req, res) {
         body += '<input type="checkbox" id="dvr"/> <span class="tooltip">DVR: allow pausing/seeking multiview<span class="tooltiptext">If this is enabled, it will use more disk space but you will be able to pause and seek in the multiview stream. Not necessary if you are strictly watching live.</span></span><br/>'
         body += '<input type="checkbox" id="faster" onchange="if (this.checked){document.getElementById(\'dvr\').checked=true}"/> <span class="tooltip">Encode faster than real-time<span class="tooltiptext">Implies DVR. Not necessary for live streams (which are only delivered in real-time), but if you want to seek ahead in archive streams using multiview, you may want to enable this. WARNING: ffmpeg may approach 100% CPU usage if you use this while combining multiple archive video streams in multiview.</span></span><br/>' + "\n"
         body += '<hr><span class="tooltip">Alternate audio URL and sync<span class="tooltiptext">Optional: you can also include a separate audio-only URL as an additional alternate audio track. This is useful if you want to pair the road radio feed with a national TV broadcast (which only includes home radio feeds by default). Archive games will likely require a very large negative sync value, as the radio broadcasts may not be trimmed like the video archives.</span></span>:<br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)"></textarea><input id="audio_url_seek" type="number" value="0" style="vertical-align:top;font-size:.8em;width:4em"/>'
-        body += '<hr>Watch: <a href="/embed.html?src=' + encodeURIComponent(multiview_url) + '">Embed</a> | <a href="' + multiview_url + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_url) + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_url) + '">Advanced</a><br/><span class="tinytext">Download: <a href="/kodi.strm?src=' + encodeURIComponent(multiview_url) + '">Kodi STRM file</a> (<a href="/kodi.strm?version=18&src=' + encodeURIComponent(multiview_url) + '">Leia/18</a>)</span>'
+        body += '<hr>Watch: <a href="/embed.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Embed</a> | <a href="' + multiview_server + multiview_url_path + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Advanced</a><br/><span class="tinytext">Download: <a href="/kodi.strm?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Kodi STRM file</a> (<a href="/kodi.strm?version=18&src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Leia/18</a>)</span>'
         body += '</td></tr></table><br/>' + "\n"
     }
 
@@ -1184,7 +1183,7 @@ app.get('/', async function(req, res) {
     body += '<div id="myModal" class="modal"><div class="modal-content"><span class="close">&times;</span><div id="highlights"></div></div></div>'
 
     // Highlights modal functions
-    body += '<script type="text/javascript">var modal = document.getElementById("myModal");var highlightsModal = document.getElementById("highlights");var span = document.getElementsByClassName("close")[0];function parsehighlightsresponse(responsetext) { try { var highlights = JSON.parse(responsetext);var modaltext = "<ul>"; if (highlights && highlights[0]) { for (var i = 0; i < highlights.length; i++) { modaltext += "<li><a href=\'' + link + '?src=" + encodeURIComponent(highlights[i].playbacks[3].url) + "&resolution=" + resolution + "\'>" + highlights[i].headline + "</a><span class=\'tinytext\'> (<a href=\'" + highlights[i].playbacks[0].url + "\'>MP4</a>)</span></li>" } } else { modaltext += "No highlights available for this game.";}modaltext += "</ul>";highlightsModal.innerHTML = modaltext;modal.style.display = "block"} catch (e) { alert("Error processing highlights: " + e.message)}} function showhighlights(gamePk, gameDate) { makeGETRequest("/highlights?gamePk=" + gamePk + "&gameDate=" + gameDate, parsehighlightsresponse);return false} span.onclick = function() {modal.style.display = "none";}' + "\n"
+    body += '<script type="text/javascript">var modal = document.getElementById("myModal");var highlightsModal = document.getElementById("highlights");var span = document.getElementsByClassName("close")[0];function parsehighlightsresponse(responsetext) { try { var highlights = JSON.parse(responsetext);var modaltext = "<ul>"; if (highlights && highlights[0]) { for (var i = 0; i < highlights.length; i++) { modaltext += "<li><a href=\'' + link + '?highlight_src=" + encodeURIComponent(highlights[i].playbacks[3].url) + "&resolution=" + resolution + "\'>" + highlights[i].headline + "</a><span class=\'tinytext\'> (<a href=\'" + highlights[i].playbacks[0].url + "\'>MP4</a>)</span></li>" } } else { modaltext += "No highlights available for this game.";}modaltext += "</ul>";highlightsModal.innerHTML = modaltext;modal.style.display = "block"} catch (e) { alert("Error processing highlights: " + e.message)}} function showhighlights(gamePk, gameDate) { makeGETRequest("/highlights?gamePk=" + gamePk + "&gameDate=" + gameDate, parsehighlightsresponse);return false} span.onclick = function() {modal.style.display = "none";}' + "\n"
     body += 'window.onclick = function(event) { if (event.target == modal) { modal.style.display = "none"; } }</script>' + "\n"
 
     body += "</body></html>"
@@ -1270,9 +1269,8 @@ app.get('/embed.html', async function(req, res) {
   }
 
   let video_url = '/stream.m3u8'
-  if ( req.query.src && (req.query.src == multiview_url) ) {
+  if ( req.query.src ) {
     video_url = req.query.src
-    startFrom = 'Live'
   } else {
     let urlArray = req.url.split('?')
     if ( (urlArray.length == 2) ) {
@@ -1302,11 +1300,11 @@ app.get('/advanced.html', async function(req, res) {
 
   session.log('advanced embed request : ' + req.url)
 
-  delete req.headers.host
+  let server = 'http://' + req.headers.host
 
   let video_url = '/stream.m3u8'
-  if ( req.query.src && (req.query.src == multiview_url) ) {
-    video_url = multiview_url
+  if ( req.query.src ) {
+    video_url = req.query.src
   } else {
     let urlArray = req.url.split('?')
     if ( (urlArray.length == 2) ) {
@@ -1325,11 +1323,11 @@ app.get('/chromecast.html', async function(req, res) {
 
   session.log('chromecast request : ' + req.url)
 
-  delete req.headers.host
+  let server = 'http://' + req.headers.host
 
   let video_url = '/stream.m3u8'
-  if ( req.query.src && (req.query.src == multiview_url) ) {
-    video_url = multiview_url
+  if ( req.query.src ) {
+    video_url = req.query.src
   } else {
     let urlArray = req.url.split('?')
     if ( (urlArray.length == 2) ) {
@@ -1339,15 +1337,12 @@ app.get('/chromecast.html', async function(req, res) {
   }
   session.debuglog('chromecast src : ' + video_url)
 
-  // Include "server" with URL so it points to IP address (as Chromecast cannot resolve local domain names)
   res.redirect('https://chromecast.link#title=' + appname + '&content=' + encodeURIComponent(video_url))
 })
 
 // Listen for live channels.m3u request
 app.get('/channels.m3u', async function(req, res) {
   session.log('channels.m3u request : ' + req.url)
-
-  delete req.headers.host
 
   let mediaType = 'Video'
   if ( req.query.mediaType ) {
@@ -1362,6 +1357,8 @@ app.get('/channels.m3u', async function(req, res) {
   if ( req.query.excludeTeams ) {
     excludeTeams = req.query.excludeTeams.toUpperCase().split(',')
   }
+
+  let server = 'http://' + req.headers.host
 
   let resolution = 'best'
   if ( req.query.resolution ) {
@@ -1388,8 +1385,6 @@ app.get('/channels.m3u', async function(req, res) {
 app.get('/guide.xml', async function(req, res) {
   session.log('guide.xml request : ' + req.url)
 
-  delete req.headers.host
-
   let mediaType = 'Video'
   if ( req.query.mediaType ) {
     mediaType = req.query.mediaType
@@ -1404,6 +1399,8 @@ app.get('/guide.xml', async function(req, res) {
     excludeTeams = req.query.excludeTeams.toUpperCase().split(',')
   }
 
+  let server = 'http://' + req.headers.host
+
   var body = await session.getGuide(mediaType, includeTeams, excludeTeams, server)
 
   res.end(body)
@@ -1412,8 +1409,6 @@ app.get('/guide.xml', async function(req, res) {
 // Listen for image requests
 app.get('/image.svg', async function(req, res) {
   session.debuglog('image request : ' + req.url)
-
-  delete req.headers.host
 
   let teamId = 'MLB'
   if ( req.query.teamId ) {
@@ -1430,8 +1425,6 @@ app.get('/image.svg', async function(req, res) {
 app.get('/favicon.svg', async function(req, res) {
   session.debuglog('favicon request : ' + req.url)
 
-  delete req.headers.host
-
   var body = await session.getImage('MLB')
 
   res.writeHead(200, {'Content-Type': 'image/svg+xml'})
@@ -1444,8 +1437,6 @@ app.get('/highlights', async function(req, res) {
 
   try {
     session.log('highlights request : ' + req.url)
-
-    delete req.headers.host
 
     let highlightsData = ''
     if ( req.query.gamePk && req.query.gameDate ) {
@@ -1464,8 +1455,6 @@ app.get('/multiview', async function(req, res) {
 
   try {
     session.log('multiview request : ' + req.url)
-
-    delete req.headers.host
 
     try {
       ffmpeg_command.kill()
@@ -1703,12 +1692,12 @@ app.get('/kodi.strm', async function(req, res) {
   try {
     session.log('kodi.strm request : ' + req.url)
 
-    delete req.headers.host
+    let server = 'http://' + req.headers.host
 
     let video_url = '/stream.m3u8'
     let file_name = 'kodi'
-    if ( req.query.src && (req.query.src == multiview_url) ) {
-      video_url = multiview_url
+    if ( req.query.src ) {
+      video_url = req.query.src
     } else {
       let urlArray = req.url.split('?')
       if ( (urlArray.length == 2) ) {

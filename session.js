@@ -80,6 +80,13 @@ class sessionClass {
     }
   }
 
+  // Store the ports, used for generating URLs
+  setPorts(port, multiviewPort) {
+    this.data.port = port
+    this.data.multiviewPort = multiviewPort
+    this.save_session_data()
+  }
+
   // Set the scan_mode
   // "on" will return the sample stream for all live channels.m3u stream requests
   setScanMode(x) {
@@ -95,9 +102,9 @@ class sessionClass {
     this.save_session_data()
   }
 
-  // Set the multiview stream URL
-  setMultiviewStreamURL(url) {
-    this.data.multiviewStreamURL = url
+  // Set the multiview stream URL path
+  setMultiviewStreamURLPath(url_path) {
+    this.data.multiviewStreamURLPath = url_path
     this.save_session_data()
   }
 
@@ -256,11 +263,11 @@ class sessionClass {
   }
 
   createMediaCache(mediaId) {
-    if ( !this.data.media ) {
-      this.data.media = {}
+    if ( !this.cache.media ) {
+      this.cache.media = {}
     }
-    if ( !this.data.media[mediaId] ) {
-      this.data.media[mediaId] = {}
+    if ( !this.cache.media[mediaId] ) {
+      this.cache.media[mediaId] = {}
     }
   }
 
@@ -278,17 +285,21 @@ class sessionClass {
 
   cacheStreamURL(mediaId, streamURL) {
     this.createMediaCache(mediaId)
-    this.data.media[mediaId].streamURL = streamURL
-    this.data.media[mediaId].streamURLExpiry = Date.now() + 60*1000
-    this.save_session_data()
+    this.cache.media[mediaId].streamURL = streamURL
+    // Expire it in 1 minute
+    let seconds_to_expire = 60
+    this.cache.media[mediaId].streamURLExpiry = new Date(new Date().getTime() + seconds_to_expire * 1000)
+    this.save_cache_data()
   }
 
   markBlackoutError(mediaId) {
     this.createMediaCache(mediaId)
     this.log('saving blackout error to prevent repeated access attempts')
-    this.data.media[mediaId].blackout = true
-    this.data.media[mediaId].blackoutExpiry = Date.now() + 60*60*1000
-    this.save_session_data()
+    this.cache.media[mediaId].blackout = true
+    // Expire it in 1 hour
+    let seconds_to_expire = 60*60
+    this.cache.media[mediaId].blackoutExpiry = new Date(new Date().getTime() + seconds_to_expire * 1000)
+    this.save_cache_data()
   }
 
   log(msg) {
@@ -575,11 +586,11 @@ class sessionClass {
   // API call
   async getStreamURL(mediaId) {
     this.debuglog('getStreamURL from ' + mediaId)
-    if ( this.data.media && this.data.media[mediaId] && this.data.media[mediaId].streamURL && this.data.media[mediaId].streamURLExpiry && (Date.now() < this.data.media[mediaId].streamURLExpiry) ) {
+    if ( this.cache.media && this.cache.media[mediaId] && this.cache.media[mediaId].streamURL && this.cache.media[mediaId].streamURLExpiry && (Date.parse(this.cache.media[mediaId].streamURLExpiry) < new Date()) ) {
       this.debuglog('using cached streamURL')
-      return this.data.media[mediaId].streamURL
-    } else if ( this.data.media && this.data.media[mediaId] && this.data.media[mediaId].blackout && this.data.media[mediaId].blackoutExpiry && (Date.now() < this.data.media[mediaId].blackoutExpiry) ) {
-      this.log('mediaId previously blacked out, skipping')
+      return this.cache.media[mediaId].streamURL
+    } else if ( this.cache.media && this.cache.media[mediaId] && this.cache.media[mediaId].blackout && this.cache.media[mediaId].blackoutExpiry && (Date.parse(this.cache.media[mediaId].blackoutExpiry) < new Date()) ) {
+      this.log('mediaId recently blacked out, skipping')
     } else {
       let playbackURL = 'https://edge.svcs.mlb.com/media/' + mediaId + '/scenarios/browser~csai'
       let reqObj = {
@@ -768,45 +779,56 @@ class sessionClass {
   // API call
   async retrieveOktaAccessToken() {
     this.debuglog('retrieveOktaAccessToken')
-    let state = this.getRandomString(64)
-    let nonce = this.getRandomString(64)
-    let reqObj = {
-      url: 'https://ids.mlb.com/oauth2/aus1m088yK07noBfh356/v1/authorize',
-      headers: {
-        'user-agent': USER_AGENT,
-        'accept-encoding': 'identity'
-      },
-      qs: {
-        'client_id': await this.getOktaClientId() || this.halt('missing oktaClientId'),
-        'redirect_uri': 'https://www.mlb.com/login',
-        'response_type': 'id_token token',
-        'response_mode': 'okta_post_message',
-        'state': state,
-        'nonce': nonce,
-        'prompt': 'none',
-        'sessionToken': await this.getAuthnSessionToken() || this.halt('missing authnSessionToken'),
-        'scope': 'openid email'
-      }
-    }
-    var response = await this.httpGet(reqObj)
-    var str = response.toString()
-    this.debuglog('retrieveOktaAccessToken response : ' + str)
-    if ( str.match ) {
-      var errorParsed = str.match("data.error = 'login_required'")
-      if ( errorParsed && errorParsed[1] ) {
-        // Need to log in again
-        this.log('Logging in...')
-        this.data.authnSessionToken = null
-        this.save_session_data()
-        return false
-      } else {
-        var parsed = str.match("data.access_token = '([^']+)'")
-        if ( parsed && parsed[1] ) {
-          let oktaAccessToken = parsed[1].split('\\x2D').join('-')
-          this.debuglog('retrieveOktaAccessToken : ' + oktaAccessToken)
-          return oktaAccessToken
+    if ( !this.data.oktaAccessToken || !this.data.oktaAccessTokenExpiry || (Date.parse(this.data.oktaAccessTokenExpiry) < new Date()) ) {
+      this.debuglog('need to get new oktaAccessToken')
+      let state = this.getRandomString(64)
+      let nonce = this.getRandomString(64)
+      let reqObj = {
+        url: 'https://ids.mlb.com/oauth2/aus1m088yK07noBfh356/v1/authorize',
+        headers: {
+          'user-agent': USER_AGENT,
+          'accept-encoding': 'identity'
+        },
+        qs: {
+          'client_id': await this.getOktaClientId() || this.halt('missing oktaClientId'),
+          'redirect_uri': 'https://www.mlb.com/login',
+          'response_type': 'id_token token',
+          'response_mode': 'okta_post_message',
+          'state': state,
+          'nonce': nonce,
+          'prompt': 'none',
+          'sessionToken': await this.getAuthnSessionToken() || this.halt('missing authnSessionToken'),
+          'scope': 'openid email'
         }
       }
+      var response = await this.httpGet(reqObj)
+      var str = response.toString()
+      this.debuglog('retrieveOktaAccessToken response : ' + str)
+      if ( str.match ) {
+        var errorParsed = str.match("data.error = 'login_required'")
+        if ( errorParsed && errorParsed[1] ) {
+          // Need to log in again
+          this.log('Logging in...')
+          this.data.authnSessionToken = null
+          this.save_session_data()
+          return false
+        } else {
+          var parsed_token = str.match("data.access_token = '([^']+)'")
+          var parsed_expiry = str.match("data.expires_in = '([^']+)'")
+          if ( parsed_token && parsed_token[1] && parsed_expiry && parsed_expiry[1] ) {
+            let oktaAccessToken = parsed_token[1].split('\\x2D').join('-')
+            let oktaAccessTokenExpiry = parsed_expiry[1]
+            this.debuglog('retrieveOktaAccessToken : ' + oktaAccessToken)
+            this.debuglog('retrieveOktaAccessToken expires in : ' + oktaAccessTokenExpiry)
+            this.data.oktaAccessToken = oktaAccessToken
+            this.data.oktaAccessTokenExpiry = new Date(new Date().getTime() + oktaAccessTokenExpiry * 1000)
+            this.save_session_data()
+            return this.data.oktaAccessToken
+          }
+        }
+      }
+    } else {
+      return this.data.oktaAccessToken
     }
   }
 
@@ -1243,14 +1265,14 @@ class sessionClass {
         }
 
         // Multiview
-        if ( (mediaType == 'MLBTV') && (typeof this.data.multiviewStreamURL !== 'undefined') ) {
+        if ( (mediaType == 'MLBTV') && (typeof this.data.multiviewStreamURLPath !== 'undefined') ) {
           if ( (excludeTeams.length > 0) && excludeTeams.includes('MULTIVIEW') ) {
             // do nothing
           } else if ( (includeTeams.length == 0) || includeTeams.includes('MULTIVIEW') ) {
             let extraChannels = {}
             let channelid = mediaType + '.MULTIVIEW'
             let icon = server + '/image.svg?teamId=MLB'
-            let stream = this.data.multiviewStreamURL
+            let stream = server.replace(':' + this.data.port, ':' + this.data.multiviewPort) + this.data.multiviewStreamURLPath
             if ( pipe == 'true' ) {
               stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
             }
@@ -1769,6 +1791,7 @@ class sessionClass {
       let inning_offsets = [{start:broadcast_start_offset}]
       let event_offsets = [{start:0}]
       let last_event = 0
+      let default_event_duration = 15
 
       // Pad times by these amounts
       let pad_start = 0
@@ -1843,6 +1866,9 @@ class sessionClass {
               // Update the end time, if available
               if ( cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime ) {
                 this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime) - broadcast_start_timestamp) / 1000) + pad_end + skip_adjust
+              // Otherwise use the start time to estimate the end time
+              } else {
+                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) + this_pad_end + skip_adjust + default_event_duration
               }
               // Check if we have skipped a play event (indicating a break inside an at-bat), in which case push this event and start another one
               if ( (x > 0) && (actions[x] > (actions[x-1]+1)) && (typeof this_event.end !== 'undefined') ) {
@@ -1876,8 +1902,11 @@ class sessionClass {
               // If play event end time is available, set it and push this event
               if ( cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime ) {
                 this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime) - broadcast_start_timestamp) / 1000) + this_pad_end + skip_adjust
-                event_offsets.push(this_event)
+              // Otherwise use the start time to estimate the end time
+              } else {
+                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) + this_pad_end + skip_adjust + default_event_duration
               }
+              event_offsets.push(this_event)
             }
           }
         }
@@ -1919,6 +1948,7 @@ class sessionClass {
         }
         var response = await this.httpGet(reqObj)
         if ( response ) {
+          // disabled because it's very big!
           //this.debuglog(response)
           // break HTML into array based on table rows
           var rows = response.split('<tr>')
@@ -1995,7 +2025,7 @@ class sessionClass {
               }
             }
           }
-          this.debuglog(this.cache.bigInningSchedule)
+          this.debuglog(JSON.stringify(this.cache.bigInningSchedule))
 
           // Default cache period is 1 day from now
           let oneDayFromNow = new Date()
@@ -2118,7 +2148,7 @@ class sessionClass {
   // Get Big Inning stream URL
   async getBigInningStreamURL() {
     this.debuglog('getBigInningStreamURL')
-    if ( this.cache.bigInningStreamURL && this.cache.bigInningStreamURLExpiry && (Date.now() < this.cache.bigInningStreamURLExpiry) ) {
+    if ( this.cache.bigInningStreamURL && this.cache.bigInningURLExpiry && (currentDate < new Date(this.cache.bigInningURLCacheExpiry)) ) {
       this.log('using cached bigInningStreamURL')
       return this.cache.bigInningStreamURL
     } else {
@@ -2145,15 +2175,21 @@ class sessionClass {
           this.debuglog('getBigInningStreamURL response : ' + response)
           let obj = JSON.parse(response)
           if ( obj.success && (obj.success == true) ) {
+            this.debuglog('found bigInningStreamURL : ' + obj.data[0].value)
             this.cache.bigInningStreamURL = obj.data[0].value
-            this.debuglog('getBigInningStreamURL : ' + this.cache.bigInningStreamURL)
-            this.cache.bigInningStreamURLExpiry = Date.now() + 60*1000
+            this.save_cache_data()
             return this.cache.bigInningStreamURL
           } else {
             this.log('getBigInningStreamURL error')
             this.log(obj.errorCode)
             this.log(obj.message)
+            return
           }
+        } else if ( response.startsWith('#EXTM3U') ) {
+          this.debuglog('getBigInningStreamURL is bigInningURL : ' + playbackURL)
+          this.cache.bigInningStreamURL = playbackURL
+          this.save_cache_data()
+          return this.cache.bigInningStreamURL
         }
       }
     }
