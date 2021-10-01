@@ -147,23 +147,17 @@ multiview_app.listen(multiview_port)
 
 // Listen for stream requests
 app.get('/stream.m3u8', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
   try {
     session.log('stream.m3u8 request : ' + req.url)
-
-    if ( session.protection.content_protect ) {
-      if ( !req.query.content_protect || (req.query.content_protect != session.protection.content_protect) ) {
-        session.log('stream request rejected due to missing/invalid content_protect value')
-        res.end('')
-        return
-      }
-    }
 
     let mediaId
     let contentId
     let streamURL
     let options = {}
     let urlArray = req.url.split('?')
-    if ( (urlArray.length == 1) || ((session.data.scan_mode == 'on') && req.query.team) || (!req.query.src && !req.query.highlight_src && !req.query.type && !req.query.id && !req.query.mediaId && !req.query.contentId) ) {
+    if ( (urlArray.length == 1) || ((session.data.scan_mode == 'on') && req.query.team) || (!req.query.team && !req.query.src && !req.query.highlight_src && !req.query.type && !req.query.id && !req.query.mediaId && !req.query.contentId) ) {
       // load a sample encrypted HLS stream
       session.log('loading sample stream')
       options.resolution = 'adaptive'
@@ -333,6 +327,11 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         inning_half = VALID_INNING_HALF[1]
       }
 
+      var content_protect = ''
+      if ( session.protection.content_protect ) {
+        content_protect = '&content_protect=' + session.protection.content_protect
+      }
+
       // Some variables for controlling audio/video stream selection, if specified
       var video_track_matched = false
       var audio_track_matched = false
@@ -363,7 +362,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( audio_track_matched ) return
           if ( audio_url != '' ) {
             audio_track_matched = true
-            return '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="Alternate Audio",AUTOSELECT=YES,DEFAULT=YES,URI="' + audio_url + '"'
+            return '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="Alternate Audio",AUTOSELECT=YES,DEFAULT=YES,URI="' + audio_url + content_protect + '"'
           }
           if ( audio_track == 'none') return
           if ( (resolution == 'none') && (line.indexOf(',URI=') < 0) ) return
@@ -385,6 +384,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
                 if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
                 if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
                 if ( contentId ) newurl += '&contentId=' + contentId
+                newurl += content_protect
                 if ( resolution == 'none' ) {
                   audio_track_matched = true
                   return line.replace(parsed[0],'') + "\n" + '#EXT-X-STREAM-INF:BANDWIDTH=50000,CODECS="mp4a.40.2",AUDIO="aac"' + "\n" + newurl
@@ -430,6 +430,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
           if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
           if ( contentId ) newurl += '&contentId=' + contentId
+          newurl += content_protect
           return 'playlist?url='+newurl
         }
       })
@@ -453,7 +454,9 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
 
 // Listen for playlist requests
-app.get('/playlist', function(req, res) {
+app.get('/playlist', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
   session.debuglog('playlist request : ' + req.url)
 
   delete req.headers.host
@@ -477,6 +480,11 @@ app.get('/playlist', function(req, res) {
       var body = response.body.trim().split('\n')
       var key
       var iv
+
+      var content_protect = ''
+      if ( session.protection.content_protect ) {
+        content_protect = '&content_protect=' + session.protection.content_protect
+      }
 
       if ( (contentId) && ((inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0]))) {
         // If inning offsets don't exist, we'll force those options off
@@ -569,8 +577,8 @@ app.get('/playlist', function(req, res) {
 
         if (line[0] === '#') return line
 
-        if ( key ) return 'ts?url='+encodeURIComponent(url.resolve(u, line.trim()))+'&key='+encodeURIComponent(key)+'&iv='+encodeURIComponent(iv)
-        else return 'ts?url='+encodeURIComponent(url.resolve(u, line.trim()))
+        if ( key ) return 'ts?url='+encodeURIComponent(url.resolve(u, line.trim()))+'&key='+encodeURIComponent(key)+'&iv='+encodeURIComponent(iv) + content_protect
+        else return 'ts?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect
       })
       .filter(function(line) {
         return line
@@ -592,7 +600,9 @@ app.get('/playlist', function(req, res) {
 })
 
 // Listen for ts requests (video segments) and decode them
-app.get('/ts', function(req, res) {
+app.get('/ts', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
   session.debuglog('ts request : ' + req.url)
 
   delete req.headers.host
@@ -622,25 +632,29 @@ app.get('/ts', function(req, res) {
   })
 })
 
-// Protect pages by password
+// Protect pages by password, or content by content_protect url parameter
 async function protect(req, res) {
   if (argv.page_username && argv.page_password) {
-    const reject = () => {
-      res.setHeader('www-authenticate', 'Basic')
-      res.error(401, ' Not Authorized')
-      return false
-    }
+    if ( !session.protection.content_protect || !req.query.content_protect || (req.query.content_protect != session.protection.content_protect) ) {
+      if ( !session.protection.content_protect || !req.query.content_protect || !req.query.content_protect[0] || (req.query.content_protect[0] != session.protection.content_protect) ) {
+        const reject = () => {
+          res.setHeader('www-authenticate', 'Basic')
+          res.error(401, ' Not Authorized')
+          return false
+        }
 
-    const authorization = req.headers.authorization
+        const authorization = req.headers.authorization
 
-    if(!authorization) {
-      return reject()
-    }
+        if(!authorization) {
+          return reject()
+        }
 
-    const [username, password] = Buffer.from(authorization.replace('Basic ', ''), 'base64').toString().split(':')
+        const [username, password] = Buffer.from(authorization.replace('Basic ', ''), 'base64').toString().split(':')
 
-    if(! (username === argv.page_username && password === argv.page_password)) {
-      return reject()
+        if(! (username === argv.page_username && password === argv.page_password)) {
+          return reject()
+        }
+      }
     }
   }
   return true
@@ -1416,15 +1430,9 @@ app.get('/chromecast.html', async function(req, res) {
 
 // Listen for channels.m3u playlist request
 app.get('/channels.m3u', async function(req, res) {
-  session.log('channels.m3u request : ' + req.url)
+  if ( ! (await protect(req, res)) ) return
 
-  if ( session.protection.content_protect ) {
-    if ( !req.query.content_protect || (req.query.content_protect != session.protection.content_protect) ) {
-      session.log('playlist request rejected due to missing/invalid content_protect value')
-      res.end('')
-      return
-    }
-  }
+  session.log('channels.m3u request : ' + req.url)
 
   let mediaType = 'Video'
   if ( req.query.mediaType ) {
@@ -1465,15 +1473,9 @@ app.get('/channels.m3u', async function(req, res) {
 
 // Listen for guide.xml request
 app.get('/guide.xml', async function(req, res) {
-  session.log('guide.xml request : ' + req.url)
+  if ( ! (await protect(req, res)) ) return
 
-  if ( session.protection.content_protect ) {
-    if ( !req.query.content_protect || (req.query.content_protect != session.protection.content_protect) ) {
-      session.log('xml request rejected due to missing/invalid content_protect value')
-      res.end('')
-      return
-    }
-  }
+  session.log('guide.xml request : ' + req.url)
 
   let mediaType = 'Video'
   if ( req.query.mediaType ) {
@@ -1498,15 +1500,9 @@ app.get('/guide.xml', async function(req, res) {
 
 // Listen for image requests
 app.get('/image.svg', async function(req, res) {
-  session.debuglog('image request : ' + req.url)
+  if ( ! (await protect(req, res)) ) return
 
-  if ( session.protection.content_protect ) {
-    if ( !req.query.content_protect || (req.query.content_protect != session.protection.content_protect) ) {
-      session.debuglog('image request rejected due to missing/invalid content_protect value')
-      res.end('')
-      return
-    }
-  }
+  session.debuglog('image request : ' + req.url)
 
   let teamId = 'MLB'
   if ( req.query.teamId ) {
@@ -1521,15 +1517,9 @@ app.get('/image.svg', async function(req, res) {
 
 // Listen for favicon requests
 app.get('/favicon.svg', async function(req, res) {
-  session.debuglog('favicon request : ' + req.url)
+  if ( ! (await protect(req, res)) ) return
 
-  if ( session.protection.content_protect ) {
-    if ( !req.query.content_protect || (req.query.content_protect != session.protection.content_protect) ) {
-      session.debuglog('image request rejected due to missing/invalid content_protect value')
-      res.end('')
-      return
-    }
-  }
+  session.debuglog('favicon request : ' + req.url)
 
   var body = await session.getImage('MLB')
 
