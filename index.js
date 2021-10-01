@@ -163,7 +163,7 @@ app.get('/stream.m3u8', async function(req, res) {
     let streamURL
     let options = {}
     let urlArray = req.url.split('?')
-    if ( (urlArray.length == 1) || ((session.data.scan_mode == 'on') && req.query.team) || (!req.query.src && !req.query.highlight_src && !req.query.type && !req.query.mediaId && !req.query.contentId) ) {
+    if ( (urlArray.length == 1) || ((session.data.scan_mode == 'on') && req.query.team) || (!req.query.src && !req.query.highlight_src && !req.query.type && !req.query.id && !req.query.mediaId && !req.query.contentId) ) {
       // load a sample encrypted HLS stream
       session.log('loading sample stream')
       options.resolution = 'adaptive'

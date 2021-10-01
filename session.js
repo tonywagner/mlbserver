@@ -348,7 +348,7 @@ class sessionClass {
     try {
       fs.unlinkSync(CREDENTIALS_FILE)
     } catch(e){
-      this.halt('logout error : ' + e.message)
+      this.debuglog('credentials cannot be cleared or do not exist yet : ' + e.message)
     }
   }
 
@@ -357,7 +357,7 @@ class sessionClass {
       fs.unlinkSync(COOKIE_FILE)
       fs.unlinkSync(DATA_FILE)
     } catch(e){
-      this.halt('reset session error : ' + e.message)
+      this.debuglog('session cannot be cleared or does not exist yet : ' + e.message)
     }
   }
 
@@ -365,7 +365,7 @@ class sessionClass {
     try {
       fs.unlinkSync(CACHE_FILE)
     } catch(e){
-      this.halt('clear cache error : ' + e.message)
+      this.debuglog('cache cannot be cleared or does not exist yet : ' + e.message)
     }
   }
 
@@ -397,7 +397,7 @@ class sessionClass {
           })
         }
       } catch(e){
-        this.halt('clear multiview files error : ' + e.message)
+        this.debuglog('clear multiview files error : ' + e.message)
       }
     }
   }
@@ -884,8 +884,8 @@ class sessionClass {
           'content-type': 'application/json'
         },
         json: {
-          'username': this.credentials.account_username || this.halt('missing username'),
-          'password': this.credentials.account_password || this.halt('missing password'),
+          'username': this.credentials.account_username || this.halt('missing account username'),
+          'password': this.credentials.account_password || this.halt('missing account password'),
           'options': {
             'multiOptionalFactorEnroll': false,
             'warnBeforePasswordExpired': true
