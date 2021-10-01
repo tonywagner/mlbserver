@@ -1,6 +1,7 @@
 node_modules
 package-lock.json
 credentials.json
+protection.json
 cache
 data
 multiview

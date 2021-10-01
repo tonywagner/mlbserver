@@ -15,6 +15,7 @@ const CACHE_DIRECTORY = path.join(__dirname, 'cache')
 const MULTIVIEW_DIRECTORY_NAME = 'multiview'
 
 const CREDENTIALS_FILE = path.join(__dirname, 'credentials.json')
+const PROTECTION_FILE = path.join(__dirname, 'protection.json')
 const COOKIE_FILE = path.join(DATA_DIRECTORY, 'cookies.json')
 const DATA_FILE = path.join(DATA_DIRECTORY, 'data.json')
 const CACHE_FILE = path.join(CACHE_DIRECTORY, 'cache.json')
@@ -30,6 +31,8 @@ const BAM_TOKEN_URL = 'https://us.edge.bamgrid.com/token'
 // Default date handling
 const TODAY_UTC_HOURS = 8 // UTC hours (EST + 4) into tomorrow to still use today's date
 
+const TEAM_IDS = {'ARI':'109','ATL':'144','BAL':'110','BOS':'111','CHC':'112','CWS':'145','CIN':'113','CLE':'114','COL':'115','DET':'116','HOU':'117','KCR':'118','LAA':'108','LAD':'119','MIA':'146','MIL':'158','MIN':'142','NYM':'121','NYY':'147','OAK':'133','PHI':'143','PIT':'134','STL':'138','SDP':'135','SFG':'137','SEA':'136','TBR':'139','TEX':'140','TOR':'141','WSH':'120'}
+
 class sessionClass {
   // Initialize the class
   constructor(argv = {}) {
@@ -38,11 +41,37 @@ class sessionClass {
     // Read credentials from file, if present
     this.credentials = this.readFileToJson(CREDENTIALS_FILE) || {}
 
-    // Prompt for credentials if they don't exist
-    if ( !this.credentials.username || !this.credentials.password ) {
-      this.credentials.username = readlineSync.question('Enter username (email address): ')
-      this.credentials.password = readlineSync.question('Enter password: ', { hideEchoBack: true })
+    // Check if account credentials were provided and if they are different from the stored credentials
+    if ( argv.account_username && argv.account_password && ((argv.account_username != this.credentials.account_username) || (argv.account_password != this.credentials.account_password)) ) {
+      this.debuglog('updating account credentials')
+      this.credentials.account_username = argv.account_username
+      this.credentials.account_password = argv.account_password
       this.save_credentials()
+      this.clear_session_data()
+    } else {
+      // Prompt for credentials if they don't exist
+      if ( !this.credentials.account_username || !this.credentials.account_password ) {
+        this.debuglog('prompting for account credentials')
+        this.credentials.account_username = readlineSync.question('Enter account username (email address): ')
+        this.credentials.account_password = readlineSync.question('Enter account password: ', { hideEchoBack: true })
+        this.save_credentials()
+        this.clear_session_data()
+      }
+    }
+
+    // If page username/password protection is specified, retrieve or generate a random string of random length
+    // to protect non-page content (streams, playlists, guides, images)
+    this.protection = {}
+    if ( argv.page_username && argv.page_password ) {
+      // Read protection data from file, if present
+      this.protection = this.readFileToJson(PROTECTION_FILE) || {}
+
+      if ( !this.protection.content_protect ) {
+        this.log('generating new content protection value')
+        this.log('** YOU WILL NEED TO UPDATE ANY CONTENT URLS YOU HAVE COPIED OUTSIDE OF MLBSERVER **')
+        this.protection.content_protect = this.getRandomString(this.getRandomInteger(32,64))
+        this.save_protection()
+      }
     }
 
     // Create storage directories if they don't already exist
@@ -378,6 +407,11 @@ class sessionClass {
     this.debuglog('credentials saved to file')
   }
 
+  save_protection() {
+    this.writeJsonToFile(JSON.stringify(this.protection), PROTECTION_FILE)
+    this.debuglog('protection data saved to file')
+  }
+
   save_session_data() {
     this.createDirectory(DATA_DIRECTORY)
     this.writeJsonToFile(JSON.stringify(this.data), DATA_FILE)
@@ -394,6 +428,11 @@ class sessionClass {
     this.createDirectory(CACHE_DIRECTORY)
     this.writeJsonToFile(JSON.stringify(cache_data), path.join(CACHE_DIRECTORY, cache_name+'.json'))
     this.debuglog('cache file saved')
+  }
+
+  // Generate a random integer in a range
+  getRandomInteger(min, max) {
+    return Math.floor(Math.random() * (max - min) ) + min;
   }
 
   // Generate a random string of specified length
@@ -586,10 +625,10 @@ class sessionClass {
   // API call
   async getStreamURL(mediaId) {
     this.debuglog('getStreamURL from ' + mediaId)
-    if ( this.cache.media && this.cache.media[mediaId] && this.cache.media[mediaId].streamURL && this.cache.media[mediaId].streamURLExpiry && (Date.parse(this.cache.media[mediaId].streamURLExpiry) < new Date()) ) {
+    if ( this.cache.media && this.cache.media[mediaId] && this.cache.media[mediaId].streamURL && this.cache.media[mediaId].streamURLExpiry && (Date.parse(this.cache.media[mediaId].streamURLExpiry) > new Date()) ) {
       this.debuglog('using cached streamURL')
       return this.cache.media[mediaId].streamURL
-    } else if ( this.cache.media && this.cache.media[mediaId] && this.cache.media[mediaId].blackout && this.cache.media[mediaId].blackoutExpiry && (Date.parse(this.cache.media[mediaId].blackoutExpiry) < new Date()) ) {
+    } else if ( this.cache.media && this.cache.media[mediaId] && this.cache.media[mediaId].blackout && this.cache.media[mediaId].blackoutExpiry && (Date.parse(this.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
       this.log('mediaId recently blacked out, skipping')
     } else {
       let playbackURL = 'https://edge.svcs.mlb.com/media/' + mediaId + '/scenarios/browser~csai'
@@ -845,8 +884,8 @@ class sessionClass {
           'content-type': 'application/json'
         },
         json: {
-          'username': this.credentials.username || this.halt('missing username'),
-          'password': this.credentials.password || this.halt('missing password'),
+          'username': this.credentials.account_username || this.halt('missing username'),
+          'password': this.credentials.account_password || this.halt('missing password'),
           'options': {
             'multiOptionalFactorEnroll': false,
             'warnBeforePasswordExpired': true
@@ -887,18 +926,29 @@ class sessionClass {
 
       let mediaId = false
       let contentId = false
-      let cache_data = await this.getDayData(gameDate)
+
+      // First check if cached day data is available and non-expired
+      // if not, just get data for this team
+      let cache_data
+      let cache_name = gameDate
+      let cache_file = path.join(CACHE_DIRECTORY, gameDate+'.json')
+      let currentDate = new Date()
+      if ( fs.existsSync(cache_file) && this.cache && this.cache.dates && this.cache.dates[cache_name] && this.cache.dates[cache_name].dateCacheExpiry && (currentDate <= new Date(this.cache.dates[cache_name].dateCacheExpiry)) ) {
+        cache_data = await this.getDayData(gameDate)
+      } else {
+        cache_data = await this.getDayData(gameDate, team)
+      }
 
       if ( (cache_data.totalGamesInProgress > 0) || (mediaDate) ) {
         let nationalCount = 0
         for (var j = 0; j < cache_data.dates[0].games.length; j++) {
           if ( mediaId ) break
-          if ( cache_data.dates[0].games[j] && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.epg ) {
-            for (var k = 0; k < cache_data.dates[0].games[k].content.media.epg.length; k++) {
+          if ( (typeof cache_data.dates[0].games[j] !== 'undefined') && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.epg ) {
+            for (var k = 0; k < cache_data.dates[0].games[j].content.media.epg.length; k++) {
               if ( mediaId ) break
               if ( cache_data.dates[0].games[j].content.media.epg[k].title == mediaType ) {
                 for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
-                  if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal)) ) {
+                  if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
                     if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
                       if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && (cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') ) {
                         nationalCount += 1
@@ -1020,17 +1070,21 @@ class sessionClass {
   }
 
   // get data for a day, either from cache or an API call
-  async getDayData(dateString) {
+  async getDayData(dateString, team = false) {
     try {
-      this.debuglog('getDayData for ' + dateString)
-
       let cache_data
       let cache_name = dateString
-      let cache_file = path.join(CACHE_DIRECTORY, dateString+'.json')
+      let url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&&leagueId=103&contextTeamId='
+      if ( team ) {
+        cache_name = team.toUpperCase() + dateString
+        url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=' + TEAM_IDS[team.toUpperCase()] + '&startDate=' + dateString + '&endDate=' + dateString + '&gameType=&gamePk=&hydrate=team,game(content(media(epg)))'
+      }
+      this.debuglog('getDayData for ' + cache_name)
+      let cache_file = path.join(CACHE_DIRECTORY, cache_name+'.json')
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.dates || !this.cache.dates[cache_name] || !this.cache.dates[cache_name].dateCacheExpiry || (currentDate > new Date(this.cache.dates[cache_name].dateCacheExpiry)) ) {
         let reqObj = {
-          url: 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&&leagueId=103&contextTeamId=',
+          url: url,
           headers: {
             'User-agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
@@ -1043,7 +1097,7 @@ class sessionClass {
         if ( this.isValidJson(response) ) {
           //this.debuglog(response)
           cache_data = JSON.parse(response)
-          this.save_json_cache_file(dateString, cache_data)
+          this.save_json_cache_file(cache_name, cache_data)
 
           // Default cache period is 1 hour from now
           let oneHourFromNow = new Date()
@@ -1055,7 +1109,7 @@ class sessionClass {
           if ( dateString == today ) {
             let finals = false
             for (var i = 0; i < cache_data.dates[0].games.length; i++) {
-              if ( ((cache_data.dates[0].games[i].status.abstractGameState == 'Live') && (cache_data.dates[0].games[i].status.detailedState.indexOf('Suspended') != 0)) || ((cache_data.dates[0].games[i].status.startTimeTBD == true) && (cache_data.dates[0].games[i].status.abstractGameState != 'Final') && (cache_data.dates[0].games[i-1].status.abstractGameState == 'Final')) ) {
+              if ( ((cache_data.dates[0].games[i].status.abstractGameState == 'Live') && (cache_data.dates[0].games[i].status.detailedState.indexOf('Suspended') != 0)) || ((cache_data.dates[0].games[i].status.startTimeTBD == true) && (cache_data.dates[0].games[i].status.abstractGameState != 'Final') && (i > 0) && (cache_data.dates[0].games[i-1].status.abstractGameState == 'Final')) ) {
                 this.debuglog('setting cache expiry to 1 minute due to in progress games or upcoming TBD game')
                 currentDate.setMinutes(currentDate.getMinutes()+1)
                 cacheExpiry = currentDate
@@ -1216,18 +1270,21 @@ class sessionClass {
                         if ( channelMediaType == 'Video' ) {
                           stream += '&resolution=' + resolution
                         }
+                        if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
                         if ( pipe == 'true' ) {
                           stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
                         }
                         let icon = server
                         if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
                           icon += '/image.svg?teamId=MLB'
+                          if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
                           nationalChannels[channelid] = {}
                           nationalChannels[channelid].channellogo = icon
                           nationalChannels[channelid].stream = stream
                           nationalChannels[channelid].mediatype = mediaType
                         } else {
                           icon += '/image.svg?teamId=' + cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedSubType
+                          if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
                           channels[channelid] = {}
                           channels[channelid].channellogo = icon
                           channels[channelid].stream = stream
@@ -1252,7 +1309,9 @@ class sessionClass {
             let extraChannels = {}
             let channelid = mediaType + '.BIGINNING'
             let icon = server + '/image.svg?teamId=MLB'
+            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
             let stream = server + '/stream.m3u8?type=biginning&mediaType=Video&resolution=' + resolution
+            if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
             if ( pipe == 'true' ) {
               stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
             }
@@ -1272,6 +1331,7 @@ class sessionClass {
             let extraChannels = {}
             let channelid = mediaType + '.MULTIVIEW'
             let icon = server + '/image.svg?teamId=MLB'
+            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
             let stream = server.replace(':' + this.data.port, ':' + this.data.multiviewPort) + this.data.multiviewStreamURLPath
             if ( pipe == 'true' ) {
               stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
@@ -1359,6 +1419,7 @@ class sessionClass {
                         } else {
                           icon += '/image.svg?teamId=' + cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedSubType
                         }
+                        if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
                         let channelid = mediaType + '.' + team
                         channels[channelid] = {}
                         channels[channelid].name = channelid
@@ -1433,6 +1494,7 @@ class sessionClass {
             // do nothing
           } else if ( (includeTeams.length == 0) || includeTeams.includes('BIGINNING') ) {
             let icon = server + '/image.svg?teamId=MLB'
+            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
             let channelid = mediaType + '.BIGINNING'
             channels[channelid] = {}
             channels[channelid].name = channelid
@@ -1465,6 +1527,7 @@ class sessionClass {
             // do nothing
           } else if ( (includeTeams.length == 0) || includeTeams.includes('MULTIVIEW') ) {
             let icon = server + '/image.svg?teamId=MLB'
+            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
             let channelid = mediaType + '.MULTIVIEW'
             channels[channelid] = {}
             channels[channelid].name = channelid
@@ -1939,7 +2002,7 @@ class sessionClass {
         let reqObj = {
           url: 'https://www.mlb.com/live-stream-games/big-inning',
           headers: {
-            'User-Agent': this.USER_AGENT,
+            'User-Agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
             'Referer': 'https://www.mlb.com',
             'Accept-Encoding': 'gzip, deflate, br'
@@ -1998,7 +2061,7 @@ class sessionClass {
                   }
                   ampm = col[0].substring(col[0].length-2,col[0].length)
                   // convert hour to 24-hour format
-                  if ( ampm == 'PM' ) {
+                  if ( (ampm == 'PM') || ((hour == 12) && (ampm == 'AM')) ) {
                     hour += 12
                   }
                   // these times are EDT so add 4 for UTC
@@ -2062,7 +2125,7 @@ class sessionClass {
         let reqObj = {
           url: 'https://dapi.cms.mlbinfra.com/v2/content/en-us/vsmcontents/live-now-mlb-big-inning',
           headers: {
-            'User-Agent': this.USER_AGENT,
+            'User-Agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
             'Referer': 'https://www.mlb.com',
             'Content-Type': 'application/json',

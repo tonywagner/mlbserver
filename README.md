@@ -1,6 +1,6 @@
 # mlbserver
 
-Current version 2021.8.27
+Current version 2021.10.01
 
 Credit to https://github.com/tonycpsu/streamglob and https://github.com/mafintosh/hls-decryptor
 
@@ -18,22 +18,29 @@ mlbserver
 
 and follow the prompts. Load the resulting web URL in a browser to start using the server and to see more documentation.
 
-Additional command line options:
+Basic command line options:
 
 ```
 --port or -p (primary port to run on; defaults to 9999 if not specified)
---multiview_port or -m (port for multiview streaming; defaults to 1 more than primary port, or 10000)
---multiview_path or -a (where to create the folder for multiview encoded files; defaults to app directory)
---ffmpeg_path or -f (path to ffmpeg binary to use for multiview encoding; default downloads a binary using ffmpeg-static)
---ffmpeg_encoder or -a (ffmpeg video encoder to use for multiview; default is the software encoder libx264)
---ffmpeg_logging or -g (if present, logs all ffmpeg output -- useful for experimenting or troubleshooting)
---username or -u (username to protect pages; default is no protection)
---password or -w (password to protect pages; default is no protection)
 --debug or -d (false if not specified)
 --version or -v (returns package version number)
 --logout or -l (logs out and clears session)
 --session or -s (clears session)
 --cache or -c (clears cache)
+```
+
+Advanced command line options:
+
+```
+--account_username (email address, default will use stored credentials or prompt user to enter them)
+--account_password (default will use stored credentials or prompt user to enter them)
+--multiview_port (port for multiview streaming; defaults to 1 more than primary port, or 10000)
+--multiview_path (where to create the folder for multiview encoded files; defaults to app directory)
+--ffmpeg_path (path to ffmpeg binary to use for multiview encoding; default downloads a binary using ffmpeg-static)
+--ffmpeg_encoder (ffmpeg video encoder to use for multiview; default is the software encoder libx264)
+--ffmpeg_logging (if present, logs all ffmpeg output -- useful for experimenting or troubleshooting)
+--page_username (username to protect pages; default is no protection)
+--page_password (password to protect pages; default is no protection)
 ```
 
 You may want to experiment with different ffmpeg hardware encoders depending on your system as described at https://stackoverflow.com/a/50703794
