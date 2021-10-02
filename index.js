@@ -1089,6 +1089,7 @@ app.get('/', async function(req, res) {
                         }
                       }
                       querystring += content_protect_b
+                      multiviewquerystring += content_protect_b
                       body += teamabbr + ': <a href="' + thislink + querystring + '">' + station + '</a>'
                       if ( mediaType == 'MLBTV' ) {
                         body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
