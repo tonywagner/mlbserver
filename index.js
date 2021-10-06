@@ -57,6 +57,7 @@ const SAMPLE_STREAM_URL = 'https://www.radiantmediaplayer.com/media/rmp-segment/
 // --ffmpeg_logging (if present, logs all ffmpeg output -- useful for experimenting or troubleshooting)
 // --page_username (username to protect pages; default is no protection)
 // --page_password (password to protect pages; default is no protection)
+// --content_protect (specify the content protection key to include as a URL parameter, if page protection is enabled)
 var argv = minimist(process.argv, {
   alias: {
     p: 'port',
@@ -67,7 +68,7 @@ var argv = minimist(process.argv, {
     v: 'version'
   },
   boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version'],
-  string: ['port', 'account_username', 'account_password', 'multiview_port', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password']
+  string: ['port', 'account_username', 'account_password', 'multiview_port', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect']
 })
 
 // Version
@@ -343,9 +344,21 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         resolution = resolution.slice(0, 3)
       }
 
+      var segment_found = false
+
       body = body
       .map(function(line) {
         let newurl = ''
+
+        // Check if segment playlist instead of master
+        if ( line.startsWith('#EXTINF:') ) {
+          session.debuglog('segment playlist instead of master')
+          segment_found = true
+          return line
+        } else if ( segment_found ) {
+          segment_found = false
+          return 'ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect
+        }
 
         // Omit keyframe tracks
         if (line.indexOf('#EXT-X-I-FRAME-STREAM-INF:') === 0) {

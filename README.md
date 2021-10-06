@@ -1,6 +1,6 @@
 # mlbserver
 
-Current version 2021.10.3
+Current version 2021.10.6
 
 Credit to https://github.com/tonycpsu/streamglob and https://github.com/mafintosh/hls-decryptor
 
@@ -41,6 +41,7 @@ Advanced command line options:
 --ffmpeg_logging (if present, logs all ffmpeg output -- useful for experimenting or troubleshooting)
 --page_username (username to protect pages; default is no protection)
 --page_password (password to protect pages; default is no protection)
+--content_protect (specify the content protection key to include as a URL parameter, if page protection is enabled)
 ```
 
 You may want to experiment with different ffmpeg hardware encoders depending on your system as described at https://stackoverflow.com/a/50703794

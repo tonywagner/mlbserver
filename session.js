@@ -66,11 +66,19 @@ class sessionClass {
       // Read protection data from file, if present
       this.protection = this.readFileToJson(PROTECTION_FILE) || {}
 
-      if ( !this.protection.content_protect ) {
-        this.log('generating new content protection value')
-        this.log('** YOU WILL NEED TO UPDATE ANY CONTENT URLS YOU HAVE COPIED OUTSIDE OF MLBSERVER **')
-        this.protection.content_protect = this.getRandomString(this.getRandomInteger(32,64))
-        this.save_protection()
+      // Check if content_protect key was provided and if it is different from the stored one
+      if ( argv.content_protect && (argv.content_protect != this.protection.content_protect) ) {
+        this.log('using specified content protection key')
+        this.log('you may need to update any content URLs you have copied outside of mlbserver')
+        this.protection.content_protect = argv.content_protect
+      } else {
+        // Generate a content_protect key if it doesn't exist
+        if ( !this.protection.content_protect ) {
+          this.log('generating new content protection key')
+          this.log('** YOU WILL NEED TO UPDATE ANY CONTENT URLS YOU HAVE COPIED OUTSIDE OF MLBSERVER **')
+          this.protection.content_protect = this.getRandomString(this.getRandomInteger(32,64))
+          this.save_protection()
+        }
       }
     }
 
