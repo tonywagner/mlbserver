@@ -935,13 +935,13 @@ class sessionClass {
       let mediaId = false
       let contentId = false
 
-      // First check if cached day data is available and non-expired
+      // First check if national game or if cached day data is available and non-expired
       // if not, just get data for this team
       let cache_data
       let cache_name = gameDate
       let cache_file = path.join(CACHE_DIRECTORY, gameDate+'.json')
       let currentDate = new Date()
-      if ( fs.existsSync(cache_file) && this.cache && this.cache.dates && this.cache.dates[cache_name] && this.cache.dates[cache_name].dateCacheExpiry && (currentDate <= new Date(this.cache.dates[cache_name].dateCacheExpiry)) ) {
+      if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) || (fs.existsSync(cache_file) && this.cache && this.cache.dates && this.cache.dates[cache_name] && this.cache.dates[cache_name].dateCacheExpiry && (currentDate <= new Date(this.cache.dates[cache_name].dateCacheExpiry))) ) {
         cache_data = await this.getDayData(gameDate)
       } else {
         cache_data = await this.getDayData(gameDate, team)
@@ -958,7 +958,7 @@ class sessionClass {
                 for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
                   if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
                     if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
-                      if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && (cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') ) {
+                      if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason)) ) {
                         nationalCount += 1
                         let nationalArray = team.split('.')
                         if ( (nationalArray.length == 2) && (nationalArray[1] == nationalCount) ) {
@@ -1242,6 +1242,9 @@ class sessionClass {
                   for (var x = 0; x < cache_data.dates[i].games[j].content.media.epg[k].items.length; x++) {
                     if ( ((((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1)) && (((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].language != 'es'))) ) {
                       let teamType = cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType]
+                      if ( (mediaType == 'MLBTV') && cache_data.dates[i].games[j].gameUtils.isPostSeason ) {
+                        teamType = 'NATIONAL'
+                      }
                       let team
                       let opponent_team
                       if ( teamType == 'NATIONAL' ) {
@@ -1396,6 +1399,9 @@ class sessionClass {
                   for (var x = 0; x < cache_data.dates[i].games[j].content.media.epg[k].items.length; x++) {
                     if ( ((((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1)) && (((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].language != 'es'))) ) {
                       let teamType = cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType]
+                      if ( (mediaType == 'MLBTV') && cache_data.dates[i].games[j].gameUtils.isPostSeason ) {
+                        teamType = 'NATIONAL'
+                      }
                       let team
                       let opponent_team
                       if ( teamType == 'NATIONAL' ) {
@@ -1456,6 +1462,14 @@ class sessionClass {
                             description += 'TBD'
                           }
                           description += '. '
+                        }
+                        if ( teamType == 'NATIONAL' ) {
+                          if ( cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType] == 'AWAY' ) {
+                            description += cache_data.dates[i].games[j].teams['away'].team.teamName
+                          } else {
+                            description += cache_data.dates[i].games[j].teams['home'].team.teamName
+                          }
+                          description += ' alternate audio. '
                         }
 
                         let gameDate = new Date(cache_data.dates[i].games[j].gameDate)

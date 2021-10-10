@@ -1061,8 +1061,13 @@ app.get('/', async function(req, res) {
               if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
                 if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].language == language) ) {
                   let teamabbr
-                  if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL') ) {
+                  if ( (((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL')) || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason) ) {
                     teamabbr = 'NATIONAL'
+                    if ( (typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined' ) {
+                      if ( cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'AWAY' ) {
+                        teamabbr += '*'
+                      }
+                    }
                   } else {
                     teamabbr = hometeam
                     if ( cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'AWAY' ) {
@@ -1103,7 +1108,12 @@ app.get('/', async function(req, res) {
                       }
                       querystring += content_protect_b
                       multiviewquerystring += content_protect_b
-                      body += teamabbr + ': <a href="' + thislink + querystring + '">' + station + '</a>'
+                      if ( teamabbr.endsWith('*') ) {
+                        body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">* includes the away team\'s alternate audio, instead of the default home team\'s</span></span>'
+                      } else {
+                        body += teamabbr
+                      }
+                      body += ': <a href="' + thislink + querystring + '">' + station + '</a>'
                       if ( mediaType == 'MLBTV' ) {
                         body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
                       }
@@ -1126,7 +1136,12 @@ app.get('/', async function(req, res) {
                       body += ', '
                     }
                   } else {
-                    body += teamabbr + ': ' + station + ', '
+                    if ( teamabbr.endsWith('*') ) {
+                      body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">* will include the away team\'s alternate audio, instead of the default home team\'s</span></span>'
+                    } else {
+                      body += teamabbr
+                    }
+                    body += ': ' + station + ', '
                   }
                 }
               }
