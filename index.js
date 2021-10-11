@@ -1058,16 +1058,15 @@ app.get('/', async function(req, res) {
           if ( epgTitle == mediaType ) {
             let lastStation
             for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
+              // check that pay TV authentication isn't required
+              if ( (mediaType == 'MLBTV') && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[0].games[j].gameUtils.isFinal) && (cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                continue
+              }
               if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
                 if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].language == language) ) {
                   let teamabbr
                   if ( (((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL')) || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason) ) {
                     teamabbr = 'NATIONAL'
-                    if ( (typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined' ) {
-                      if ( cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'AWAY' ) {
-                        teamabbr += '*'
-                      }
-                    }
                   } else {
                     teamabbr = hometeam
                     if ( cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'AWAY' ) {
@@ -1108,12 +1107,7 @@ app.get('/', async function(req, res) {
                       }
                       querystring += content_protect_b
                       multiviewquerystring += content_protect_b
-                      if ( teamabbr.endsWith('*') ) {
-                        body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">* includes the away team\'s alternate audio, instead of the default home team\'s</span></span>'
-                      } else {
-                        body += teamabbr
-                      }
-                      body += ': <a href="' + thislink + querystring + '">' + station + '</a>'
+                      body += teamabbr + ': <a href="' + thislink + querystring + '">' + station + '</a>'
                       if ( mediaType == 'MLBTV' ) {
                         body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
                       }
@@ -1136,12 +1130,7 @@ app.get('/', async function(req, res) {
                       body += ', '
                     }
                   } else {
-                    if ( teamabbr.endsWith('*') ) {
-                      body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">* will include the away team\'s alternate audio, instead of the default home team\'s</span></span>'
-                    } else {
-                      body += teamabbr
-                    }
-                    body += ': ' + station + ', '
+                    body += teamabbr + ': ' + station + ', '
                   }
                 }
               }

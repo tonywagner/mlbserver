@@ -956,6 +956,10 @@ class sessionClass {
               if ( mediaId ) break
               if ( cache_data.dates[0].games[j].content.media.epg[k].title == mediaType ) {
                 for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
+                  // check that pay TV authentication isn't required
+                  if ( (mediaType == 'MLBTV') && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[0].games[j].gameUtils.isFinal) && (cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                    continue
+                  }
                   if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
                     if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
                       if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason)) ) {
@@ -1240,6 +1244,10 @@ class sessionClass {
                 let mediaTitle = cache_data.dates[i].games[j].content.media.epg[k].title
                 if ( mediaType == mediaTitle ) {
                   for (var x = 0; x < cache_data.dates[i].games[j].content.media.epg[k].items.length; x++) {
+                    // check that pay TV authentication isn't required
+                    if ( (mediaType == 'MLBTV') && ((cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[i].games[j].gameUtils.isFinal) && (cache_data.dates[i].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                      continue
+                    }
                     if ( ((((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1)) && (((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].language != 'es'))) ) {
                       let teamType = cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType]
                       if ( (mediaType == 'MLBTV') && cache_data.dates[i].games[j].gameUtils.isPostSeason ) {
@@ -1397,6 +1405,10 @@ class sessionClass {
                 let mediaTitle = cache_data.dates[i].games[j].content.media.epg[k].title
                 if ( mediaTitle == mediaType ) {
                   for (var x = 0; x < cache_data.dates[i].games[j].content.media.epg[k].items.length; x++) {
+                    // check that pay TV authentication isn't required
+                    if ( (mediaType == 'MLBTV') && ((cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[i].games[j].gameUtils.isFinal) && (cache_data.dates[i].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                      continue
+                    }
                     if ( ((((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1)) && (((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].language != 'es'))) ) {
                       let teamType = cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType]
                       if ( (mediaType == 'MLBTV') && cache_data.dates[i].games[j].gameUtils.isPostSeason ) {
