@@ -947,7 +947,7 @@ class sessionClass {
         cache_data = await this.getDayData(gameDate, team)
       }
 
-      if ( (cache_data.totalGamesInProgress > 0) || (mediaDate) ) {
+      //if ( (cache_data.totalGamesInProgress > 0) || (mediaDate) ) {
         let nationalCount = 0
         for (var j = 0; j < cache_data.dates[0].games.length; j++) {
           if ( mediaId ) break
@@ -957,32 +957,38 @@ class sessionClass {
               if ( cache_data.dates[0].games[j].content.media.epg[k].title == mediaType ) {
                 for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
                   // check that pay TV authentication isn't required
-                  if ( (mediaType == 'MLBTV') && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[0].games[j].gameUtils.isFinal) && (cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                  if ( (mediaType == 'MLBTV') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
                     continue
                   }
-                  if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
-                    if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
-                      if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason)) ) {
-                        nationalCount += 1
-                        let nationalArray = team.split('.')
-                        if ( (nationalArray.length == 2) && (nationalArray[1] == nationalCount) ) {
-                          this.debuglog('matched national event')
+                  if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
+                    if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason)) ) {
+                      nationalCount += 1
+                      let nationalArray = team.split('.')
+                      if ( (nationalArray.length == 2) && (nationalArray[1] == nationalCount) ) {
+                        this.debuglog('matched national event')
+                        if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
                           mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
                           contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
-                          break
+                        } else {
+                          this.log('event video not yet available')
                         }
-                      } else {
-                        let teamType = cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType].toLowerCase()
-                        if ( (teamType != 'national') && (team.toUpperCase() == cache_data.dates[0].games[j].teams[teamType].team.abbreviation) ) {
-                          if ( gameNumber && (gameNumber > 1) ) {
-                            this.debuglog('matched team for game number 1')
-                            gameNumber--
-                          } else {
-                            this.debuglog('matched team for event')
+                        break
+                      }
+                    } else {
+                      let teamType = cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType].toLowerCase()
+                      if ( (teamType != 'national') && (team.toUpperCase() == cache_data.dates[0].games[j].teams[teamType].team.abbreviation) ) {
+                        if ( gameNumber && (gameNumber > 1) ) {
+                          this.debuglog('matched team for game number 1')
+                          gameNumber--
+                        } else {
+                          this.debuglog('matched team for event')
+                          if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
                             mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
                             contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
-                            break
+                          } else {
+                            this.log('event video not yet available')
                           }
+                          break
                         }
                       }
                     }
@@ -991,7 +997,7 @@ class sessionClass {
               }
             }
           }
-        }
+        //}
 
         if (mediaId) {
           return { mediaId, contentId }
@@ -1245,7 +1251,7 @@ class sessionClass {
                 if ( mediaType == mediaTitle ) {
                   for (var x = 0; x < cache_data.dates[i].games[j].content.media.epg[k].items.length; x++) {
                     // check that pay TV authentication isn't required
-                    if ( (mediaType == 'MLBTV') && ((cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[i].games[j].gameUtils.isFinal) && (cache_data.dates[i].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                    if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
                       continue
                     }
                     if ( ((((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1)) && (((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].language != 'es'))) ) {
@@ -1403,10 +1409,10 @@ class sessionClass {
             if ( cache_data.dates[i].games[j].content && cache_data.dates[i].games[j].content.media && cache_data.dates[i].games[j].content.media.epg ) {
               for (var k = 0; k < cache_data.dates[i].games[j].content.media.epg.length; k++) {
                 let mediaTitle = cache_data.dates[i].games[j].content.media.epg[k].title
-                if ( mediaTitle == mediaType ) {
+                if ( mediaType == mediaTitle ) {
                   for (var x = 0; x < cache_data.dates[i].games[j].content.media.epg[k].items.length; x++) {
                     // check that pay TV authentication isn't required
-                    if ( (mediaType == 'MLBTV') && ((cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[i].games[j].gameUtils.isFinal) && (cache_data.dates[i].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                    if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
                       continue
                     }
                     if ( ((((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1)) && (((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].language != 'es'))) ) {
