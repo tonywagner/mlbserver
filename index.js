@@ -37,7 +37,7 @@ const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
 const VALID_SKIP = [ 'off', 'breaks', 'pitches' ]
 const VALID_FORCE_VOD = [ 'off', 'on' ]
 
-const SAMPLE_STREAM_URL = 'https://www.radiantmediaplayer.com/media/rmp-segment/bbb-abr-aes/playlist.m3u8'
+const SAMPLE_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
 
 // Basic command line arguments, if specified:
 // --port or -p (primary port to run on; defaults to 9999 if not specified)
@@ -117,8 +117,8 @@ var appname = path.basename(__dirname)
 // Multiview server variables
 var hls_base = 'multiview'
 var multiview_stream_name = 'master.m3u8'
-if ( session.protection.content_protect ) multiview_stream_name += '?content_protect=' + session.protection.content_protect
 var multiview_url_path = '/' + hls_base + '/' + multiview_stream_name
+if ( session.protection.content_protect ) multiview_url_path += '?content_protect=' + session.protection.content_protect
 session.setMultiviewStreamURLPath(multiview_url_path)
 var ffmpeg_command
 var ffmpeg_status = false
@@ -163,6 +163,7 @@ app.get('/stream.m3u8', async function(req, res) {
       session.log('loading sample stream')
       options.resolution = 'adaptive'
       streamURL = SAMPLE_STREAM_URL
+      options.referer = 'https://hls-js.netlify.app/'
     } else {
       if ( req.query.resolution && (options.resolution == 'best') ) {
         options.resolution = VALID_RESOLUTIONS[1]
@@ -240,6 +241,11 @@ app.get('/stream.m3u8', async function(req, res) {
         }
       }
 
+      if ( req.query.referer ) {
+        options.referer = req.query.referer
+        session.debuglog('sending referer : ' + options.referer)
+      }
+
       getMasterPlaylist(streamURL, req, res, options)
     } else {
       session.log('failed to get streamURL : ' + req.url)
@@ -307,12 +313,39 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
   session.debuglog('getMasterPlaylist of streamURL : ' + streamURL)
   var req = function () {
     var headers = {}
+    var referer = false
+    var referer_parameter = ''
+    if ( options.referer ) {
+      referer = decodeURIComponent(options.referer)
+      headers.referer = referer
+      session.debuglog('found stream referer  : ' + referer)
+      referer_parameter = '&referer=' + encodeURIComponent(options.referer)
+    }
     requestRetry(streamURL, headers, function(err, response) {
       if (err) return res.error(err)
 
       session.debuglog(response.body)
 
       var body = response.body.trim().split('\n')
+
+      // check if HLS
+      let hls_detected = false
+      for (var i=0; i<body.length; i++) {
+        if ( body[i] == '#EXTM3U' ) {
+          session.debuglog('hls detected')
+          hls_detected = true
+          break
+        } else if ( body[i] == '' ) {
+          session.debuglog('skipping blank lines at beginning of file')
+          continue
+        } else {
+          break
+        }
+      }
+      if ( !hls_detected ) {
+        session.log('not a valid hls stream')
+        return
+      }
 
       let resolution = options.resolution || VALID_RESOLUTIONS[0]
       let audio_track = options.audio_track || VALID_AUDIO_TRACKS[0]
@@ -344,6 +377,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         }
       }
 
+      var segment_playlist = false
       var segment_found = false
 
       body = body
@@ -352,12 +386,15 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
         // Check if segment playlist instead of master
         if ( line.startsWith('#EXTINF:') ) {
-          session.debuglog('segment playlist instead of master')
+          if ( !segment_playlist ) {
+            session.debuglog('segment playlist instead of master')
+            segment_playlist = true
+          }
           segment_found = true
           return line
         } else if ( segment_found ) {
           segment_found = false
-          return 'ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect
+          return 'ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect + referer_parameter
         }
 
         // Omit keyframe tracks
@@ -375,7 +412,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( audio_track_matched ) return
           if ( audio_url != '' ) {
             audio_track_matched = true
-            return '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="Alternate Audio",AUTOSELECT=YES,DEFAULT=YES,URI="' + audio_url + content_protect + '"'
+            return '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="Alternate Audio",AUTOSELECT=YES,DEFAULT=YES,URI="' + audio_url + content_protect + referer_parameter + '"'
           }
           if ( audio_track == 'none') return
           if ( (resolution == 'none') && (line.indexOf(',URI=') < 0) ) return
@@ -397,7 +434,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
                 if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
                 if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
                 if ( contentId ) newurl += '&contentId=' + contentId
-                newurl += content_protect
+                newurl += content_protect + referer_parameter
                 if ( resolution == 'none' ) {
                   audio_track_matched = true
                   return line.replace(parsed[0],'') + "\n" + '#EXT-X-STREAM-INF:BANDWIDTH=50000,CODECS="mp4a.40.2",AUDIO="aac"' + "\n" + newurl
@@ -443,7 +480,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
           if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
           if ( contentId ) newurl += '&contentId=' + contentId
-          newurl += content_protect
+          newurl += content_protect + referer_parameter
           return 'playlist?url='+newurl
         }
       })
@@ -477,6 +514,14 @@ app.get('/playlist', async function(req, res) {
   var u = req.query.url
   session.debuglog('playlist url : ' + u)
 
+  var referer = false
+  var referer_parameter = ''
+  if ( req.query.referer ) {
+    referer = decodeURIComponent(req.query.referer)
+    session.debuglog('found playlist referer : ' + referer)
+    referer_parameter = '&referer=' + encodeURIComponent(req.query.referer)
+  }
+
   var force_vod = req.query.force_vod || VALID_FORCE_VOD[0]
   var inning_half = req.query.inning_half || VALID_INNING_HALF[0]
   var inning_number = req.query.inning_number || VALID_INNING_NUMBER[0]
@@ -485,6 +530,9 @@ app.get('/playlist', async function(req, res) {
 
   var req = function () {
     var headers = {}
+    if ( referer ) {
+      headers.referer = referer
+    }
     requestRetry(u, headers, function(err, response) {
       if (err) return res.error(err)
 
@@ -517,6 +565,9 @@ app.get('/playlist', async function(req, res) {
 
       body = body
       .map(function(line) {
+        // Skip blank lines
+        if (line.trim() == '') return null
+
         if ( ((skip != 'off') || (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0])) && (typeof session.temp_cache[contentId] !== 'undefined') && (typeof session.temp_cache[contentId].inning_offsets !== 'undefined') ) {
           if ( skip_next ) {
             skip_next = false
@@ -579,19 +630,28 @@ app.get('/playlist', async function(req, res) {
         }
 
         if (line.indexOf('-KEY:METHOD=AES-128') > 0) {
+          session.debuglog('key line : ' + line)
           var parsed = line.match(/URI="([^"]+)"(?:,IV=(.+))?$/)
           if ( parsed ) {
             if ( parsed[1].substr(0,4) == 'http' ) key = parsed[1]
             else key = url.resolve(u, parsed[1])
+            session.debuglog('found key : ' + key)
+            if ( key.startsWith('data:;base64,') ) {
+              let newparsed = key.split(',')
+              key = newparsed[1]
+              session.debuglog('found new key : ' + key)
+            }
             if (parsed[2]) iv = parsed[2].slice(2).toLowerCase()
           }
           return null
+        } else {
+          session.debuglog('not key line : ' + line)
         }
 
         if (line[0] === '#') return line
 
-        if ( key ) return 'ts?url='+encodeURIComponent(url.resolve(u, line.trim()))+'&key='+encodeURIComponent(key)+'&iv='+encodeURIComponent(iv) + content_protect
-        else return 'ts?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect
+        if ( key ) return 'ts?url='+encodeURIComponent(url.resolve(u, line.trim()))+'&key='+encodeURIComponent(key)+'&iv='+encodeURIComponent(iv) + content_protect + referer_parameter
+        else return 'ts?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter
       })
       .filter(function(line) {
         return line
@@ -625,23 +685,40 @@ app.get('/ts', async function(req, res) {
 
   var headers = {encoding:null}
 
+  if ( req.query.referer ) {
+    headers.referer = decodeURIComponent(req.query.referer)
+    session.debuglog('found segment referer : ' + req.query.referer)
+  }
+
   requestRetry(u, headers, function(err, response) {
     if (err) return res.error(err)
     if (!req.query.key) return respond(response, res, response.body)
 
     //var ku = url.resolve(manifest, req.query.key)
     var ku = req.query.key
-    getKey(ku, headers, function(err, key) {
-      if (err) return res.error(err)
-
+    if ( ku.substr(0,4) != 'http' ) {
       var iv = Buffer.from(req.query.iv, 'hex')
       session.debuglog('iv : 0x'+req.query.iv)
+
+      let key = Buffer.from(ku, "base64")
 
       var dc = crypto.createDecipheriv('aes-128-cbc', key, iv)
       var buffer = Buffer.concat([dc.update(response.body), dc.final()])
 
       respond(response, res, buffer)
-    })
+    } else {
+      getKey(ku, headers, function(err, key) {
+        if (err) return res.error(err)
+
+        var iv = Buffer.from(req.query.iv, 'hex')
+        session.debuglog('iv : 0x'+req.query.iv)
+
+        var dc = crypto.createDecipheriv('aes-128-cbc', key, iv)
+        var buffer = Buffer.concat([dc.update(response.body), dc.final()])
+
+        respond(response, res, buffer)
+      })
+    }
   })
 })
 
@@ -871,6 +948,8 @@ app.get('/', async function(req, res) {
       body += 'onclick="scores=\'' + VALID_SCORES[i] + '\';reload()">' + VALID_SCORES[i] + '</button> '
     }
     body += '</p>' + "\n"
+
+    body += '<p><span class="tooltip tinytext">* indicates a free game<span class="tooltiptext">Free games are available to anyone with an account, no subscription necessary. Blackouts still apply.</span></span></p>' + "\n"
 
     body += "<table>" + "\n"
 
@@ -1113,6 +1192,9 @@ app.get('/', async function(req, res) {
                       }
                     }
                     let station = cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters
+                    if ( cache_data.dates[0].games[j].content.media.freeGame ) {
+                      station += '*'
+                    }
                     if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal ) {
                       game_started = true
                       let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
@@ -1791,7 +1873,6 @@ function start_multiview_stream(streams, sync, dvr, faster, audio_url, audio_url
       ffmpeg_command.addOutputOption('-c:v', 'copy')
     }
     ffmpeg_command.addOutputOption('-c:a', 'aac')
-    .addOutputOption('-strict', 'experimental')
     .addOutputOption('-sn')
     .addOutputOption('-t', '6:00:00')
     .addOutputOption('-f', 'hls')
