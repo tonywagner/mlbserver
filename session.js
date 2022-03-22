@@ -495,12 +495,13 @@ class sessionClass {
     }
     if ( opts.referer ) {
       opts.headers['Referer'] = opts.referer
+      delete opts.headers.Authorization
     }
     this.request(u, opts, cb)
     .catch(function(e) {
       let curDate = new Date()
       console.error(curDate.toLocaleString() + ' stream video failed on url : ' + u)
-      console.error(curDate.toLocaleString() + ' stream video failed with error : ' + e.message)
+      console.error(curDate.toLocaleString() + ' stream video failed with error : ' + e.message.toString())
       if ( tries == 1 ) process.exit(1)
     })
   }

@@ -1,6 +1,6 @@
 # mlbserver
 
-Current version 2022.03.21
+Current version 2022.03.22
 
 Credit to https://github.com/tonycpsu/streamglob and https://github.com/mafintosh/hls-decryptor
 

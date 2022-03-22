@@ -72,7 +72,9 @@ var argv = minimist(process.argv, {
 })
 
 // Version
-if (argv.version) return console.log(require('./package').version)
+var version = require('./package').version
+console.log('Version ' + version)
+if (argv.version) return
 
 // Declare a session, pass arguments to it
 var session = new sessionClass(argv)
@@ -275,6 +277,11 @@ var getKey = function(url, headers, cb) {
   })
 }
 
+function getOriginFromURL(url) {
+  let pathArray = url.split('/')
+  return pathArray[0] + '//' + pathArray[2]
+}
+
 // Default respond function, for adjusting content-length and updating CORS headers
 var respond = function(proxy, res, body) {
   delete proxy.headers['content-length']
@@ -318,6 +325,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
     if ( options.referer ) {
       referer = decodeURIComponent(options.referer)
       headers.referer = referer
+      headers.origin = getOriginFromURL(referer)
       session.debuglog('found stream referer  : ' + referer)
       referer_parameter = '&referer=' + encodeURIComponent(options.referer)
     }
@@ -339,6 +347,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           session.debuglog('skipping blank lines at beginning of file')
           continue
         } else {
+          session.debuglog(body[i])
           break
         }
       }
@@ -532,6 +541,7 @@ app.get('/playlist', async function(req, res) {
     var headers = {}
     if ( referer ) {
       headers.referer = referer
+      headers.origin = getOriginFromURL(referer)
     }
     requestRetry(u, headers, function(err, response) {
       if (err) return res.error(err)
@@ -539,6 +549,27 @@ app.get('/playlist', async function(req, res) {
       //session.debuglog(response.body)
 
       var body = response.body.trim().split('\n')
+
+      // check if HLS
+      let hls_detected = false
+      for (var i=0; i<body.length; i++) {
+        if ( body[i] == '#EXTM3U' ) {
+          session.debuglog('hls detected')
+          hls_detected = true
+          break
+        } else if ( body[i] == '' ) {
+          session.debuglog('skipping blank lines at beginning of file')
+          continue
+        } else {
+          session.debuglog(body[i])
+          break
+        }
+      }
+      if ( !hls_detected ) {
+        session.log('not a valid hls stream')
+        return
+      }
+
       var key
       var iv
 
@@ -644,8 +675,6 @@ app.get('/playlist', async function(req, res) {
             if (parsed[2]) iv = parsed[2].slice(2).toLowerCase()
           }
           return null
-        } else {
-          session.debuglog('not key line : ' + line)
         }
 
         if (line[0] === '#') return line
@@ -686,8 +715,10 @@ app.get('/ts', async function(req, res) {
   var headers = {encoding:null}
 
   if ( req.query.referer ) {
-    headers.referer = decodeURIComponent(req.query.referer)
     session.debuglog('found segment referer : ' + req.query.referer)
+    referer = decodeURIComponent(req.query.referer)
+    headers.referer = referer
+    headers.origin = getOriginFromURL(referer)
   }
 
   requestRetry(u, headers, function(err, response) {
@@ -1403,6 +1434,9 @@ app.get('/', async function(req, res) {
     body += '<p><span class="tooltip">Sample video<span class="tooltiptext">A sample stream. Useful for testing and troubleshooting.</span></span>: <a href="/embed.html' + content_protect_a + '">Embed</a> | <a href="/stream.m3u8' + content_protect_a + '">Stream</a> | <a href="/chromecast.html' + content_protect_a + '">Chromecast</a> | <a href="/advanced.html' + content_protect_a + '">Advanced</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Bookmarklets for MLB.com<span class="tooltiptext">If you watch at MLB.com, drag these bookmarklets to your bookmarks toolbar and use them to hide parts of the interface.</span></span>: <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}})();">Boxscore</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Scoreboard</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Linescore</a> | <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">All</a></p>' + "\n"
+
+    // Print version
+    body += '<p class="tinytext">Version ' + version + '</p>' + "\n"
 
     // Datepicker functions
     body += '<script>var datePicker=document.getElementById("gameDate");function changeDate(e){date=datePicker.value;reload()}function removeDate(e){datePicker.removeEventListener("change",changeDate,false);datePicker.addEventListener("blur",changeDate,false);if(e.keyCode===13){date=datePicker.value;reload()}}datePicker.addEventListener("change",changeDate,false);datePicker.addEventListener("keypress",removeDate,false)</script>' + "\n"
