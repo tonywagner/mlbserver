@@ -384,7 +384,7 @@ class sessionClass {
   clear_multiview_files() {
     try {
       if ( this.multiview_path ) {
-        fs.rmdir(this.multiview_path, { recursive: true }, (err) => {
+        fs.rm(this.multiview_path, { recursive: true }, (err) => {
           if (err) throw err;
 
           this.createDirectory(this.multiview_path)
@@ -1066,7 +1066,7 @@ class sessionClass {
           // finally save the setting
           this.setHighlightsCacheExpiry(cache_name, cacheExpiry)
         } else {
-          this.log('error : invalid json from url ' + getObj.url)
+          this.log('error : invalid json from url ' + reqObj.url)
         }
       } else {
         this.debuglog('using cached highlight data')
@@ -1162,7 +1162,7 @@ class sessionClass {
           // finally save the setting
           this.setDateCacheExpiry(cache_name, cacheExpiry)
         } else {
-          this.log('error : invalid json from url ' + getObj.url)
+          this.log('error : invalid json from url ' + reqObj.url)
         }
       } else {
         this.debuglog('using cached date data')
@@ -1215,7 +1215,7 @@ class sessionClass {
           this.cache.weekCacheExpiry = nextDate
           this.save_cache_data()
         } else {
-          this.log('error : invalid json from url ' + getObj.url)
+          this.log('error : invalid json from url ' + reqObj.url)
         }
       } else {
         this.debuglog('using cached channel data')
@@ -1834,7 +1834,7 @@ class sessionClass {
           // finally save the setting
           this.setAiringsCacheExpiry(cache_name, cacheExpiry)
         } else {
-          this.log('error : invalid json from url ' + getObj.url)
+          this.log('error : invalid json from url ' + reqObj.url)
         }
       } else {
         this.debuglog('using cached airings data')
@@ -1897,7 +1897,7 @@ class sessionClass {
           // finally save the setting
           this.setGamedayCacheExpiry(cache_name, cacheExpiry)
         } else {
-          this.log('error : invalid response from url ' + getObj.url)
+          this.log('error : invalid response from url ' + reqObj.url)
         }
       } else {
         this.debuglog('using cached gameday data')
@@ -2228,7 +2228,7 @@ class sessionClass {
 
           this.save_cache_data()
         } else {
-          this.log('error : invalid response from url ' + getObj.url)
+          this.log('error : invalid response from url ' + reqObj.url)
         }
       } else {
         this.debuglog('using cached big inning schedule')
@@ -2280,7 +2280,7 @@ class sessionClass {
           this.cache.eventURLCacheExpiry = cacheExpiry
           this.save_cache_data()
         } else {
-          this.log('error : invalid json from url ' + getObj.url)
+          this.log('error : invalid json from url ' + reqObj.url)
           return
         }
       } else {
