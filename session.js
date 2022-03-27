@@ -82,9 +82,8 @@ class sessionClass {
       }
     }
 
-    // Create storage directories if they don't already exist
+    // Create storage directory if it doesn't already exist
     this.createDirectory(DATA_DIRECTORY)
-    this.createFile(COOKIE_FILE)
 
     // Set multiview path
     if ( argv.multiview_path ) {
@@ -95,6 +94,16 @@ class sessionClass {
       this.multiview_path = path.join(__dirname, MULTIVIEW_DIRECTORY_NAME)
     }
     this.createDirectory(this.multiview_path)
+
+    // Create cookie storage file if it doesn't already exist
+    this.createFile(COOKIE_FILE)
+    // Verify its contents are valid
+    let cookieStr = fs.readFileSync(COOKIE_FILE)
+    if ( (cookieStr != '') && !this.isValidJson(cookieStr) ) {
+      this.log('invalid cookie storage file contents, resetting')
+      fs.unlinkSync(COOKIE_FILE)
+      this.createFile(COOKIE_FILE)
+    }
 
     // Set up http requests with the cookie jar
     this.request = require('request-promise')
@@ -384,29 +393,18 @@ class sessionClass {
   clear_multiview_files() {
     try {
       if ( this.multiview_path ) {
-        fs.rm(this.multiview_path, { recursive: true }, (err) => {
-          if (err) throw err;
+        fs.readdir(this.multiview_path, (err, files) => {
+          if (err) throw err
 
-          this.createDirectory(this.multiview_path)
+          for (const file of files) {
+            fs.unlink(path.join(this.multiview_path, file), err => {
+              if (err) throw err
+            })
+          }
         })
       }
     } catch(e){
-      this.debuglog('recursive clear multiview files error: ' + e.message)
-      try {
-        if ( this.multiview_path ) {
-          fs.readdir(this.multiview_path, (err, files) => {
-            if (err) throw err
-
-            for (const file of files) {
-              fs.unlink(path.join(this.multiview_path, file), err => {
-                if (err) throw err
-              })
-            }
-          })
-        }
-      } catch(e){
-        this.debuglog('clear multiview files error : ' + e.message)
-      }
+      this.debuglog('clear multiview files error : ' + e.message)
     }
   }
 
@@ -565,17 +563,25 @@ class sessionClass {
       gzip: true
     }
     var response = await this.httpGet(reqObj)
-    // disabled because it's very big!
-    //this.debuglog('getApiKeys response : ' + response)
-    var parsed = response.match('"x-api-key","value":"([^"]+)"')
-    if ( parsed[1] ) {
-      this.data.xApiKey = parsed[1]
-      this.save_session_data()
-    }
-    parsed = response.match('"clientApiKey":"([^"]+)"')
-    if ( parsed[1] ) {
-      this.data.clientApiKey = parsed[1]
-      this.save_session_data()
+    if ( response ) {
+      // disabled because it's very big!
+      //this.debuglog('getApiKeys response : ' + response)
+      var parsed = response.match('"x-api-key","value":"([^"]+)"')
+      if ( parsed[1] ) {
+        this.data.xApiKey = parsed[1]
+        this.save_session_data()
+      } else {
+        this.log('getApiKeys xApiKey parse failure')
+      }
+      parsed = response.match('"clientApiKey":"([^"]+)"')
+      if ( parsed[1] ) {
+        this.data.clientApiKey = parsed[1]
+        this.save_session_data()
+      } else {
+        this.log('getApiKeys clientApiKey parse failure')
+      }
+    } else {
+      this.log('getApiKeys response failure')
     }
   }
 
@@ -594,13 +600,19 @@ class sessionClass {
         gzip: true
       }
       var response = await this.httpGet(reqObj)
-      // disabled because it's very big!
-      //this.debuglog('getOktaClientId response : ' + response)
-      var parsed = response.match('production:{clientId:"([^"]+)",')
-      if ( parsed[1] ) {
-        this.data.oktaClientId = parsed[1]
-        this.save_session_data()
-        return this.data.oktaClientId
+      if ( response ) {
+        // disabled because it's very big!
+        //this.debuglog('getOktaClientId response : ' + response)
+        var parsed = response.match('production:{clientId:"([^"]+)",')
+        if ( parsed[1] ) {
+          this.data.oktaClientId = parsed[1]
+          this.save_session_data()
+          return this.data.oktaClientId
+        } else {
+          this.log('getOktaClientId parse failure')
+        }
+      } else {
+        this.log('getOktaClientId response failure')
       }
     } else {
       return this.data.oktaClientId
@@ -672,6 +684,8 @@ class sessionClass {
           this.cacheStreamURL(mediaId, obj.stream.complete)
           return obj.stream.complete
         }
+      } else {
+        this.log('getStreamURL response failure')
       }
     }
   }
@@ -710,6 +724,8 @@ class sessionClass {
         this.data.bamAccessTokenExpiry = new Date(new Date().getTime() + obj.expires_in * 1000)
         this.save_session_data()
         return this.data.bamAccessToken
+      } else {
+        this.log('getBamAccessToken response failure')
       }
     } else {
       return this.data.bamAccessToken
@@ -735,9 +751,13 @@ class sessionClass {
       gzip: true
     }
     var response = await this.httpGet(reqObj)
-    this.debuglog('getEntitlementToken response : ' + response)
-    this.debuglog('getEntitlementToken : ' + response)
-    return response
+    if ( response ) {
+      this.debuglog('getEntitlementToken response : ' + response)
+      this.debuglog('getEntitlementToken : ' + response)
+      return response
+    } else {
+      this.log('getEntitlementToken response failure')
+    }
   }
 
   async getDeviceId() {
@@ -764,6 +784,8 @@ class sessionClass {
       let obj = JSON.parse(response)
       this.debuglog('getDeviceId : ' + obj.device.id)
       return obj.device.id
+    } else {
+      this.log('getDeviceId response failure')
     }
   }
 
@@ -791,6 +813,8 @@ class sessionClass {
       let obj = JSON.parse(response)
       this.debuglog('getDeviceAccessToken : ' + obj.access_token)
       return obj.access_token
+    } else {
+      this.log('getDeviceAccessToken response failure')
     }
   }
 
@@ -815,6 +839,8 @@ class sessionClass {
       this.debuglog('getDevicesAssertion response : ' + response)
       this.debuglog('getDevicesAssertion : ' + response.assertion)
       return response.assertion
+    } else {
+      this.log('getDevicesAssertion response failure')
     }
   }
 
@@ -854,30 +880,37 @@ class sessionClass {
         }
       }
       var response = await this.httpGet(reqObj)
-      var str = response.toString()
-      this.debuglog('retrieveOktaAccessToken response : ' + str)
-      if ( str.match ) {
-        var errorParsed = str.match("data.error = 'login_required'")
-        if ( errorParsed && errorParsed[1] ) {
-          // Need to log in again
-          this.log('Logging in...')
-          this.data.authnSessionToken = null
-          this.save_session_data()
-          return false
-        } else {
-          var parsed_token = str.match("data.access_token = '([^']+)'")
-          var parsed_expiry = str.match("data.expires_in = '([^']+)'")
-          if ( parsed_token && parsed_token[1] && parsed_expiry && parsed_expiry[1] ) {
-            let oktaAccessToken = parsed_token[1].split('\\x2D').join('-')
-            let oktaAccessTokenExpiry = parsed_expiry[1]
-            this.debuglog('retrieveOktaAccessToken : ' + oktaAccessToken)
-            this.debuglog('retrieveOktaAccessToken expires in : ' + oktaAccessTokenExpiry)
-            this.data.oktaAccessToken = oktaAccessToken
-            this.data.oktaAccessTokenExpiry = new Date(new Date().getTime() + oktaAccessTokenExpiry * 1000)
+      if ( response ) {
+        var str = response.toString()
+        this.debuglog('retrieveOktaAccessToken response : ' + str)
+        if ( str.match ) {
+          var errorParsed = str.match("data.error = 'login_required'")
+          if ( errorParsed ) {
+            // Need to log in again
+            this.log('Logging in...')
+            delete this.data.authnSessionToken
             this.save_session_data()
-            return this.data.oktaAccessToken
+          } else {
+            var parsed_token = str.match("data.access_token = '([^']+)'")
+            var parsed_expiry = str.match("data.expires_in = '([^']+)'")
+            if ( parsed_token && parsed_token[1] && parsed_expiry && parsed_expiry[1] ) {
+              let oktaAccessToken = parsed_token[1].split('\\x2D').join('-')
+              let oktaAccessTokenExpiry = parsed_expiry[1]
+              this.debuglog('retrieveOktaAccessToken : ' + oktaAccessToken)
+              this.debuglog('retrieveOktaAccessToken expires in : ' + oktaAccessTokenExpiry)
+              this.data.oktaAccessToken = oktaAccessToken
+              this.data.oktaAccessTokenExpiry = new Date(new Date().getTime() + oktaAccessTokenExpiry * 1000)
+              this.save_session_data()
+              return this.data.oktaAccessToken
+            } else {
+              this.log('retrieveOktaAccessToken parse failure')
+            }
           }
+        } else {
+          this.log('retrieveOktaAccessToken string response failure')
         }
+      } else {
+        this.log('retrieveOktaAccessToken response failure')
       }
     } else {
       return this.data.oktaAccessToken
@@ -912,8 +945,11 @@ class sessionClass {
         this.data.authnSessionToken = response.sessionToken
         this.save_session_data()
         return this.data.authnSessionToken
+      } else {
+        this.log('getAuthnSessionToken response failure')
       }
     } else {
+      this.debuglog('using cached authnSessionToken')
       return this.data.authnSessionToken
     }
   }
@@ -1099,10 +1135,12 @@ class sessionClass {
       let cache_name = dateString
       let url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&sportId=17&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&leagueId=103&leagueId=131&contextTeamId='
       if ( team ) {
+        this.debuglog('getDayData for team ' + cache_name + ' on date ' + dateString)
         cache_name = team.toUpperCase() + dateString
         url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=' + TEAM_IDS[team.toUpperCase()] + '&startDate=' + dateString + '&endDate=' + dateString + '&gameType=&gamePk=&hydrate=team,game(content(media(epg)))'
+      } else {
+        this.debuglog('getDayData for date ' + dateString)
       }
-      this.debuglog('getDayData for ' + cache_name)
       let cache_file = path.join(CACHE_DIRECTORY, cache_name+'.json')
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.dates || !this.cache.dates[cache_name] || !this.cache.dates[cache_name].dateCacheExpiry || (currentDate > new Date(this.cache.dates[cache_name].dateCacheExpiry)) ) {

@@ -383,6 +383,8 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         if ( resolution.endsWith('p60') ) {
           frame_rate = '59.94'
           resolution = resolution.slice(0, -3)
+        } else if ( resolution.endsWith('p') ) {
+          resolution = resolution.slice(0, -1)
         }
       }
 
@@ -1925,13 +1927,18 @@ function start_multiview_stream(streams, sync, dvr, faster, audio_url, audio_url
     .addOutputOption('-master_pl_name', multiview_stream_name)
     .addOutputOption('-y')
     .output(session.get_multiview_directory() + '/stream-%v.m3u8')
-    .on('start', function() {
+    .on('start', function(commandLine) {
       session.log('multiview stream started')
       ffmpeg_status = true
+      if ( argv.debug || argv.ffmpeg_logging ) {
+        session.log('multiview stream command: ' + commandLine)
+      }
     })
-    .on('error', function(err) {
+    .on('error', function(err, stdout, stderr) {
       session.log('multiview stream stopped: ' + err.message)
       ffmpeg_status = false
+      if ( stdout ) session.log(stdout)
+      if ( stderr ) session.log(stderr)
     })
     .on('end', function() {
       session.log('multiview stream ended')
