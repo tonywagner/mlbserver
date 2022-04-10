@@ -2347,7 +2347,7 @@ class sessionClass {
               break
             } else {
               if ( cache_data.items[i].title ) {
-                if ( (eventName == 'BIGINNING') && (cache_data.items[i].title == 'LIVE NOW: MLB Big Inning') ) {
+                if ( (eventName == 'BIGINNING') && cache_data.items[i].title.includes('LIVE NOW: MLB Big Inning') ) {
                   this.debuglog('active big inning url')
                   return cache_data.items[i].fields.url
                 } else if ( cache_data.items[i].title.toUpperCase().endsWith(' VS. ' + eventName) ) {

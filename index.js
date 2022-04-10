@@ -795,6 +795,7 @@ app.get('/', async function(req, res) {
 
     let gameDate = session.liveDate()
     let todayUTCHours = session.getTodayUTCHours()
+    let curDate = new Date()
     if ( req.query.date ) {
       if ( req.query.date == VALID_DATES[1] ) {
         gameDate = session.yesterdayDate()
@@ -802,7 +803,6 @@ app.get('/', async function(req, res) {
         gameDate = req.query.date
       }
     } else {
-      let curDate = new Date()
       let utcHours = curDate.getUTCHours()
       if ( (utcHours >= todayUTCHours) && (utcHours < YESTERDAY_UTC_HOURS) ) {
         gameDate = session.yesterdayDate()
@@ -1017,7 +1017,13 @@ app.get('/', async function(req, res) {
       if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
         let querystring = '?event=biginning'
         let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+        if ( linkType == 'embed' ) {
+          if ( startFrom != 'Beginning' ) querystring += '&startFrom=' + startFrom
+        }
         if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+        if ( linkType == 'stream' ) {
+          if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+        }
         querystring += content_protect_b
         multiviewquerystring += content_protect_b
         body += '<a href="' + thislink + querystring + '">Big Inning</a>'
@@ -1229,7 +1235,11 @@ app.get('/', async function(req, res) {
                       station += '*'
                     }
                     if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal ) {
-                      game_started = true
+                      let gameTime = new Date(cache_data.dates[0].games[j].gameDate)
+                      gameTime.setMinutes(gameTime.getMinutes()-10)
+                      if ( curDate >= gameTime ) {
+                        game_started = true
+                      }
                       let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
                       if ( (mediaType == 'MLBTV') && session.cache.media && session.cache.media[mediaId] && session.cache.media[mediaId].blackout && session.cache.media[mediaId].blackoutExpiry && (new Date(session.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
                         body += teamabbr + ': <s>' + station + '</s>'
@@ -1295,7 +1305,7 @@ app.get('/', async function(req, res) {
           if ( body.substr(-2) == ', ' ) {
             body = body.slice(0, -2)
           }
-          if ( (mediaType == 'MLBTV') && (game_started) ) {
+          if ( (mediaType == 'MLBTV') && (game_started) && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.summary && cache_data.dates[0].games[j].content.summary.hasHighlightsVideo ) {
             body += '<br/><a href="javascript:showhighlights(\'' + cache_data.dates[0].games[j].gamePk + '\',\'' + gameDate + '\')">Highlights</a>'
           }
           if ( body.substr(-2) == ', ' ) {
@@ -1394,7 +1404,7 @@ app.get('/', async function(req, res) {
 
     body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. Live stream only, does not support starting from the beginning.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) Multiview<span class="tooltiptext">Requires starting and stopping the multiview stream from the web interface.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=multiview' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
