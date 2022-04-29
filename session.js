@@ -2013,10 +2013,10 @@ class sessionClass {
 
       let cache_data = await this.getGamedayData(contentId)
 
-      // There are the events to ignore, if we're skipping breaks
+      // These are the events to ignore, if we're skipping breaks
       let break_types = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
 
-      // There are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
+      // These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
       let action_types = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Out', 'Balk', 'Defensive Indiff']
 
       let inning_offsets = [{start:broadcast_start_offset}]
@@ -2347,7 +2347,7 @@ class sessionClass {
               break
             } else {
               if ( cache_data.items[i].title ) {
-                if ( (eventName == 'BIGINNING') && cache_data.items[i].title.includes('LIVE NOW: MLB Big Inning') ) {
+                if ( (eventName == 'BIGINNING') && cache_data.items[i].title.startsWith('LIVE') && cache_data.items[i].title.includes('Big Inning') ) {
                   this.debuglog('active big inning url')
                   return cache_data.items[i].fields.url
                 } else if ( cache_data.items[i].title.toUpperCase().endsWith(' VS. ' + eventName) ) {

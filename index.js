@@ -133,7 +133,7 @@ session.setPorts(port, multiview_port)
 app.listen(port, function(addr) {
   session.log(appname + ' started at http://' + addr)
   session.debuglog('multiview port ' + multiview_port)
-  session.log('multiview server started at http://' + addr.replace(':' + port, ':' + multiview_port) + multiview_url_path)
+  session.debuglog('multiview server started at http://' + addr.replace(':' + port, ':' + multiview_port) + multiview_url_path)
   session.clear_multiview_files()
 })
 var multiview_app = http.createServer()
