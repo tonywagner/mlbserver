@@ -25,6 +25,7 @@ const YESTERDAY_UTC_HOURS = 14 // UTC hours (EST + 4) to change home page defaul
 const VALID_MEDIA_TYPES = [ 'Video', 'Audio', 'Spanish' ]
 const VALID_LINK_TYPES = [ 'Embed', 'Stream', 'Chromecast', 'Advanced' ]
 const VALID_START_FROM = [ 'Beginning', 'Live' ]
+const VALID_CONTROLS = [ 'Show', 'Hide' ]
 const VALID_INNING_HALF = [ '', 'top', 'bottom' ]
 const VALID_INNING_NUMBER = [ '', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12' ]
 const VALID_SCORES = [ 'Hide', 'Show' ]
@@ -34,7 +35,8 @@ const DEFAULT_MULTIVIEW_RESOLUTION = '540p'
 const VALID_BANDWIDTHS = [ '', '6600k', '4160k', '2950k', '2120k', '1400k', '' ]
 const VALID_AUDIO_TRACKS = [ 'all', 'English', 'English Radio', 'Radio Española', 'none' ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
-const VALID_SKIP = [ 'off', 'breaks', 'pitches' ]
+const VALID_SKIP = [ 'off', 'breaks', 'idle time', 'pitches' ]
+const VALID_PAD = [ 'off', 'on' ]
 const VALID_FORCE_VOD = [ 'off', 'on' ]
 
 const SAMPLE_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
@@ -179,6 +181,11 @@ app.get('/stream.m3u8', async function(req, res) {
       options.inning_half = req.query.inning_half || VALID_INNING_HALF[0]
       options.inning_number = req.query.inning_number || VALID_INNING_NUMBER[0]
       options.skip = req.query.skip || VALID_SKIP[0]
+      options.pad = req.query.pad || VALID_PAD[0]
+      if ( options.pad != VALID_PAD[0] ) {
+        // if pad is selected, pick a random number of times to repeat the last segment
+        options.pad = Math.floor(Math.random() * 1440) + 720
+      }
 
       if ( req.query.src ) {
         streamURL = req.query.src
@@ -231,15 +238,8 @@ app.get('/stream.m3u8', async function(req, res) {
         if ( contentId ) {
           options.contentId = contentId
 
-          let skip_adjust = req.query.skip_adjust || 0
-          let skip_types = []
-          if ( (options.inning_half != VALID_INNING_HALF[0]) || (options.inning_number != VALID_INNING_NUMBER[0]) ) {
-            skip_types.push('innings')
-          }
-          if ( options.skip != VALID_SKIP[0] ) {
-            skip_types.push(options.skip)
-          }
-          await session.getEventOffsets(contentId, skip_types, skip_adjust)
+          let skip_type = VALID_SKIP.indexOf(options.skip)
+          await session.getSkipMarkers(contentId, skip_type, options.inning_number, options.inning_half)
         }
       }
 
@@ -364,6 +364,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
       let inning_half = options.inning_half || VALID_INNING_HALF[0]
       let inning_number = options.inning_number || VALID_INNING_NUMBER[0]
       let skip = options.skip || VALID_SKIP[0]
+      let pad = options.pad || VALID_PAD[0]
       let contentId = options.contentId || false
 
       if ( (inning_number > 0) && (inning_half == VALID_INNING_HALF[0]) ) {
@@ -444,6 +445,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
                 if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
                 if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
                 if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
+                if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
                 if ( contentId ) newurl += '&contentId=' + contentId
                 newurl += content_protect + referer_parameter
                 if ( resolution == 'none' ) {
@@ -490,6 +492,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
           if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
           if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
+          if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
           if ( contentId ) newurl += '&contentId=' + contentId
           newurl += content_protect + referer_parameter
           return 'playlist?url='+newurl
@@ -537,6 +540,7 @@ app.get('/playlist', async function(req, res) {
   var inning_half = req.query.inning_half || VALID_INNING_HALF[0]
   var inning_number = req.query.inning_number || VALID_INNING_NUMBER[0]
   var skip = req.query.skip || VALID_SKIP[0]
+  var pad = req.query.pad || VALID_PAD[0]
   var contentId = req.query.contentId || false
 
   var req = function () {
@@ -574,26 +578,22 @@ app.get('/playlist', async function(req, res) {
 
       var key
       var iv
+      var skip_markers
+      var skip_marker_index = 0
+      var time_counter = 0.0
+      var skip_next = false
+      var discontinuity = false
 
       var content_protect = ''
       if ( session.protection.content_protect ) {
         content_protect = '&content_protect=' + session.protection.content_protect
       }
 
-      if ( (contentId) && ((inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0]))) {
-        // If inning offsets don't exist, we'll force those options off
-        if ( (typeof session.temp_cache[contentId] === 'undefined') || (typeof session.temp_cache[contentId].inning_offsets === 'undefined') ) {
-          inning_half = VALID_INNING_HALF[0]
-          inning_number = VALID_INNING_NUMBER[0]
-          skip = 'off'
-        } else {
-          var time_counter = 0.0
-          var skip_index = 1
-          var skip_next = false
-          var discontinuity = false
-
-          var offsets = session.temp_cache[contentId].event_offsets
-        }
+      if ( (contentId) && ((inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0])) && (typeof session.temp_cache[contentId] !== 'undefined') && (typeof session.temp_cache[contentId].skip_markers !== 'undefined') ) {
+        session.debuglog('pulling skip markers from temporary cache')
+        skip_markers = session.temp_cache[contentId].skip_markers
+      } else {
+        session.debuglog('not using skip markers from temporary cache')
       }
 
       body = body
@@ -601,7 +601,7 @@ app.get('/playlist', async function(req, res) {
         // Skip blank lines
         if (line.trim() == '') return null
 
-        if ( ((skip != 'off') || (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0])) && (typeof session.temp_cache[contentId] !== 'undefined') && (typeof session.temp_cache[contentId].inning_offsets !== 'undefined') ) {
+        if ( skip_markers && skip_markers[skip_marker_index] ) {
           if ( skip_next ) {
             skip_next = false
             return null
@@ -609,55 +609,23 @@ app.get('/playlist', async function(req, res) {
 
           if (line.indexOf('#EXTINF:') == 0) {
             time_counter += parseFloat(line.substring(8, line.length-1))
+            session.debuglog('checking skip marker at ' + time_counter)
 
-            if ( (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) ) {
-              let inning_index = 0
-              if ( inning_number > 0 ) {
-                inning_index = (inning_number * 2)
-                if ( inning_half == 'top' ) inning_index = inning_index - 1
-              }
-              if ( (typeof session.temp_cache[contentId].inning_offsets[inning_index] !== 'undefined') && (typeof session.temp_cache[contentId].inning_offsets[inning_index].start !== 'undefined') && (time_counter < session.temp_cache[contentId].inning_offsets[inning_index].start) ) {
-                session.debuglog('skipping ' + time_counter + ' before ' + session.temp_cache[contentId].inning_offsets[inning_index].start)
-                // Increment skip index if our offset is less than the inning start
-                if ( offsets && (offsets[skip_index]) && (offsets[skip_index].end) && (offsets[skip_index].end < session.temp_cache[contentId].inning_offsets[inning_index].start) ) {
-                  skip_index++
-                }
-                skip_next = true
-                if ( discontinuity ) {
-                  return null
-                } else {
-                  discontinuity = true
-                  return '#EXT-X-DISCONTINUITY'
-                }
-              } else {
-                session.debuglog('inning start time not found or duplicate request made, ignoring: ' + u)
-                inning_half = VALID_INNING_HALF[0]
-                inning_number = VALID_INNING_NUMBER[0]
-              }
+            while (skip_markers[skip_marker_index] && (skip_markers[skip_marker_index].break_end < time_counter)) {
+              skip_marker_index++
             }
-
-            if ( (skip != VALID_SKIP[0]) && (inning_half == VALID_INNING_HALF[0]) && (inning_number == VALID_INNING_NUMBER[0]) ) {
-              let skip_this = true
-              if ( (typeof offsets[skip_index] !== 'undefined') && (typeof offsets[skip_index].start !== 'undefined') && (typeof offsets[skip_index].end !== 'undefined') && (time_counter > offsets[skip_index].start) && (time_counter > offsets[skip_index].end) ) {
-                skip_index++
-              }
-              if ( (typeof offsets[skip_index] === 'undefined') || (typeof offsets[skip_index].start === 'undefined') || (typeof offsets[skip_index].end === 'undefined') || ((time_counter > offsets[skip_index].start) && (time_counter < offsets[skip_index].end)) ) {
-                session.debuglog('keeping ' + time_counter)
-                skip_this = false
+            if (skip_markers[skip_marker_index] && (time_counter >= skip_markers[skip_marker_index].break_start) && (time_counter < skip_markers[skip_marker_index].break_end)) {
+              session.debuglog('skipping ' + time_counter)
+              skip_next = true
+              if ( discontinuity ) {
+                return null
               } else {
-                session.debuglog('skipping ' + time_counter)
+                discontinuity = true
+                return '#EXT-X-DISCONTINUITY'
               }
-              if ( skip_this ) {
-                skip_next = true
-                if ( discontinuity ) {
-                  return null
-                } else {
-                  discontinuity = true
-                  return '#EXT-X-DISCONTINUITY'
-                }
-              } else {
-                discontinuity = false
-              }
+            } else {
+              session.debuglog('keeping ' + time_counter)
+              discontinuity = false
             }
           }
         }
@@ -689,6 +657,19 @@ app.get('/playlist', async function(req, res) {
       })
       .join('\n')+'\n'
 
+      if ( pad != VALID_PAD[0] ) {
+        let body_array = body.trim().split('\n')
+        let last_segment_index = body_array.length-1
+        if ( body_array[last_segment_index] == '#EXT-X-ENDLIST' ) {
+          session.debuglog('padding archive stream with extra segments')
+          last_segment_index--
+          let pad_lines = '#EXT-X-DISCONTINUITY' + '\n' + body_array[last_segment_index-1] + '\n' + body_array[last_segment_index] + '\n'
+          session.debuglog(pad_lines)
+          for (i=0; i<pad; i++) {
+            body += pad_lines
+          }
+        }
+      }
       if ( force_vod != VALID_FORCE_VOD[0] ) body += '#EXT-X-ENDLIST' + '\n'
       session.debuglog(body)
       respond(response, res, Buffer.from(body))
@@ -823,6 +804,10 @@ app.get('/', async function(req, res) {
     if ( req.query.startFrom ) {
       startFrom = req.query.startFrom
     }
+    var controls = VALID_CONTROLS[0]
+    if ( req.query.controls ) {
+      controls = req.query.controls
+    }
     var scores = VALID_SCORES[0]
     if ( req.query.scores ) {
       scores = req.query.scores
@@ -855,9 +840,9 @@ app.get('/', async function(req, res) {
     if ( req.query.skip ) {
       skip = req.query.skip
     }
-    var skip_adjust = 0
-    if ( req.query.skip_adjust ) {
-      skip_adjust = req.query.skip_adjust
+    var pad = VALID_PAD[0]
+    if ( req.query.pad ) {
+      pad = req.query.pad
     }
     // audio_url is disabled here, now used in multiview instead
     /*var audio_url = ''
@@ -890,13 +875,13 @@ app.get('/', async function(req, res) {
     body += '</style><script type="text/javascript">' + "\n";
 
     // Define option variables in page
-    body += 'var date="' + gameDate + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var skip_adjust="' + skip_adjust + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var scan_mode="' + scan_mode + '";' + "\n"
+    body += 'var date="' + gameDate + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var pad="' + pad + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var controls="' + controls + '";var scan_mode="' + scan_mode + '";' + "\n"
     // audio_url is disabled here, now used in multiview instead
     //body += 'var audio_url="' + audio_url + '";' + "\n"
 
     // Reload function, called after options change
     // audio_url is disabled here, now used in multiview instead
-    body += 'var defaultDate="' + session.liveDate() + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + session.yesterdayDate() + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + session.liveDate() + '"){urldate="today"}else if (date == "' + session.yesterdayDate() + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}/*if (audio_url != ""){newurl+="audio_url="+encodeURIComponent(audio_url)+"&"}*/if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";if (skip_adjust != "0"){newurl+="skip_adjust="+skip_adjust+"&"}}}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="Embed"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+    body += 'var defaultDate="' + session.liveDate() + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + session.yesterdayDate() + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + session.liveDate() + '"){urldate="today"}else if (date == "' + session.yesterdayDate() + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}/*if (audio_url != ""){newurl+="audio_url="+encodeURIComponent(audio_url)+"&"}*/if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="Embed"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
     // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
@@ -941,7 +926,15 @@ app.get('/', async function(req, res) {
 
     body += '<p>'
     if ( linkType == 'Embed' ) {
-      body += '<span class="tooltip">Start From<span class="tooltiptext">For the embedded player only: Beginning will start playback at the beginning of the stream (may be 1 hour before game time for live games), and Live will start at the live point (if the event is live -- archive games should always start at the beginning). You can still seek anywhere.</span></span>: '
+      body += '<p><span class="tooltip">Video Controls<span class="tooltiptext">Choose whether to show or hide controls on the embedded video page. Helpful to avoid timeline spoilers.</span></span>: '
+      for (var i = 0; i < VALID_CONTROLS.length; i++) {
+        body += '<button '
+        if ( controls == VALID_CONTROLS[i] ) body += 'class="default" '
+        body += 'onclick="controls=\'' + VALID_CONTROLS[i] + '\';reload()">' + VALID_CONTROLS[i] + '</button> '
+      }
+      body += '</p>' + "\n"
+
+      body += '<p><span class="tooltip">Start From<span class="tooltiptext">For the embedded player only: Beginning will start playback at the beginning of the stream (may be 1 hour before game time for live games), and Live will start at the live point (if the event is live -- archive games should always start at the beginning). You can still seek anywhere.</span></span>: '
       for (var i = 0; i < VALID_START_FROM.length; i++) {
         body += '<button '
         if ( startFrom == VALID_START_FROM[i] ) body += 'class="default" '
@@ -1018,7 +1011,8 @@ app.get('/', async function(req, res) {
         let querystring = '?event=biginning'
         let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
         if ( linkType == 'embed' ) {
-          if ( startFrom != 'Beginning' ) querystring += '&startFrom=' + startFrom
+          if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+          if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
         }
         if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
         if ( linkType == 'stream' ) {
@@ -1248,13 +1242,13 @@ app.get('/', async function(req, res) {
                         querystring = '?mediaId=' + mediaId
                         let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
                         if ( linkType == 'embed' ) {
-                          if ( startFrom != 'Beginning' ) querystring += '&startFrom=' + startFrom
+                          if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+                          if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
                         }
                         if ( mediaType == 'MLBTV' ) {
                           if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
-                          if ( inning_number != '' ) querystring += '&inning_number=' + relative_inning
-                          if ( skip != 'off' ) querystring += '&skip=' + skip
-                          if ( skip_adjust != '0' ) querystring += '&skip_adjust=' + skip_adjust
+                          if ( inning_number != VALID_INNING_NUMBER[0] ) querystring += '&inning_number=' + relative_inning
+                          if ( skip != VALID_SKIP[0] ) querystring += '&skip=' + skip
                           if ( (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0]) ) {
                             let contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
                             querystring += '&contentId=' + contentId
@@ -1264,6 +1258,7 @@ app.get('/', async function(req, res) {
                           // audio_url is disabled here, now used in multiview instead
                           //if ( audio_url != '' ) querystring += '&audio_url=' + encodeURIComponent(audio_url)
                         }
+                        if ( pad != VALID_PAD[0] ) querystring += '&pad=' + pad
                         if ( linkType == 'stream' ) {
                           if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON' ) {
                             if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
@@ -1346,15 +1341,24 @@ app.get('/', async function(req, res) {
         //body += '<br/><span class="tooltip">or enter a separate audio stream URL<span class="tooltiptext">EXPERIMENTAL! May not actually work. For video streams only: you can also include a separate audio stream URL as an alternate audio track. This is useful if you want to pair the road radio feed with a national TV broadcast (which only includes home radio feeds by default).<br/><br/>After entering the audio stream URL, click the Update button to include it in the video links above; click the Reset button when done with this option.<br/><br/>Warning: does not support inning start or skip options.</span></span>: <span class="tinytext">(copy one from the <button onclick="mediaType=\'Audio\';reload()">Audio</button> page</a>)</span><br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)">' + audio_url + '</textarea><br/><button onclick="audio_url=document.getElementById(\'audio_url\').value;reload()">Update Audio URL</button> <button onclick="audio_url=\'\';reload()">Reset Audio URL</button><br/>'
         body += '</p>' + "\n"
 
-        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove breaks or non-decision pitches from the stream (the latter is useful to make your own "condensed games").<br/><br/>NOTE: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream.</span></span>: '
+        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove breaks, idle time, or non-action pitches from the stream (useful to make your own "condensed games").<br/><br/>NOTE: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream.</span></span>: '
         for (var i = 0; i < VALID_SKIP.length; i++) {
           body += '<button '
           if ( skip == VALID_SKIP[i] ) body += 'class="default" '
           body += 'onclick="skip=\'' + VALID_SKIP[i] + '\';reload()">' + VALID_SKIP[i] + '</button> '
         }
-        body += ' <span class="tooltip">Skip Adjust<span class="tooltiptext">Seconds to adjust the skip time video segments, if necessary. Try a negative number if the plays are ending before the video segments begin; use a positive number if the video segments are ending before the play happens.</span></span>: <input type="number" id="skip_adjust" value="' + skip_adjust + '" step="5" onchange="setTimeout(function(){skip_adjust=document.getElementById(\'skip_adjust\').value;reload()},750)" onblur="skip_adjust=this.value;reload()" style="vertical-align:top;font-size:.8em;width:3em"/>'
         body += '</p>' + "\n"
+      }
 
+      body += '<p><span class="tooltip">Pad<span class="tooltiptext">You can pad archive streams with random extra time at the end, to help conceal timeline spoilers.</span></span>: '
+      for (var i = 0; i < VALID_PAD.length; i++) {
+        body += '<button '
+        if ( pad == VALID_PAD[i] ) body += 'class="default" '
+        body += 'onclick="pad=\'' + VALID_PAD[i] + '\';reload()">' + VALID_PAD[i] + '</button> '
+      }
+      body += '</p>' + "\n"
+
+      if ( mediaType == 'Video' ) {
         body += '<table><tr><td><table><tr><td>1</td><td>2</tr><tr><td>3</td><td>4</td></tr></table><td><span class="tooltip">Multiview / Alternate Audio / Sync<span class="tooltiptext">For video streams only: create a new live stream combining 1-4 separate video streams, using the layout shown at left (if more than 1 video stream is selected). Check the boxes next to feeds above to add/remove them, then click "Start" when ready, "Stop" when done watching, or "Restart" to stop and start with the currently selected streams. May take up to 15 seconds after starting before it is ready to play.<br/><br/>No video scaling is performed: defaults to 540p video for each stream, which can combine to make one 1080p stream. Audio defaults to English (TV) audio. If you specify a different audio track instead, you can use the box after each URL below to adjust the sync in seconds (use positive values if audio is early and the audio stream needs to be padded with silence at the beginning to line up with the video; negative values if audio is late, and audio needs to be trimmed from the beginning.)<br/><br/>TIP #1: You can enter just 1 video stream here, at any resolution, to take advantage of the audio sync or alternate audio features without using multiview -- a single video stream will not be re-encoded and will be presented at its full resolution.<br/><br/>TIP #2: You can also manually enter streams from other sources like <a href="https://www.npmjs.com/package/milbserver" target="_blank">milbserver</a> in the boxes below.<br/><br/>WARNING #1: if the mlbserver process dies or restarts while multiview is active, the ffmpeg encoding process will be orphaned and must be killed manually.<br/><br/>WARNING #2: If you did not specify a hardware encoder for ffmpeg on the command line, this will use your server CPU for encoding. Either way, your system may not be able to keep up with processing 4 video streams at once. Try fewer streams if you have perisistent trouble.</span></span>: <a id="startmultiview" href="" onclick="startmultiview(this);return false">Start'
         if ( ffmpeg_status ) body += 'ed'
         body += '</a> | <a id="stopmultiview" href="" onclick="stopmultiview(this);return false">Stop'
@@ -1539,9 +1543,13 @@ app.get('/embed.html', async function(req, res) {
 
   delete req.headers.host
 
-  let startFrom = 'Beginning'
+  let startFrom = VALID_START_FROM[0]
   if ( req.query.startFrom ) {
     startFrom = req.query.startFrom
+  }
+  let controls = VALID_CONTROLS[0]
+  if ( req.query.controls ) {
+    controls = req.query.controls
   }
 
   let video_url = '/stream.m3u8'
@@ -1556,9 +1564,13 @@ app.get('/embed.html', async function(req, res) {
   session.debuglog('embed src : ' + video_url)
 
   // Adapted from https://hls-js.netlify.app/demo/basic-usage.html
-  var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><title>' + appname + ' player</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{background-color:black;color:lightgrey;font-family:Arial,Helvetica,sans-serif}video{width:100% !important;height:auto !important;max-width:1280px}input[type=number]::-webkit-inner-spin-button{opacity:1}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}</style><script>function goBack(){var prevPage=window.location.href;window.history.go(-1);setTimeout(function(){if(window.location.href==prevPage){window.location.href="/"}}, 500)}function toggleAudio(x){var elements=document.getElementsByClassName("audioButton");for(var i=0;i<elements.length;i++){elements[i].className="audioButton"}document.getElementById("audioButton"+x).className+=" default";hls.audioTrack=x}function changeTime(x){video.currentTime+=x}function changeRate(x){let newRate=Math.round((Number(document.getElementById("playback_rate").value)+x)*10)/10;if((newRate<=document.getElementById("playback_rate").max) && (newRate>=document.getElementById("playback_rate").min)){document.getElementById("playback_rate").value=newRate.toFixed(1);video.defaultPlaybackRate=video.playbackRate=document.getElementById("playback_rate").value}}function myKeyPress(e){if(e.key=="ArrowRight"){changeTime(10)}else if(e.key=="ArrowLeft"){changeTime(-10)}else if(e.key=="ArrowUp"){changeRate(0.1)}else if(e.key=="ArrowDown"){changeRate(-0.1)}}</script></head><body onkeydown="myKeyPress(event)"><script src="https://hls-js.netlify.app/dist/hls.js"></script><video id="video" controls></video><script>var video=document.getElementById("video");if(Hls.isSupported()){var hls=new Hls('
+  var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><title>' + appname + ' player</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{background-color:black;color:lightgrey;font-family:Arial,Helvetica,sans-serif}video{width:100% !important;height:auto !important;max-width:1280px}input[type=number]::-webkit-inner-spin-button{opacity:1}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}</style><script>function goBack(){var prevPage=window.location.href;window.history.go(-1);setTimeout(function(){if(window.location.href==prevPage){window.location.href="/"}}, 500)}function toggleAudio(x){var elements=document.getElementsByClassName("audioButton");for(var i=0;i<elements.length;i++){elements[i].className="audioButton"}document.getElementById("audioButton"+x).className+=" default";hls.audioTrack=x}function changeTime(x){video.currentTime+=x}function changeRate(x){let newRate=Math.round((Number(document.getElementById("playback_rate").value)+x)*10)/10;if((newRate<=document.getElementById("playback_rate").max) && (newRate>=document.getElementById("playback_rate").min)){document.getElementById("playback_rate").value=newRate.toFixed(1);video.defaultPlaybackRate=video.playbackRate=document.getElementById("playback_rate").value}}function myKeyPress(e){if(e.key=="ArrowRight"){changeTime(10)}else if(e.key=="ArrowLeft"){changeTime(-10)}else if(e.key=="ArrowUp"){changeRate(0.1)}else if(e.key=="ArrowDown"){changeRate(-0.1)}}</script></head><body onkeydown="myKeyPress(event)"><script src="https://hls-js.netlify.app/dist/hls.js"></script><video id="video"'
+  if ( controls == VALID_CONTROLS[0] ) {
+    body += ' controls'
+  }
+  body += '></video><script>var video=document.getElementById("video");if(Hls.isSupported()){var hls=new Hls('
 
-  if ( startFrom != 'Live' ) {
+  if ( startFrom != VALID_START_FROM[1] ) {
     body += '{startPosition:0,liveSyncDuration:32400,liveMaxLatencyDuration:32410}'
   }
 
@@ -1566,7 +1578,7 @@ app.get('/embed.html', async function(req, res) {
 
   body += '<button onclick="changeTime(video.duration-10)">Latest</button> '
 
-  body += '<button id="airplay">AirPlay</button></p><p>Playback rate: <input type="number" value=1.0 min=0.1 max=16.0 step=0.1 id="playback_rate" size="8" style="width: 4em" onchange="video.defaultPlaybackRate=video.playbackRate=this.value"></p><p>Audio: <button onclick="video.muted=!video.muted">Toggle Mute</button> <span id="audioSpan"></span></p><p><button onclick="goBack()">Back</button></p><script>var airPlay=document.getElementById("airplay");if(window.WebKitPlaybackTargetAvailabilityEvent){video.addEventListener("webkitplaybacktargetavailabilitychanged",function(event){switch(event.availability){case "available":airPlay.style.display="inline";break;default:airPlay.style.display="none"}airPlay.addEventListener("click",function(){video.webkitShowPlaybackTargetPicker()})})}else{airPlay.style.display="none"}</script></body></html>'
+  body += '<button id="airplay">AirPlay</button></p><p>Playback rate: <input type="number" value=1.0 min=0.1 max=16.0 step=0.1 id="playback_rate" size="8" style="width: 4em" onchange="video.defaultPlaybackRate=video.playbackRate=this.value"></p><p>Audio: <button onclick="video.muted=!video.muted">Toggle Mute</button> <span id="audioSpan"></span></p><p>Controls: <button onclick="video.controls=!video.controls">Toggle Controls</button></p><p><button onclick="goBack()">Back</button></p><script>var airPlay=document.getElementById("airplay");if(window.WebKitPlaybackTargetAvailabilityEvent){video.addEventListener("webkitplaybacktargetavailabilitychanged",function(event){switch(event.availability){case "available":airPlay.style.display="inline";break;default:airPlay.style.display="none"}airPlay.addEventListener("click",function(){video.webkitShowPlaybackTargetPicker()})})}else{airPlay.style.display="none"}</script></body></html>'
   res.end(body)
 })
 

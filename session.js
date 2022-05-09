@@ -33,6 +33,14 @@ const TODAY_UTC_HOURS = 8 // UTC hours (EST + 4) into tomorrow to still use toda
 
 const TEAM_IDS = {'ARI':'109','ATL':'144','BAL':'110','BOS':'111','CHC':'112','CWS':'145','CIN':'113','CLE':'114','COL':'115','DET':'116','HOU':'117','KC':'118','LAA':'108','LAD':'119','MIA':'146','MIL':'158','MIN':'142','NYM':'121','NYY':'147','OAK':'133','PHI':'143','PIT':'134','STL':'138','SD':'135','SF':'137','SEA':'136','TB':'139','TEX':'140','TOR':'141','WSH':'120'}
 
+// These are the events to ignore, if we're skipping breaks
+const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
+// These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
+const ACTION_TYPES = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Error', 'Out', 'Balk', 'Defensive Indiff']
+const EVENT_START_PADDING = -5
+const EVENT_END_PADDING = 8
+const MINIMUM_BREAK_DURATION = 10
+
 class sessionClass {
   // Initialize the class
   constructor(argv = {}) {
@@ -1571,14 +1579,15 @@ class sessionClass {
                         if ( (excludeTeams.length > 0) && (excludeTeams.includes(team) || excludeTeams.includes(opponent_team) || excludeTeams.includes(teamType)) ) {
                           continue
                         } else if ( (includeTeams.length == 0) || includeTeams.includes(team) || includeTeams.includes(teamType) ) {
-                          let icon = server
+                          /*let icon = server
                           if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
                             team = teamType + '.' + nationalCounter[mediaTitle]
                             icon += '/image.svg?teamId=MLB'
                           } else {
                             icon += '/image.svg?teamId=' + cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedSubType
                           }
-                          if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
+                          if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect*/
+                          let icon = 'https://img.mlbstatic.com/mlb-photos/image/upload/ar_167:215,c_crop/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':fill:spot.png,w_1.0,h_1,x_0.5,y_0,fl_no_overflow,e_distort:100p:0:200p:0:200p:100p:0:100p/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['away'].team.id + ':logo:spot:current,w_0.38,x_-0.25,y_-0.16/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':logo:spot:current,w_0.38,x_0.25,y_0.16/w_750/team/' + cache_data.dates[i].games[j].teams['away'].team.id + '/fill/spot.png'
                           let channelid = mediaType + '.' + team
                           channels[channelid] = {}
                           channels[channelid].name = channelid
@@ -1661,8 +1670,9 @@ class sessionClass {
           if ( (excludeTeams.length > 0) && excludeTeams.includes('BIGINNING') ) {
             // do nothing
           } else if ( (includeTeams.length == 0) || includeTeams.includes('BIGINNING') ) {
-            let icon = server + '/image.svg?teamId=MLB'
-            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
+            /*let icon = server + '/image.svg?teamId=MLB'
+            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect*/
+            let icon = 'https://img.mlbstatic.com/mlb-images/image/private/ar_16:9,g_auto,q_auto:good,w_372,c_fill,f_jpg/mlb/uwr8vepua4t1fe8uwyki'
             let channelid = mediaType + '.BIGINNING'
             channels[channelid] = {}
             channels[channelid].name = channelid
@@ -1998,164 +2008,140 @@ class sessionClass {
     }
   }
 
-  // Get event offsets into temporary cache
-  async getEventOffsets(contentId, skip_types, skip_adjust = 0) {
+  // Get skip markers into temporary cache
+  async getSkipMarkers(contentId, skip_type, start_inning, start_inning_half) {
     try {
-      this.debuglog('getEventOffsets')
+      this.debuglog('getSkipMarkers')
 
-      if ( skip_adjust != 0 ) session.log('manual adjustment of ' + skip_adjust + ' seconds being applied')
+      let skip_markers = []
+
+      // assume the game starts in a break
+      let break_start = 0
 
       // Get the broadcast start time first -- event times will be relative to this
       let broadcast_start = await this.getBroadcastStart(contentId)
       let broadcast_start_offset = broadcast_start.broadcast_start_offset
       let broadcast_start_timestamp = broadcast_start.broadcast_start_timestamp
-      this.debuglog('broadcast start detected as ' + broadcast_start_timestamp + ', offset ' + broadcast_start_offset)
+      this.debuglog('getSkipMarkers broadcast start detected as ' + broadcast_start_timestamp + ', offset ' + broadcast_start_offset)
 
-      let cache_data = await this.getGamedayData(contentId)
-
-      // These are the events to ignore, if we're skipping breaks
-      let break_types = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
-
-      // These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
-      let action_types = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Out', 'Balk', 'Defensive Indiff']
-
-      let inning_offsets = [{start:broadcast_start_offset}]
-      let event_offsets = [{start:0}]
-      let last_event = 0
-      let default_event_duration = 15
-
-      // Pad times by these amounts
-      let pad_start = 0
-      let pad_end = 15
-      let pad_adjust = 20
-
-      // Inning counters
-      let last_inning = 0
-      let last_inning_half = ''
-
-      // Loop through all plays
-      for (var i=0; i < cache_data.liveData.plays.allPlays.length; i++) {
-
-        // If requested, calculate inning offsets
-        if ( skip_types.includes('innings') ) {
-          // Look for a change from our inning counters
-          if ( cache_data.liveData.plays.allPlays[i].about && cache_data.liveData.plays.allPlays[i].about.inning && ((cache_data.liveData.plays.allPlays[i].about.inning != last_inning) || (cache_data.liveData.plays.allPlays[i].about.halfInning != last_inning_half)) ) {
-            let inning_index = cache_data.liveData.plays.allPlays[i].about.inning * 2
-            // top
-            if ( cache_data.liveData.plays.allPlays[i].about.halfInning == 'top' ) {
-              inning_index = inning_index - 1
-            }
-            if ( typeof inning_offsets[inning_index] === 'undefined' ) inning_offsets.push({})
-            for (var j=0; j < cache_data.liveData.plays.allPlays[i].playEvents.length; j++) {
-              if ( cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && (break_types.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
-                // ignore break events
-              } else {
-                inning_offsets[inning_index].start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[j].startTime) - broadcast_start_timestamp) / 1000) - pad_start + skip_adjust
-                break
-              }
-            }
-            // Update inning counters
-            last_inning = cache_data.liveData.plays.allPlays[i].about.inning
-            last_inning_half = cache_data.liveData.plays.allPlays[i].about.halfInning
-          }
+      // start inning 0 is simply the broadcast start offset
+      if ((skip_type == 0) && (start_inning == 0)) {
+        let break_end = broadcast_start_offset
+        skip_markers.push({'break_start': break_start, 'break_end': break_end})
+      } else {
+        if (start_inning == '') {
+          start_inning = 0
+        }
+        if (start_inning_half == '') {
+          start_inning_half = 'top'
         }
 
-        // Get event offsets, if necessary
-        if ( skip_types.includes('breaks') || skip_types.includes('pitches') ) {
+        let cache_data = await this.getGamedayData(contentId)
 
-          // Loop through play events, looking for actions
-          let actions = []
-          for (var j=0; j < cache_data.liveData.plays.allPlays[i].playEvents.length; j++) {
-            // If skipping breaks, everything is an action except break types
-            // otherwise, only action types are included (skipping pitches)
-            if ( skip_types.includes('breaks') ) {
-              if ( cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && (break_types.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
-                // ignore break events
-              } else {
-                actions.push(j)
-              }
-            } else if ( cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && (action_types.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
-              actions.push(j)
-            }
-          }
+        // make sure we have play data
+        if (cache_data && cache_data.liveData && cache_data.liveData.plays && cache_data.liveData.plays.allPlays) {
 
-          // Process breaks
-          if ( skip_types.includes('breaks') ) {
-            let this_event = {}
-            let event_in_atbat = false
-            for (var x=0; x < actions.length; x++) {
-              let this_pad_start = 0
-              let this_pad_end = 0
-              // Once we define each event's start time, we won't change it
-              if ( typeof this_event.start === 'undefined' ) {
-                this_event.start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) - pad_start + skip_adjust
-                // For events within at-bats, adjust the padding
-                if ( event_in_atbat ) {
-                  this_event.start -= pad_adjust
+          // keep track of inning, if skipping inning breaks only
+          let previous_inning = 0
+          let previous_inning_half = ''
+
+          // calculate total skip time (for fun)
+          let total_skip_time = 0
+
+          // Loop through all plays
+          for (var i=0; i < cache_data.liveData.plays.allPlays.length; i++) {
+
+            // make sure start inning is valid
+            if (start_inning > 0) {
+              let last_play_index = cache_data.liveData.plays.allPlays.length - 1
+              let final_inning = cache_data.liveData.plays.allPlays[last_play_index].about.inning
+              if (start_inning >= final_inning) {
+                if (start_inning > final_inning) {
+                  start_inning = final_inning
+                  let final_inning_half = json_source['liveData']['plays']['allPlays'][last_play_index]['about']['halfInning']
+                  if ((start_inning_half == 'bottom') && (final_inning_half == 'top')) {
+                    start_inning_half = final_inning_half
+                  }
                 }
               }
-              // Update the end time, if available
-              if ( cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime ) {
-                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime) - broadcast_start_timestamp) / 1000) + pad_end + skip_adjust
-              // Otherwise use the start time to estimate the end time
-              } else {
-                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) + this_pad_end + skip_adjust + default_event_duration
-              }
-              // Check if we have skipped a play event (indicating a break inside an at-bat), in which case push this event and start another one
-              if ( (x > 0) && (actions[x] > (actions[x-1]+1)) && (typeof this_event.end !== 'undefined') ) {
-                  // For events within at-bats, adjust the padding
-                  event_in_atbat = true
-                  this_event.end += pad_adjust
-                  event_offsets.push(this_event)
-                  this_event = {}
-              }
             }
-            // Once we've finished our loop through a play's events, push the event as long as we got an end time
-            if ( typeof this_event.end !== 'undefined' ) {
-              event_offsets.push(this_event)
+
+            // exit loop after found inning, if not skipping any breaks
+            if ((skip_type == 0) && (skip_markers.length == 1)) {
+              break
             }
-          } else if ( skip_types.includes('pitches') ) {
-            // If we're skipping pitches, but we didn't detect any action events, use the last play event
-            if ( (cache_data.liveData.plays.allPlays[i].playEvents.length > 0) && ((actions.length == 0) || (actions[(actions.length-1)] < (cache_data.liveData.plays.allPlays[i].playEvents.length-1))) ) {
-              actions.push(cache_data.liveData.plays.allPlays[i].playEvents.length-1)
-            }
-            // Loop through the actions
-            for (var x=0; x < actions.length; x++) {
-              let this_event = {}
-              let this_pad_start = pad_start
-              let this_pad_end = pad_end
-              // For events within at-bats, adjust the padding
-              if ( x < (actions.length-1) ) {
-                this_pad_start += pad_adjust
-                this_pad_end -= pad_adjust
+
+            let current_inning = cache_data.liveData.plays.allPlays[i].about.inning
+            let current_inning_half = cache_data.liveData.plays.allPlays[i].about.halfInning
+            // make sure we're past our start inning
+            if ((current_inning > start_inning) || ((current_inning == start_inning) && ((current_inning_half == start_inning_half) || (current_inning_half == 'bottom')))) {
+              // loop through events within each play
+              for (var j=0; j < cache_data.liveData.plays.allPlays[i].playEvents.length; j++) {
+                // always exclude break types
+                if (cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && BREAK_TYPES.includes(cache_data.liveData.plays.allPlays[i].playEvents[j].details.event)) {
+                  // if we're in the process of skipping inning breaks, treat the first break type we find as another inning break
+                  if ((skip_type == 1) && (previous_inning > 0)) {
+                    break_start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[j].startTime) - broadcast_start_timestamp) / 1000) + EVENT_END_PADDING
+                    previous_inning = 0
+                  }
+                  continue
+                } else {
+                  let action_index
+                  // skip type 1 (breaks) && 2 (idle time) will look at all plays with an endTime
+                  if ((skip_type <= 2) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime) {
+                    action_index = j
+                  } else if (skip_type == 3) {
+                    // skip type 3 excludes non-action pitches (events that aren't last in the at-bat and don't fall under action types)
+                    if ( (j < (cache_data.liveData.plays.allPlays[i].playEvents.length - 1)) && (!cache_data.liveData.plays.allPlays[i].playEvents[j].details || !cache_data.liveData.plays.allPlays[i].playEvents[j].details.event || !ACTION_TYPES.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
+                      continue
+                    } else {
+                      // if the action is associated with another play or the event doesn't have an end time, use the previous event instead
+                      if (cache_data.liveData.plays.allPlays[i].playEvents[j].actionPlayId || ((cache_data.liveData.plays.allPlays[i].playEvents[j].endTime === 'undefined') && (j > 0))) {
+                        action_index = j - 1
+                      } else {
+                        action_index = j
+                      }
+                    }
+                  }
+                  if (typeof action_index === 'undefined') {
+                    continue
+                  } else {
+                    let break_end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[action_index].startTime) - broadcast_start_timestamp) / 1000) + EVENT_START_PADDING
+                    // if the break duration should be greater than than our specified minimum
+                    // and if skip type is not 1 (inning breaks) or the inning has changed
+                    // then we'll add the skip marker
+                    // otherwise we'll ignore it and move on to the next one
+                    if ( ((break_end - break_start) >= MINIMUM_BREAK_DURATION) && ((skip_type != 1) || (current_inning != previous_inning) || (current_inning_half != previous_inning_half)) ) {
+                      skip_markers.push({'break_start': break_start, 'break_end': break_end})
+                      total_skip_time += break_end - break_start
+                      previous_inning = current_inning
+                      previous_inning_half = current_inning_half
+                      // exit loop after found inning, if not skipping breaks
+                      if (skip_type == 0) {
+                        break
+                      }
+                    }
+                    break_start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[action_index].endTime) - broadcast_start_timestamp) / 1000) + EVENT_END_PADDING
+                    // add extra padding for overturned review plays
+                    if (cache_data.liveData.plays.allPlays[i].reviewDetails && (cache_data.liveData.plays.allPlays[i].reviewDetails.isOverturned == true)) {
+                      break_start += 40
+                    }
+                  }
+                }
               }
-              this_event.start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) - this_pad_start + skip_adjust
-              // If play event end time is available, set it and push this event
-              if ( cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime ) {
-                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].endTime) - broadcast_start_timestamp) / 1000) + this_pad_end + skip_adjust
-              // Otherwise use the start time to estimate the end time
-              } else {
-                this_event.end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[actions[x]].startTime) - broadcast_start_timestamp) / 1000) + this_pad_end + skip_adjust + default_event_duration
-              }
-              event_offsets.push(this_event)
             }
           }
+
+          this.debuglog('getSkipMarkers found ' + new Date(total_skip_time * 1000).toISOString().substr(11, 8) + ' total skip time')
         }
       }
 
-      if ( skip_types.includes('innings') ) {
-        this.debuglog('inning offsets: ' + JSON.stringify(inning_offsets))
-      }
-      this.temp_cache[contentId].inning_offsets = inning_offsets
-
-      if ( skip_types.includes('breaks') || skip_types.includes('pitches') ) {
-        this.debuglog('event offsets: ' + JSON.stringify(event_offsets))
-      }
-      this.temp_cache[contentId].event_offsets = event_offsets
+      this.debuglog('getSkipMarkers skip markers: ' + JSON.stringify(skip_markers))
+      this.temp_cache[contentId].skip_markers = skip_markers
 
       return true
     } catch(e) {
-      this.log('getEventOffsets error : ' + e.message)
+      this.log('getSkipMarkers error : ' + e.message)
     }
   }
 
