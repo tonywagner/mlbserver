@@ -1,6 +1,6 @@
 # mlbserver
 
-Current version 2022.05.09
+Current version 2022.05.13
 
 Credit to https://github.com/tonycpsu/streamglob and https://github.com/mafintosh/hls-decryptor
 
@@ -38,13 +38,15 @@ Advanced command line options:
 --multiview_path (where to create the folder for multiview encoded files; defaults to app directory)
 --ffmpeg_path (path to ffmpeg binary to use for multiview encoding; default downloads a binary using ffmpeg-static)
 --ffmpeg_encoder (ffmpeg video encoder to use for multiview; default is the software encoder libx264)
---ffmpeg_logging (if present, logs all ffmpeg output -- useful for experimenting or troubleshooting)
+--ffmpeg_logging (if present, logs all ffmpeg output -- useful for checking encoding speed or troubleshooting)
 --page_username (username to protect pages; default is no protection)
 --page_password (password to protect pages; default is no protection)
 --content_protect (specify the content protection key to include as a URL parameter, if page protection is enabled)
 ```
 
-You may want to experiment with different ffmpeg hardware encoders depending on your system as described at https://stackoverflow.com/a/50703794
+For multiview, the default software encoder is limited by your CPU. You may want to experiment with different ffmpeg hardware encoders. "h264_videotoolbox" is confirmed to work on supported Macs, and "h264_v4l2m2m" is confirmed to work on a Raspberry Pi 4 (and likely other Linux systems) when ffmpeg is compiled with this patch: https://www.raspberrypi.org/forums/viewtopic.php?p=1780625#p1780625
+
+More potential hardware encoders are described at https://stackoverflow.com/a/50703794
 
 ```
 h264_amf to access AMD gpu, (windows only)
@@ -55,8 +57,6 @@ h264_v4l2m2m use V4L2 Linux kernel api to access hardware codecs
 h264_vaapi use VAAPI which is another abstraction API to access video acceleration hardware (Linux only)
 h264_videotoolbox use videotoolbox an API to access hardware on OS X
 ```
-
-Note that use of h264_v4l2m2m here requires ffmpeg to be compiled with this patch: https://www.raspberrypi.org/forums/viewtopic.php?p=1780625#p1780625
 
 ## License
 

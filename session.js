@@ -1579,14 +1579,14 @@ class sessionClass {
                         if ( (excludeTeams.length > 0) && (excludeTeams.includes(team) || excludeTeams.includes(opponent_team) || excludeTeams.includes(teamType)) ) {
                           continue
                         } else if ( (includeTeams.length == 0) || includeTeams.includes(team) || includeTeams.includes(teamType) ) {
-                          /*let icon = server
+                          //let icon = server
                           if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
                             team = teamType + '.' + nationalCounter[mediaTitle]
-                            icon += '/image.svg?teamId=MLB'
+                            //icon += '/image.svg?teamId=MLB'
                           } else {
-                            icon += '/image.svg?teamId=' + cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedSubType
+                            //icon += '/image.svg?teamId=' + cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedSubType
                           }
-                          if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect*/
+                          //if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
                           let icon = 'https://img.mlbstatic.com/mlb-photos/image/upload/ar_167:215,c_crop/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':fill:spot.png,w_1.0,h_1,x_0.5,y_0,fl_no_overflow,e_distort:100p:0:200p:0:200p:100p:0:100p/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['away'].team.id + ':logo:spot:current,w_0.38,x_-0.25,y_-0.16/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':logo:spot:current,w_0.38,x_0.25,y_0.16/w_750/team/' + cache_data.dates[i].games[j].teams['away'].team.id + '/fill/spot.png'
                           let channelid = mediaType + '.' + team
                           channels[channelid] = {}
@@ -1785,13 +1785,17 @@ class sessionClass {
 
       let cache_data
       let cache_name = contentId
-      let cache_file = path.join(CACHE_DIRECTORY, contentId+'.json')
       let url = 'https://search-api-mlbtv.mlb.com/svc/search/v2/graphql/persisted/query/core/Airings'
       let qs = { variables: '%7B%22contentId%22%3A%22' + contentId + '%22%7D' }
       if ( gamePk ) {
+        this.debuglog('getAiringsData for game ' + gamePk)
+        cache_name = 'a' + gamePk
         url = 'https://search-api-mlbtv.mlb.com/svc/search/v2/graphql/persisted/query/core/Airings?variables={%22partnerProgramIds%22%3A[%22' + gamePk + '%22]}'
         qs = {}
+      } else {
+        this.debuglog('getAiringsData for content ' + contentId)
       }
+      let cache_file = path.join(CACHE_DIRECTORY, cache_name+'.json')
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.airings || !this.cache.airings[cache_name] || !this.cache.airings[cache_name].airingsCacheExpiry || (currentDate > new Date(this.cache.airings[cache_name].airingsCacheExpiry)) ) {
         let reqObj = {
@@ -1812,52 +1816,7 @@ class sessionClass {
         if ( this.isValidJson(response) ) {
           this.debuglog(response)
           cache_data = JSON.parse(response)
-          if ( gamePk ) {
-            this.debuglog('searching for alternate airing with break data')
-            let most_milestones = 0
-            let most_milestones_index = -1
-            let offset_index = 1
-            let previous_offset
-            let previous_startDatetime
-            let new_startDatetime
-            let new_offset
-            for ( var i=0; i<cache_data.data.Airings.length; i++ ) {
-              if ( cache_data.data.Airings[i].milestones ) {
-                if ( cache_data.data.Airings[i].contentId && (cache_data.data.Airings[i].contentId == contentId) ) {
-                  if ( cache_data.data.Airings[i].milestones[0].milestoneTime[0].type == 'offset' ) offset_index = 0
-                  previous_offset = cache_data.data.Airings[i].milestones[0].milestoneTime[offset_index].start
-                  previous_startDatetime = new Date(cache_data.data.Airings[i].milestones[0].milestoneTime[(offset_index == 0 ? 1 : 0)].startDatetime)
-                  continue
-                }
-                if ( cache_data.data.Airings[i].milestones.length > most_milestones ) {
-                  most_milestones = cache_data.data.Airings[i].milestones.length
-                  most_milestones_index = i
-                }
-              }
-            }
-            if ( most_milestones_index && previous_startDatetime ) {
-              this.debuglog('found alternate airing with break data')
-              let temp_airing = cache_data.data.Airings[most_milestones_index]
-
-              offset_index = 1
-              if ( temp_airing.milestones[0].milestoneTime[0].type == 'offset' ) offset_index = 0
-              new_offset = temp_airing.milestones[0].milestoneTime[offset_index].start
-              new_startDatetime = new Date(temp_airing.milestones[0].milestoneTime[(offset_index == 0 ? 1 : 0)].startDatetime)
-
-              let offset_adjust = (new_startDatetime / 1000) - (previous_startDatetime/1000) - previous_offset - new_offset
-              this.debuglog('adjusting breaks by ' + offset_adjust)
-
-              for ( var j=0; j<temp_airing.milestones.length; j++ ) {
-                offset_index = 1
-                if ( temp_airing.milestones[j].milestoneTime[0].type == 'offset' ) offset_index = 0
-                temp_airing.milestones[j].milestoneTime[offset_index].start += offset_adjust
-              }
-
-              cache_data.data.Airings = [{}]
-              cache_data.data.Airings[0] = temp_airing
-            }
-          }
-          this.save_json_cache_file(contentId, cache_data)
+          this.save_json_cache_file(cache_name, cache_data)
 
           // Default cache period is 1 hour from now
           let oneHourFromNow = new Date()
@@ -1969,12 +1928,6 @@ class sessionClass {
       }
 
       let cache_data = await this.getAiringsData(contentId)
-      // If VOD and we have fewer than 2 milestones, use the gamePk to look for more milestones in a different airing
-      if ( cache_data.data.Airings[0].mediaConfig.productType && (cache_data.data.Airings[0].mediaConfig.productType == 'VOD') && cache_data.data.Airings[0].milestones && (cache_data.data.Airings[0].milestones.length < 2) ) {
-        this.log('too few milestones, looking for more')
-        this.cache.airings[contentId] = {}
-        cache_data = await this.getAiringsData(contentId, cache_data.data.Airings[0].partnerProgramId)
-      }
 
       let broadcast_start_offset
       let broadcast_start_timestamp
