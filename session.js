@@ -1143,7 +1143,7 @@ class sessionClass {
       let cache_name = dateString
       let url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&sportId=17&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&leagueId=103&leagueId=131&contextTeamId='
       if ( team ) {
-        this.debuglog('getDayData for team ' + cache_name + ' on date ' + dateString)
+        this.debuglog('getDayData for team ' + team + ' on date ' + dateString)
         cache_name = team.toUpperCase() + dateString
         url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=' + TEAM_IDS[team.toUpperCase()] + '&startDate=' + dateString + '&endDate=' + dateString + '&gameType=&gamePk=&hydrate=team,game(content(media(epg)))'
       } else {
