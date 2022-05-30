@@ -533,7 +533,7 @@ class sessionClass {
     if ( playlistURL ) {
       return playlistURL
     } else {
-      session.log('Failed to find audio playlist URL from ' + url)
+      this.log('Failed to find audio playlist URL from ' + url)
       return ''
     }
   }

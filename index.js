@@ -42,6 +42,8 @@ const VALID_SCAN_MODES = [ 'off', 'on' ]
 
 const SAMPLE_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
 
+const SECONDS_PER_SEGMENT = 5
+
 // Basic command line arguments, if specified:
 // --port or -p (primary port to run on; defaults to 9999 if not specified)
 // --debug or -d (false if not specified)
@@ -188,8 +190,8 @@ app.get('/stream.m3u8', async function(req, res) {
       options.skip = req.query.skip || VALID_SKIP[0]
       options.pad = req.query.pad || VALID_PAD[0]
       if ( options.pad != VALID_PAD[0] ) {
-        // if pad is selected, pick a random number of times to repeat the last segment
-        options.pad = Math.floor(Math.random() * 1440) + 720
+        // if pad is selected, pick a random number of times to repeat the last segment (between 1-3 hours)
+        options.pad = Math.floor(Math.random() * (7200 / SECONDS_PER_SEGMENT)) + (3600 / SECONDS_PER_SEGMENT)
       }
 
       if ( req.query.src ) {
@@ -668,7 +670,7 @@ app.get('/playlist', async function(req, res) {
         if ( body_array[last_segment_index] == '#EXT-X-ENDLIST' ) {
           session.debuglog('padding archive stream with extra segments')
           last_segment_index--
-          while ( !body_array[last_segment_index].startsWith('#EXTINF:5') ) {
+          while ( !body_array[last_segment_index].startsWith('#EXTINF:' + SECONDS_PER_SEGMENT) ) {
             last_segment_index--
           }
           last_segment_inf = body_array[last_segment_index]
@@ -1429,7 +1431,7 @@ app.get('/', async function(req, res) {
 
     body += '<p>All: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team will include that team\'s broadcasts, not their opponent\'s broadcasts or national TV broadcasts.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=ari' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=ari' + content_protect_b + '">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team will include that team\'s broadcasts, not their opponent\'s broadcasts or national TV broadcasts.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=ari,atl' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=ari,atl' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from. Excluding a team will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=ari,national' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=ari,national' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
@@ -1969,8 +1971,8 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, audio_url,
       }
     }
 
-    // Default to keep only 12 most recent segments on disk (1 minute of 5 second segments), unless dvr is specified
-    var hls_list_size = 12
+    // Default to keep only 1 minute of segments on disk, unless dvr is specified
+    var hls_list_size = 60 / SECONDS_PER_SEGMENT
     var delete_segments = 'delete_segments+'
     if ( dvr ) {
       hls_list_size = 0
@@ -2013,7 +2015,7 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, audio_url,
     ffmpeg_command.addOutputOption('-sn')
     .addOutputOption('-t', '6:00:00')
     .addOutputOption('-f', 'hls')
-    .addOutputOption('-hls_time', '5')
+    .addOutputOption('-hls_time', SECONDS_PER_SEGMENT)
     .addOutputOption('-hls_list_size', hls_list_size)
     .addOutputOption('-hls_allow_cache', '0')
     .addOutputOption('-hls_flags', delete_segments + 'independent_segments+discont_start+program_date_time')
