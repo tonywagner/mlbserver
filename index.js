@@ -55,6 +55,7 @@ const SECONDS_PER_SEGMENT = 5
 // Advanced command line arguments:
 // --account_username (email address, default will use stored credentials or prompt user to enter them)
 // --account_password (default will use stored credentials or prompt user to enter them)
+// --zip_code (optional, for USA blackout labels, will prompt if not set or stored)
 // --multiview_port (port for multiview streaming; defaults to 1 more than primary port, or 10000)
 // --multiview_path (where to create the folder for multiview encoded files; defaults to app directory)
 // --ffmpeg_path (path to ffmpeg binary to use for multiview encoding; default downloads a binary using ffmpeg-static)
@@ -674,8 +675,8 @@ app.get('/playlist', async function(req, res) {
             last_segment_index--
           }
           last_segment_inf = body_array[last_segment_index]
-          last_segment_ts = body_array[last_segment_index+1]
-          let pad_lines = '#EXT-X-DISCONTINUITY' + '\n' + last_segment_inf + '\n' + last_segment_ts + '\n'
+          last_segment = body_array[last_segment_index+1]
+          let pad_lines = '#EXT-X-DISCONTINUITY' + '\n' + last_segment_inf + '\n' + last_segment + '\n'
           session.debuglog(pad_lines)
           for (i=0; i<pad; i++) {
             body += pad_lines
@@ -788,6 +789,7 @@ app.get('/', async function(req, res) {
     let multiview_server = server.replace(':' + session.data.port, ':' + session.data.multiviewPort)
 
     let gameDate = session.liveDate()
+    let today = gameDate
     let todayUTCHours = session.getTodayUTCHours()
     let curDate = new Date()
     if ( req.query.date ) {
@@ -896,7 +898,7 @@ app.get('/', async function(req, res) {
 
     // Reload function, called after options change
     // audio_url is disabled here, now used in multiview instead
-    body += 'var defaultDate="' + session.liveDate() + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + session.yesterdayDate() + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + session.liveDate() + '"){urldate="today"}else if (date == "' + session.yesterdayDate() + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}/*if (audio_url != ""){newurl+="audio_url="+encodeURIComponent(audio_url)+"&"}*/if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + session.yesterdayDate() + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + session.yesterdayDate() + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}/*if (audio_url != ""){newurl+="audio_url="+encodeURIComponent(audio_url)+"&"}*/if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
     // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
@@ -918,7 +920,7 @@ app.get('/', async function(req, res) {
     body += '<p><span class="tooltip">Date<span class="tooltiptext">"today" lasts until ' + todayUTCHours + ' AM EST. Home page will default to yesterday between ' + todayUTCHours + ' AM - ' + (YESTERDAY_UTC_HOURS - 4) + ' AM EST.</span></span>: <input type="date" id="gameDate" value="' + gameDate + '"/> '
     for (var i = 0; i < VALID_DATES.length; i++) {
       body += '<button '
-      if ( ((VALID_DATES[i] == VALID_DATES[0]) && (gameDate == session.liveDate())) || ((VALID_DATES[i] == VALID_DATES[1]) && (gameDate == session.yesterdayDate())) ) body += 'class="default" '
+      if ( ((VALID_DATES[i] == VALID_DATES[0]) && (gameDate == today)) || ((VALID_DATES[i] == VALID_DATES[1]) && (gameDate == session.yesterdayDate())) ) body += 'class="default" '
       body += 'onclick="date=\'' + VALID_DATES[i] + '\';reload()">' + VALID_DATES[i] + '</button> '
     }
     body += '</p>' + "\n" + '<p><span class="tinytext">Updated ' + session.getCacheUpdatedDate(gameDate) + '</span></p>' + "\n"
@@ -962,7 +964,7 @@ app.get('/', async function(req, res) {
     }
 
     if ( mediaType == VALID_MEDIA_TYPES[0] ) {
-      body += '<span class="tooltip">Inning<span class="tooltiptext">For video streams only: choose the inning to start with (and the score to display, if applicable). Inning number is relative -- for example, selecting inning 7 here will show inning 7 for scheduled 9 inning games, but inning 5 for scheduled 7 inning games, for example. If an inning number is specified, seeking to an earlier point will not be possible. Inning 0 (zero) should be the broadcast start time, if available. Default is the beginning of the stream. To use with radio, set the video track to "None".</span></span>: '
+      body += '<span class="tooltip">Inning<span class="tooltiptext">For video streams only: choose the inning to start with (and the score to display, if applicable). Inning number is relative -- for example, selecting inning 7 here will show inning 7 for scheduled 9-inning games, but inning 5 for scheduled 7-inning games, for example. If an inning number is specified, seeking to an earlier point will not be possible. Inning 0 (zero) should be the broadcast start time, if available. Default is the beginning of the stream. To use with radio, set the video track to "None".</span></span>: '
       body += '<select id="inning_half" onchange="inning_half=this.value;reload()">'
       for (var i = 0; i < VALID_INNING_HALF.length; i++) {
         body += '<option value="' + VALID_INNING_HALF[i] + '"'
@@ -1043,8 +1045,13 @@ app.get('/', async function(req, res) {
       body += '</td></tr>' + "\n"
     }
 
+    let national_blackout = /(^\d{5}$)/.test(session.credentials.zip_code)
+
     for (var j = 0; j < cache_data.dates[0].games.length; j++) {
       let game_started = false
+
+      let blackout_type
+      let blackout_time
 
       let awayteam = cache_data.dates[0].games[j].teams['away'].team.abbreviation
       let hometeam = cache_data.dates[0].games[j].teams['home'].team.abbreviation
@@ -1070,10 +1077,14 @@ app.get('/', async function(req, res) {
       var scheduledInnings = '9'
       if ( cache_data.dates[0].games[j].linescore && cache_data.dates[0].games[j].linescore.scheduledInnings ) {
         scheduledInnings = cache_data.dates[0].games[j].linescore.scheduledInnings
+          if ( detailedState.startsWith('Completed Early') && cache_data.dates[0].games[j].linescore.currentInning ) {
+            scheduledInnings = cache_data.dates[0].games[j].linescore.currentInning
+          }
       }
       var relative_inning = (inning_number - (9 - scheduledInnings))
       relative_inning = relative_inning < 0 ? 0 : relative_inning
-      if ( (scores == VALID_SCORES[1]) && (cache_data.dates[0].games[j].gameUtils.isLive || cache_data.dates[0].games[j].gameUtils.isFinal) && !cache_data.dates[0].games[j].gameUtils.isCancelled && !cache_data.dates[0].games[j].gameUtils.isPostponed ) {
+      //if ( (scores == VALID_SCORES[1]) && (cache_data.dates[0].games[j].gameUtils.isLive || cache_data.dates[0].games[j].gameUtils.isFinal) && !cache_data.dates[0].games[j].gameUtils.isCancelled && !cache_data.dates[0].games[j].gameUtils.isPostponed ) {
+      if ( (scores == VALID_SCORES[1]) && (abstractGameState != 'Preview') && (detailedState != 'Postponed') ) {
         let awayscore = ''
         let homescore = ''
         if ( (inning_number != VALID_INNING_NUMBER[0]) && cache_data.dates[0].games[j].linescore && cache_data.dates[0].games[j].linescore.innings ) {
@@ -1110,9 +1121,11 @@ app.get('/', async function(req, res) {
         } else {
           awayscore = cache_data.dates[0].games[j].teams['away'].score
           homescore = cache_data.dates[0].games[j].teams['home'].score
-          if ( cache_data.dates[0].games[j].gameUtils.isLive && !cache_data.dates[0].games[j].gameUtils.isFinal ) {
+          //if ( cache_data.dates[0].games[j].gameUtils.isLive && !cache_data.dates[0].games[j].gameUtils.isFinal ) {
+          if ( abstractGameState == 'Live' ) {
             state = "<br/>" + cache_data.dates[0].games[j].linescore.inningHalf.substr(0,1) + cache_data.dates[0].games[j].linescore.currentInning
-          } else if ( cache_data.dates[0].games[j].gameUtils.isFinal ) {
+          //} else if ( cache_data.dates[0].games[j].gameUtils.isFinal ) {
+          } else if ( abstractGameState == 'Final' ) {
             state = "<br/>" + detailedState
           }
           if ( cache_data.dates[0].games[j].flags.perfectGame == true ) {
@@ -1122,9 +1135,11 @@ app.get('/', async function(req, res) {
           }
         }
         teams = awayteam + " " + awayscore + " @ " + hometeam + " " + homescore
-      } else if ( cache_data.dates[0].games[j].gameUtils.isCancelled || cache_data.dates[0].games[j].gameUtils.isPostponed || cache_data.dates[0].games[j].gameUtils.isSuspended ) {
+      //} else if ( cache_data.dates[0].games[j].gameUtils.isCancelled || cache_data.dates[0].games[j].gameUtils.isPostponed || cache_data.dates[0].games[j].gameUtils.isSuspended ) {
+      } else if ( detailedState == 'Postponed' ) {
         state = "<br/>" + detailedState
-      } else if ( cache_data.dates[0].games[j].gameUtils.isDelayed ) {
+      //} else if ( cache_data.dates[0].games[j].gameUtils.isDelayed ) {
+      } else if ( detailedState.startsWith('Delayed') ) {
         state += "<br/>" + detailedState
       }
       if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
@@ -1138,19 +1153,20 @@ app.get('/', async function(req, res) {
         state += "<br/>" + cache_data.dates[0].games[j].description
       }
       if ( scheduledInnings != '9' ) {
-        state += "<br/>" + cache_data.dates[0].games[j].linescore.scheduledInnings + " inning game"
+        state += "<br/>" + scheduledInnings + "-inning game"
       }
       var resumeStatus = false
       if ( cache_data.dates[0].games[j].resumeGameDate || cache_data.dates[0].games[j].resumedFromDate ) {
+        state += '<br/>Resum'
         let resumeDate
         if ( cache_data.dates[0].games[j].resumeGameDate ) {
-          resumeDate = new Date(cache_data.dates[0].games[j].resumeGameDate)
-          state += "<br/>Resuming on<br/>"
+          resumeDate = new Date(cache_data.dates[0].games[j].resumeDate)
+          state += 'ing on'
         } else {
-          resumeDate = new Date(cache_data.dates[0].games[j].resumedFromDate)
-          state += "<br/>Resumed from<br/>"
+          resumeDate = new Date(cache_data.dates[0].games[j].resumedFrom)
+          state += 'ed from'
         }
-        state += resumeDate.toLocaleString('default', { month: 'long' }) + " " + (resumeDate.getDate()+1)
+        state += '<br/>' + resumeDate.toLocaleString('default', { month: 'long', day: 'numeric' })
         // Also show the status by the media links, if one of them is live
         resumeStatus = 'archived'
         if ( ((typeof cache_data.dates[0].games[j].content.media) != 'undefined') || ((typeof cache_data.dates[0].games[j].content.media.epg) != 'undefined') ) {
@@ -1224,13 +1240,15 @@ app.get('/', async function(req, res) {
             if ( epgTitle == mediaType ) {
               for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
                 // check that pay TV authentication isn't required
-                if ( (mediaType == 'MLBTV') && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[0].games[j].gameUtils.isFinal) && (cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                //if ( (mediaType == 'MLBTV') && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[0].games[j].gameUtils.isFinal) && (cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired ) {
                   continue
                 }
                 if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
                   if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].language == language) ) {
                     let teamabbr
-                    if ( (((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL')) || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason) ) {
+                    //if ( (((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL')) || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason) ) {
+                    if ( (((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL')) || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training')) ) {
                       teamabbr = 'NATIONAL'
                     } else {
                       teamabbr = hometeam
@@ -1242,15 +1260,61 @@ app.get('/', async function(req, res) {
                     if ( cache_data.dates[0].games[j].content.media.freeGame ) {
                       station += '*'
                     }
-                    if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal ) {
+                    // estimate blackout expiration, if necessary
+                    if ( !blackout_type && (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL')) || ((cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
+                      if ( national_blackout && (teamabbr == 'NATIONAL') ) {
+                        blackout_type = 'National'
+                      } else {
+                        blackout_type = 'Local'
+                      }
+                      if ( (resumeStatus == false) && (cache_data.dates[0].games[j].status.startTimeTBD == false) ) {
+                        // avg 9 inning game was 3:11 in 2021, or 21.22 minutes per inning
+                        let gameDurationMinutes = 21.22 * scheduledInnings
+                        // default to assuming the scheduled game time is the first pitch time
+                        let firstPitch = new Date(cache_data.dates[0].games[j].gameDate)
+                        if ( cache_data.dates[0].games[j].gameInfo ) {
+                          // check if firstPitch has been updated with a valid time (later than the scheduled game time)
+                          if ( cache_data.dates[0].games[j].gameInfo.firstPitch && (cache_data.dates[0].games[j].gameInfo.firstPitch >= cache_data.dates[0].games[j].gameDate) ) {
+                            firstPitch = new Date(cache_data.dates[0].games[j].gameInfo.firstPitch)
+                            // for completed games, get the duration too
+                            if ( cache_data.dates[0].games[j].gameInfo.gameDurationMinutes ) {
+                              gameDurationMinutes = cache_data.dates[0].games[j].gameInfo.gameDurationMinutes
+                              // add any delays
+                              if ( cache_data.dates[0].games[j].gameInfo.delayDurationMinutes ) {
+                                gameDurationMinutes += cache_data.dates[0].games[j].gameInfo.delayDurationMinutes
+                              }
+                            }
+                          }
+                        }
+                        gameDurationMinutes += 90
+                        blackout_time = firstPitch
+                        blackout_time.setMinutes(blackout_time.getMinutes()+gameDurationMinutes)
+                      }
+                    } else if ( !blackout_type ) {
+                      blackout_type = 'None'
+                    }
+
+                    // display blackout tooltip, if necessary
+                    if ( blackout_type != 'None' ) {
+                      body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">' + blackout_type + ' video blackout until approx. 90 min. after the game'
+                      if ( blackout_time ) {
+                        body += ' (~' + blackout_time.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ')'
+                      }
+                      body += '</span></span>'
+                    } else {
+                      body += teamabbr
+                    }
+                    body += ': '
+                    //if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal ) {
+                    if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (abstractGameState == 'Final') ) {
                       let gameTime = new Date(cache_data.dates[0].games[j].gameDate)
                       gameTime.setMinutes(gameTime.getMinutes()-10)
                       if ( curDate >= gameTime ) {
                         game_started = true
                       }
                       let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
-                      if ( (mediaType == 'MLBTV') && session.cache.media && session.cache.media[mediaId] && session.cache.media[mediaId].blackout && session.cache.media[mediaId].blackoutExpiry && (new Date(session.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
-                        body += teamabbr + ': <s>' + station + '</s>'
+                      if ( (mediaType == 'MLBTV') && (gameDate == today) && session.cache.media && session.cache.media[mediaId] && session.cache.media[mediaId].blackout && session.cache.media[mediaId].blackoutExpiry && (new Date(session.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
+                        body += '<s>' + station + '</s>'
                       } else {
                         let querystring
                         querystring = '?mediaId=' + mediaId
@@ -1280,7 +1344,12 @@ app.get('/', async function(req, res) {
                         }
                         querystring += content_protect_b
                         multiviewquerystring += content_protect_b
-                        body += teamabbr + ': <a href="' + thislink + querystring + '">' + station + '</a>'
+                        stationlink = '<a href="' + thislink + querystring + '">' + station + '</a>'
+                        if ( (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL')) || ((cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
+                          body += '<s>' + stationlink + '</s>'
+                        } else {
+                          body += stationlink
+                        }
                         if ( mediaType == 'MLBTV' ) {
                           body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
                         }
@@ -1312,13 +1381,18 @@ app.get('/', async function(req, res) {
                           body += ')'
                         }
                         body += ', '
-                        // add YouTube link where available
-                        if ( (mediaType == 'MLBTV') && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId ) {
-                          body += '<a href="https://www.youtube.com/watch?v=' + cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId + '" target="_blank">' + station + '</a>, '
-                        }
                       }
                     } else {
-                      body += teamabbr + ': ' + station + ', '
+                      if ( (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL')) || ((cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
+                        body += '<s>' + station + '</s>'
+                      } else {
+                        body += station
+                      }
+                      body += ', '
+                    }
+                    // add YouTube link where available
+                    if ( (mediaType == 'MLBTV') && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId ) {
+                      body += '<a href="https://www.youtube.com/watch?v=' + cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId + '" target="_blank">' + station + '</a>'
                     }
                   }
                 }
@@ -1329,11 +1403,9 @@ app.get('/', async function(req, res) {
           if ( body.substr(-2) == ', ' ) {
             body = body.slice(0, -2)
           }
-          if ( (mediaType == 'MLBTV') && (game_started) && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.summary && cache_data.dates[0].games[j].content.summary.hasHighlightsVideo ) {
+          //if ( (mediaType == 'MLBTV') && (game_started) && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.summary && cache_data.dates[0].games[j].content.summary.hasHighlightsVideo ) {
+          if ( (mediaType == 'MLBTV') && (game_started) ) {
             body += '<br/><a href="javascript:showhighlights(\'' + cache_data.dates[0].games[j].gamePk + '\',\'' + gameDate + '\')">Highlights</a>'
-          }
-          if ( body.substr(-2) == ', ' ) {
-            body = body.slice(0, -2)
           }
         }
         body += "</td>"
@@ -1407,7 +1479,7 @@ app.get('/', async function(req, res) {
         body += '</td></tr></table><br/>' + "\n"
     }
 
-    if ( (linkType == VALID_LINK_TYPES[1]) && (gameDate == session.liveDate()) ) {
+    if ( (linkType == VALID_LINK_TYPES[1]) && (gameDate == today) ) {
       body += '<p><span class="tooltip">Force VOD<span class="tooltiptext">For streams only: if your client does not support seeking in mlbserver live streams, turning this on will make the stream look like a VOD stream instead, allowing the client to start at the beginning and allowing the user to seek within it. You will need to reload the stream to watch/view past the current time, though.</span></span>: '
       for (var i = 0; i < VALID_FORCE_VOD.length; i++) {
         body += '<button '
@@ -1433,7 +1505,12 @@ app.get('/', async function(req, res) {
 
     body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team will include that team\'s broadcasts, not their opponent\'s broadcasts or national TV broadcasts.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=ari,atl' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=ari,atl' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from. Excluding a team will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=ari,national' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=ari,national' + content_protect_b + '">guide.xml</a></p>' + "\n"
+    let exclude_teams = 'ari,national'
+    if ( session.credentials.blackout_teams.length > 0 ) {
+      exclude_teams = session.credentials.blackout_teams.toString().toLowerCase()
+      exclude_teams += ',national'
+    }
+    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from. Excluding a team will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">guide.xml</a></p>' + "\n"
 

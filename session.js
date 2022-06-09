@@ -37,9 +37,10 @@ const TEAM_IDS = {'ARI':'109','ATL':'144','BAL':'110','BOS':'111','CHC':'112','C
 const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
 // These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
 const ACTION_TYPES = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Error', 'Out', 'Balk', 'Defensive Indiff']
-const EVENT_START_PADDING = -5
-const EVENT_END_PADDING = 8
-const MINIMUM_BREAK_DURATION = 10
+const EVENT_START_PADDING = 0
+const PITCH_END_PADDING = 7
+const ACTION_END_PADDING = 8
+const MINIMUM_BREAK_DURATION = 5
 
 class sessionClass {
   // Initialize the class
@@ -131,6 +132,20 @@ class sessionClass {
     }
     if ( !this.data.linkType ) {
       this.setLinkType('embed')
+    }
+
+    // Check if zip code was provided and if it is different from the stored one
+    if ( argv.zip_code && (argv.zip_code != this.credentials.zip_code) ) {
+      this.debuglog('updating zip code and blackout teams')
+      this.credentials.zip_code = argv.zip_code.toString()
+      this.updateBlackoutTeams()
+    } else {
+      // Prompt for zip code if it doesn't exist
+      if ( !this.credentials.zip_code ) {
+        this.debuglog('prompting for zip code')
+        this.credentials.zip_code = readlineSync.question('Enter 5-digit zip code (optional, for USA blackout labels): ').toString()
+        this.updateBlackoutTeams()
+      }
     }
   }
 
@@ -1010,7 +1025,8 @@ class sessionClass {
                     continue
                   }
                   if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
-                    if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason)) ) {
+                    //if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason)) ) {
+                    if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[i].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[i].seriesDescription != 'Spring Training'))) ) {
                       nationalCount += 1
                       let nationalArray = team.split('.')
                       if ( (nationalArray.length == 2) && (nationalArray[1] == nationalCount) ) {
@@ -1141,11 +1157,12 @@ class sessionClass {
     try {
       let cache_data
       let cache_name = dateString
-      let url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&sportId=17&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&leagueId=103&leagueId=131&contextTeamId='
+      //let url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&sportId=17&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&leagueId=103&leagueId=131&contextTeamId='
+      let url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1,51&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=game(content(media(epg))),probablePitcher,linescore,team,flags,gameInfo'
       if ( team ) {
         this.debuglog('getDayData for team ' + team + ' on date ' + dateString)
         cache_name = team.toUpperCase() + dateString
-        url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=' + TEAM_IDS[team.toUpperCase()] + '&startDate=' + dateString + '&endDate=' + dateString + '&gameType=&gamePk=&hydrate=team,game(content(media(epg)))'
+        url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=' + TEAM_IDS[team.toUpperCase()] + '&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=team,game(content(media(epg)))'
       } else {
         this.debuglog('getDayData for date ' + dateString)
       }
@@ -1292,6 +1309,7 @@ class sessionClass {
         var channels = {}
         var nationalChannels = {}
         let prevDateIndex = {MLBTV:-1,Audio:-1}
+        let national_blackout = /(^\d{5}$)/.test(this.credentials.zip_code)
         for (var i = 0; i < cache_data.dates.length; i++) {
           let dateIndex = {MLBTV:i,Audio:i}
           let nationalCounter = {MLBTV:0,Audio:0}
@@ -1333,15 +1351,19 @@ class sessionClass {
                       }
                       if ( ((((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1)) && (((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].language != 'es'))) ) {
                         let teamType = cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType]
-                        if ( (mediaType == 'MLBTV') && cache_data.dates[i].games[j].gameUtils.isPostSeason ) {
+                        //if ( (mediaType == 'MLBTV') && cache_data.dates[i].games[j].gameUtils.isPostSeason ) {
+                        if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[i].games[j].seriesDescription != 'Spring Training') ) {
                           teamType = 'NATIONAL'
                         }
-                        let team
-                        let opponent_team
-                        if ( teamType == 'NATIONAL' ) {
-                          team = cache_data.dates[i].games[j].teams['home'].team.abbreviation
-                          opponent_team = cache_data.dates[i].games[j].teams['away'].team.abbreviation
+                        let team = cache_data.dates[i].games[j].teams['home'].team.abbreviation
+                        let opponent_team = cache_data.dates[i].games[j].teams['away'].team.abbreviation
 
+                        // check blackout status
+                        if ( (mediaType == 'MLBTV') && ((national_blackout && (teamType == 'NATIONAL')) || ((cache_data.dates[i].games[j].seriesDescription != 'Spring Training') && (this.credentials.blackout_teams.includes(team) || this.credentials.blackout_teams.includes(opponent_team)))) ) {
+                          continue
+                        }
+
+                        if ( teamType == 'NATIONAL' ) {
                           if ( dateIndex[mediaTitle] > prevDateIndex[mediaTitle] ) {
                             prevDateIndex[mediaTitle] = dateIndex[mediaTitle]
                             nationalCounter[mediaTitle] = 1
@@ -1480,6 +1502,7 @@ class sessionClass {
         var channels = {}
         var programs = ""
         let prevDateIndex = {MLBTV:-1,Audio:-1}
+        let national_blackout = /(^\d{5}$)/.test(this.credentials.zip_code)
         for (var i = 0; i < cache_data.dates.length; i++) {
           let dateIndex = {MLBTV:i,Audio:i}
           let nationalCounter = {MLBTV:0,Audio:0}
@@ -1552,15 +1575,19 @@ class sessionClass {
                       }
                       if ( ((((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1)) && (((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].language != 'es'))) ) {
                         let teamType = cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType]
-                        if ( (mediaType == 'MLBTV') && cache_data.dates[i].games[j].gameUtils.isPostSeason ) {
+                        //if ( (mediaType == 'MLBTV') && cache_data.dates[i].games[j].gameUtils.isPostSeason ) {
+                        if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[i].games[j].seriesDescription != 'Spring Training') ) {
                           teamType = 'NATIONAL'
                         }
-                        let team
-                        let opponent_team
-                        if ( teamType == 'NATIONAL' ) {
-                          team = cache_data.dates[i].games[j].teams['home'].team.abbreviation
-                          opponent_team = cache_data.dates[i].games[j].teams['away'].team.abbreviation
+                        let team = cache_data.dates[i].games[j].teams['home'].team.abbreviation
+                        let opponent_team = cache_data.dates[i].games[j].teams['away'].team.abbreviation
 
+                        // check blackout status
+                        if ( (mediaType == 'MLBTV') && ((national_blackout && (teamType == 'NATIONAL')) || ((cache_data.dates[i].games[j].seriesDescription != 'Spring Training') && (this.credentials.blackout_teams.includes(team) || this.credentials.blackout_teams.includes(opponent_team)))) ) {
+                          continue
+                        }
+
+                        if ( teamType == 'NATIONAL' ) {
                           if ( dateIndex[mediaTitle] > prevDateIndex[mediaTitle] ) {
                             prevDateIndex[mediaTitle] = dateIndex[mediaTitle]
                             nationalCounter[mediaTitle] = 1
@@ -2030,22 +2057,26 @@ class sessionClass {
             if ((current_inning > start_inning) || ((current_inning == start_inning) && ((current_inning_half == start_inning_half) || (current_inning_half == 'bottom')))) {
               // loop through events within each play
               for (var j=0; j < cache_data.liveData.plays.allPlays[i].playEvents.length; j++) {
+                let event_end_padding = ACTION_END_PADDING
                 // always exclude break types
                 if (cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && BREAK_TYPES.includes(cache_data.liveData.plays.allPlays[i].playEvents[j].details.event)) {
                   // if we're in the process of skipping inning breaks, treat the first break type we find as another inning break
                   if ((skip_type == 1) && (previous_inning > 0)) {
-                    break_start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[j].startTime) - broadcast_start_timestamp) / 1000) + EVENT_END_PADDING
+                    break_start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[j].startTime) - broadcast_start_timestamp) / 1000) + event_end_padding
                     previous_inning = 0
                   }
                   continue
                 } else {
+                  if ( (j < (cache_data.liveData.plays.allPlays[i].playEvents.length - 1)) && (!cache_data.liveData.plays.allPlays[i].playEvents[j].details || !cache_data.liveData.plays.allPlays[i].playEvents[j].details.event || !ACTION_TYPES.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
+                    event_end_padding = PITCH_END_PADDING
+                  }
                   let action_index
                   // skip type 1 (breaks) && 2 (idle time) will look at all plays with an endTime
                   if ((skip_type <= 2) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime) {
                     action_index = j
                   } else if (skip_type == 3) {
                     // skip type 3 excludes non-action pitches (events that aren't last in the at-bat and don't fall under action types)
-                    if ( (j < (cache_data.liveData.plays.allPlays[i].playEvents.length - 1)) && (!cache_data.liveData.plays.allPlays[i].playEvents[j].details || !cache_data.liveData.plays.allPlays[i].playEvents[j].details.event || !ACTION_TYPES.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
+                    if ( event_end_padding == PITCH_END_PADDING ) {
                       continue
                     } else {
                       // if the action is associated with another play or the event doesn't have an end time, use the previous event instead
@@ -2074,10 +2105,21 @@ class sessionClass {
                         break
                       }
                     }
-                    break_start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[action_index].endTime) - broadcast_start_timestamp) / 1000) + EVENT_END_PADDING
+                    break_start = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[action_index].endTime) - broadcast_start_timestamp) / 1000) + event_end_padding
                     // add extra padding for overturned review plays
-                    if (cache_data.liveData.plays.allPlays[i].reviewDetails && (cache_data.liveData.plays.allPlays[i].reviewDetails.isOverturned == true)) {
-                      break_start += 40
+                    if ( cache_data.liveData.plays.allPlays[i].reviewDetails ) {
+                      let isOverturned = cache_data.liveData.plays.allPlays[i].reviewDetails.isOverturned
+                      if ( (isOverturned == false) && cache_data.liveData.plays.allPlays[i].reviewDetails.additionalReviews && (cache_data.liveData.plays.allPlays[i].reviewDetails.additionalReviews.length > 0) ) {
+                        for (var k=0; k < cache_data.liveData.plays.allPlays[i].reviewDetails.additionalReviews.length; k++) {
+                          isOverturned = cache_data.liveData.plays.allPlays[i].reviewDetails.additionalReviews[k].isOverturned
+                          if ( isOverturned == true ) {
+                            break
+                          }
+                        }
+                      }
+                      if (isOverturned) {
+                        break_start += 40
+                      }
                     }
                   }
                 }
@@ -2349,6 +2391,42 @@ class sessionClass {
         }
       }
     }
+  }
+
+  // Update blackout teams
+  async updateBlackoutTeams() {
+    this.debuglog('getBlackoutTeams for zip code ' + this.credentials.zip_code)
+
+    let blackout_teams = []
+
+    try {
+      if ( /(^\d{5}$)/.test(this.credentials.zip_code) ) {
+        let reqObj = {
+          url: 'https://content.mlb.com/data/blackouts/' + this.credentials.zip_code + '.json',
+          headers: {
+            'User-Agent': USER_AGENT,
+            'Origin': 'https://www.mlb.com',
+            'Referer': 'https://www.mlb.com/'
+          }
+        }
+        var response = await this.httpGet(reqObj)
+        if ( this.isValidJson(response) ) {
+          this.debuglog('getBlackoutTeams response : ' + response)
+          let obj = JSON.parse(response)
+          if ( obj.teams ) {
+            blackout_teams = obj.teams
+          }
+        } else {
+          this.log('error : invalid json from url ' + reqObj.url)
+        }
+      }
+    } catch(e) {
+      this.log('getBlackoutTeams error : ' + e.message)
+    }
+
+    this.log('setting blackout teams to ' + JSON.stringify(blackout_teams))
+    this.credentials.blackout_teams = blackout_teams
+    this.save_credentials()
   }
 
 }
