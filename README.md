@@ -1,6 +1,6 @@
 # mlbserver
 
-Current version 2022.06.09
+Current version 2022.06.14
 
 Credit to https://github.com/tonycpsu/streamglob and https://github.com/mafintosh/hls-decryptor
 
@@ -35,6 +35,8 @@ Advanced command line options:
 --account_username (email address, default will use stored credentials or prompt user to enter them)
 --account_password (default will use stored credentials or prompt user to enter them)
 --zip_code (optional, for USA blackout labels, will prompt if not set or stored)
+--fav_teams (optional, comma-separated list of favorite team abbreviations, will prompt if not set or stored)
+--free (optional, highlights free games)
 --multiview_port (port for multiview streaming; defaults to 1 more than primary port, or 10000)
 --multiview_path (where to create the folder for multiview encoded files; defaults to app directory)
 --ffmpeg_path (path to ffmpeg binary to use for multiview encoding; default downloads a binary using ffmpeg-static)

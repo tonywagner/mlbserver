@@ -44,6 +44,9 @@ const SAMPLE_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
 
 const SECONDS_PER_SEGMENT = 5
 
+// for favorites: text, then background, based on https://teamcolors.jim-nielsen.com/
+const TEAM_COLORS = {'ARI': ['E3D4AD', 'A71930'], 'ATL': ['13274F', 'CE1141'], 'BAL': ['000000', 'DF4601'], 'BOS': ['0D2B56', 'BD3039'], 'CHC': ['CC3433', '0E3386'], 'CWS': ['000000', 'C4CED4'], 'CIN': ['FFFFFF', 'C6011F'], 'CLE': ['002B5C', 'E31937'], 'COL': ['C4CED4', '333366'], 'DET': ['0C2C56', 'FFFFFF'], 'HOU': ['002D62', 'EB6E1F'], 'KC': ['C09A5B', '004687'], 'LAA': ['FFFFFF', 'BA0021'], 'LAD': ['FFFFFF', '005A9C'], 'MIA': ['0077C8', 'FF6600'], 'MIL': ['0A2351', 'B6922E'], 'MIN': ['D31145', '002B5C'], 'NYM': ['002D72', 'FF5910'], 'NYY': ['FFFFFF', '003087'], 'OAK': ['003831', 'EFB21E'], 'PHI': ['284898', 'E81828'], 'PIT': ['000000', 'FDB827'], 'STL': ['FEDB00', 'C41E3A'], 'SD': ['FEC325', '7F411C'], 'SF': ['000000', 'FD5A1E'], 'SEA': ['C4CED4', '005C5C'], 'TB': ['092C5C', '8FBCE6'], 'TEX': ['003278', 'C0111F'], 'TOR': ['FFFFFF', '134A8E'], 'WSH': ['AB0003', '11225B']}
+
 // Basic command line arguments, if specified:
 // --port or -p (primary port to run on; defaults to 9999 if not specified)
 // --debug or -d (false if not specified)
@@ -56,6 +59,8 @@ const SECONDS_PER_SEGMENT = 5
 // --account_username (email address, default will use stored credentials or prompt user to enter them)
 // --account_password (default will use stored credentials or prompt user to enter them)
 // --zip_code (optional, for USA blackout labels, will prompt if not set or stored)
+// --fav_teams (optional, comma-separated list of favorite team abbreviations, will prompt if not set or stored)
+// --free (optional, free account, highlights free games)
 // --multiview_port (port for multiview streaming; defaults to 1 more than primary port, or 10000)
 // --multiview_path (where to create the folder for multiview encoded files; defaults to app directory)
 // --ffmpeg_path (path to ffmpeg binary to use for multiview encoding; default downloads a binary using ffmpeg-static)
@@ -73,7 +78,7 @@ var argv = minimist(process.argv, {
     c: 'cache',
     v: 'version'
   },
-  boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version'],
+  boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version', 'free'],
   string: ['port', 'account_username', 'account_password', 'multiview_port', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect']
 })
 
@@ -164,11 +169,14 @@ app.get('/stream.m3u8', async function(req, res) {
 
   try {
     session.log('stream.m3u8 request : ' + req.url)
+    if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+    if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
     let mediaId
     let contentId
     let streamURL
     let options = {}
+    let includeBlackouts = 'false'
     let urlArray = req.url.split('?')
     if ( (urlArray.length == 1) || ((session.data.scan_mode == VALID_SCAN_MODES[1]) && req.query.team) || (!req.query.team && !req.query.src && !req.query.highlight_src && !req.query.event && !req.query.id && !req.query.mediaId && !req.query.contentId) ) {
       // load a sample encrypted HLS stream
@@ -195,6 +203,10 @@ app.get('/stream.m3u8', async function(req, res) {
         options.pad = Math.floor(Math.random() * (7200 / SECONDS_PER_SEGMENT)) + (3600 / SECONDS_PER_SEGMENT)
       }
 
+      if (req.query.includeBlackouts) {
+        includeBlackouts = req.query.includeBlackouts
+      }
+
       if ( req.query.src ) {
         streamURL = req.query.src
       } else if ( req.query.highlight_src ) {
@@ -211,7 +223,7 @@ app.get('/stream.m3u8', async function(req, res) {
           mediaId = await session.getMediaIdFromContentId(contentId)
         } else if ( req.query.team ) {
           let mediaType = req.query.mediaType || VALID_MEDIA_TYPES[0]
-          let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), mediaType, req.query.date, req.query.game)
+          let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), mediaType, req.query.date, req.query.game, includeBlackouts)
           if ( mediaInfo ) {
             mediaId = mediaInfo.mediaId
             contentId = mediaInfo.contentId
@@ -530,6 +542,8 @@ app.get('/playlist', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   session.debuglog('playlist request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.debuglog('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.debuglog('using: ' + req.headers['user-agent'])
 
   delete req.headers.host
 
@@ -703,6 +717,8 @@ app.get('/ts', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   session.debuglog('ts request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.debuglog('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.debuglog('using: ' + req.headers['user-agent'])
 
   delete req.headers.host
 
@@ -778,12 +794,24 @@ async function protect(req, res) {
   return true
 }
 
+function getLastName(fullName) {
+  let indexOfSpace = fullName.indexOf(' ');
+
+  if (indexOfSpace === -1) {
+    return fullName;
+  }
+
+  return fullName.substring(indexOfSpace + 1);
+}
+
 // Server homepage, base URL
 app.get('/', async function(req, res) {
   try {
     if ( ! (await protect(req, res)) ) return
 
-    session.debuglog('homepage request : ' + req.url)
+    session.log('homepage request : ' + req.url)
+    if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+    if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
     let server = 'http://' + req.headers.host
     let multiview_server = server.replace(':' + session.data.port, ':' + session.data.multiviewPort)
@@ -880,7 +908,7 @@ app.get('/', async function(req, res) {
       content_protect_b = '&content_protect=' + content_protect
     }
 
-    var body = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg' + content_protect_a + '"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:none}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext,textarea,input[type="number"]{font-size:.8em}textarea{width:380px}'
+    var body = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg' + content_protect_a + '"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:none}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext,textarea,input[type="number"]{font-size:.8em}textarea{width:380px}.freegame,.freegame a{color:green}.blackout,.blackout a{text-decoration:line-through}'
 
     // Highlights CSS
     //max-height:calc(100vh-110px);
@@ -992,8 +1020,6 @@ app.get('/', async function(req, res) {
     }
     body += '</p>' + "\n"
 
-    body += '<p><span class="tooltip tinytext">* indicates a free game<span class="tooltiptext">Free games are available to anyone with an account, no subscription necessary. Blackouts still apply.</span></span></p>' + "\n"
-
     body += "<table>" + "\n"
 
     // Rename some parameters before display links
@@ -1045,7 +1071,14 @@ app.get('/', async function(req, res) {
       body += '</td></tr>' + "\n"
     }
 
+    // assume national broadcasts are blacked out if a USA zip code is set
     let national_blackout = /(^\d{5}$)/.test(session.credentials.zip_code)
+
+    // check for simultaneous regular season Fox regional games, which generally aren't blacked out
+    let fox_national_blackout = national_blackout
+    if ( (fox_national_blackout == true) && (mediaType == 'MLBTV') ) {
+      fox_national_blackout = await session.checkFoxBlackout(cache_data.dates[0].games)
+    }
 
     for (var j = 0; j < cache_data.dates[0].games.length; j++) {
       let game_started = false
@@ -1182,22 +1215,34 @@ app.get('/', async function(req, res) {
         }
       }
 
-      if ( (cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.lastName) || (cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.lastName) ) {
+      if ( (cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName) || (cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName) ) {
         pitchers = "<br/>"
-        if ( cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.lastName ) {
-          pitchers += '<a href="https://mlb.com/player/' + cache_data.dates[0].games[j].teams['away'].probablePitcher.nameSlug + '" target="_blank">' + cache_data.dates[0].games[j].teams['away'].probablePitcher.lastName + '</a>'
+        if ( cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName ) {
+          pitchers += getLastName(cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName) + '</a>'
         } else {
           pitchers += 'TBD'
         }
         pitchers += ' vs '
-        if ( cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.lastName ) {
-          pitchers += '<a href="https://mlb.com/player/' + cache_data.dates[0].games[j].teams['home'].probablePitcher.nameSlug + '" target="_blank">' +cache_data.dates[0].games[j].teams['home'].probablePitcher.lastName + '</a>'
+        if ( cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName ) {
+          pitchers += getLastName(cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName) + '</a>'
         } else {
           pitchers += 'TBD'
         }
       }
 
-      body += "<tr><td>" + teams + pitchers + state + "</td>"
+      body += '<tr'
+      let fav_style = ''
+      if ( argv.free && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.freeGame ) {
+        body += ' class="freegame"'
+      } else if ( session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['away'].team.abbreviation) || session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['home'].team.abbreviation) ) {
+        let fav_team = cache_data.dates[0].games[j].teams['away'].team.abbreviation
+        if ( session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['home'].team.abbreviation) ) {
+          fav_team = cache_data.dates[0].games[j].teams['home'].team.abbreviation
+        }
+        fav_style = ' style="color:#' + TEAM_COLORS[fav_team][0] + ';background:#' + TEAM_COLORS[fav_team][1] + ';"'
+        body += fav_style
+      }
+      body += '><td>' + teams + pitchers + state + '</td>'
 
       // Check if Winter League game first
       if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
@@ -1257,11 +1302,9 @@ app.get('/', async function(req, res) {
                       }
                     }
                     let station = cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters
-                    if ( cache_data.dates[0].games[j].content.media.freeGame ) {
-                      station += '*'
-                    }
+
                     // estimate blackout expiration, if necessary
-                    if ( !blackout_type && (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL')) || ((cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
+                    if ( !blackout_type && (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL') && ((station != 'FOX') || (fox_national_blackout == true))) || ((teamabbr != 'NATIONAL') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
                       if ( national_blackout && (teamabbr == 'NATIONAL') ) {
                         blackout_type = 'National'
                       } else {
@@ -1296,11 +1339,13 @@ app.get('/', async function(req, res) {
 
                     // display blackout tooltip, if necessary
                     if ( blackout_type != 'None' ) {
-                      body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">' + blackout_type + ' video blackout until approx. 90 min. after the game'
+                      body += '<span class="tooltip"><span class="blackout">' + teamabbr + '</span><span class="tooltiptext">' + blackout_type + ' video blackout until approx. 90 min. after the game'
                       if ( blackout_time ) {
                         body += ' (~' + blackout_time.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ')'
                       }
                       body += '</span></span>'
+                    } else if ( (station == 'FOX') && (fox_national_blackout == false) ) {
+                      body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">Regional FOX game</span></span>'
                     } else {
                       body += teamabbr
                     }
@@ -1314,7 +1359,7 @@ app.get('/', async function(req, res) {
                       }
                       let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
                       if ( (mediaType == 'MLBTV') && (gameDate == today) && session.cache.media && session.cache.media[mediaId] && session.cache.media[mediaId].blackout && session.cache.media[mediaId].blackoutExpiry && (new Date(session.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
-                        body += '<s>' + station + '</s>'
+                        body += '<span class="blackout">' + station + '</span>'
                       } else {
                         let querystring
                         querystring = '?mediaId=' + mediaId
@@ -1344,9 +1389,9 @@ app.get('/', async function(req, res) {
                         }
                         querystring += content_protect_b
                         multiviewquerystring += content_protect_b
-                        stationlink = '<a href="' + thislink + querystring + '">' + station + '</a>'
+                        stationlink = '<a' + fav_style + ' href="' + thislink + querystring + '">' + station + '</a>'
                         if ( (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL')) || ((cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
-                          body += '<s>' + stationlink + '</s>'
+                          body += '<span class="blackout">' + stationlink + '</span>'
                         } else {
                           body += stationlink
                         }
@@ -1383,7 +1428,7 @@ app.get('/', async function(req, res) {
                         body += ', '
                       }
                     } else {
-                      if ( (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL')) || ((cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
+                      if ( (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL') && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters != 'FOX') || (fox_national_blackout == true))) || ((teamabbr != 'NATIONAL') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
                         body += '<s>' + station + '</s>'
                       } else {
                         body += station
@@ -1392,7 +1437,7 @@ app.get('/', async function(req, res) {
                     }
                     // add YouTube link where available
                     if ( (mediaType == 'MLBTV') && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId ) {
-                      body += '<a href="https://www.youtube.com/watch?v=' + cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId + '" target="_blank">' + station + '</a>'
+                      body += '<a' + fav_style + ' href="https://www.youtube.com/watch?v=' + cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId + '" target="_blank">' + station + '</a>'
                     }
                   }
                 }
@@ -1405,14 +1450,25 @@ app.get('/', async function(req, res) {
           }
           //if ( (mediaType == 'MLBTV') && (game_started) && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.summary && cache_data.dates[0].games[j].content.summary.hasHighlightsVideo ) {
           if ( (mediaType == 'MLBTV') && (game_started) ) {
-            body += '<br/><a href="javascript:showhighlights(\'' + cache_data.dates[0].games[j].gamePk + '\',\'' + gameDate + '\')">Highlights</a>'
+            body += '<br/><a' + fav_style + ' href="javascript:showhighlights(\'' + cache_data.dates[0].games[j].gamePk + '\',\'' + gameDate + '\')">Highlights</a>'
           }
         }
         body += "</td>"
         body += "</tr>" + "\n"
       }
     }
-    body += "</table><br/>" + "\n"
+    body += "</table>" + "\n"
+
+    if ( national_blackout && (gameDate >= today) ) {
+      body += '<span class="tooltip tinytext"><span class="blackout">strikethrough</span> indicates a live blackout<span class="tooltiptext">USA only. Blackout labels are purely informative and based on the USA zip code, if any, you provided when starting the server. The actual blackouts are based on your location, not on the provided zip code, so providing a different zip code will not enable you to see different games. Tap or hover over the team abbreviation to see an estimate of when the blackout will be lifted (~90 minutes after the game ends).</span></span>' + "\n"
+      if ( argv.free ) {
+        body += '<br/>'
+      }
+    }
+
+    if ( argv.free ) {
+      body += '<span class="freegame tooltip tinytext">green indicates a free game<span class="tooltiptext">Free games are available to anyone with an account, no subscription necessary. Blackouts still apply.</span></span>' + "\n"
+    }
 
     // Rename parameter back before displaying further links
     if ( mediaType == 'MLBTV' ) {
@@ -1501,22 +1557,36 @@ app.get('/', async function(req, res) {
     }
     body += ' <span class="tinytext">(ON plays sample for all stream requests)</span></p>' + "\n"
 
-    body += '<p>All: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a></p>' + "\n"
+    if ( !req.query.resolution ) {
+      resolution = 'best'
+    }
 
-    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team will include that team\'s broadcasts, not their opponent\'s broadcasts or national TV broadcasts.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=ari,atl' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=ari,atl' + content_protect_b + '">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live broadcasts. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a></p>' + "\n"
+
+    let include_teams = 'ari,national'
+    if ( session.credentials.fav_teams.length > 0 ) {
+      include_teams = session.credentials.fav_teams.toString()
+    }
+    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
+
+    body += '<p><span class="tooltip">Include blackouts<span class="tooltiptext">An optional parameter added to the URL will include channels/games subject to blackout (although you may not be able to play those games).</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     let exclude_teams = 'ari,national'
     if ( session.credentials.blackout_teams.length > 0 ) {
-      exclude_teams = session.credentials.blackout_teams.toString().toLowerCase()
+      exclude_teams = session.credentials.blackout_teams.toString()
       exclude_teams += ',national'
     }
-    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from. Excluding a team will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from, even if you have not provided a zip code. Excluding a team will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) Multiview<span class="tooltiptext">Requires starting and stopping the multiview stream from the web interface.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=multiview' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">guide.xml</a></p>' + "\n"
+
+    if ( argv.free ) {
+      body += '<p><span class="tooltip">Free games only<span class="tooltiptext">Only includes games marked as free. Blackouts still apply. If a zip code has been provided, channels/games subject to blackout will be omitted by default.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=free' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">guide.xml</a></p>' + "\n"
+    }
 
     body += '</td></tr></table><br/>' + "\n"
 
@@ -1525,15 +1595,29 @@ app.get('/', async function(req, res) {
     body += '<p>' + "\n"
     let example_types = [ ['embed.html', 'Embed'], ['stream.m3u8', 'Stream'], ['chromecast.html', 'Chromecast'], ['kodi.strm', 'Kodi'] ]
 
+    let example_team = 'ari'
+    if ( session.credentials.fav_teams.length > 0 ) {
+      example_team = session.credentials.fav_teams[0]
+    }
+
     let examples = [
-      ['Team live video', '?team=ari&resolution=720p60'],
-      ['Team live radio', '?team=ari&mediaType=Audio'],
-      ['Catch-up/condensed', '?team=ari&resolution=720p60&skip=pitches&date=today'],
-      ['Condensed yesterday', '?team=ari&resolution=720p60&skip=pitches&date=yesterday'],
-      ['Same but DH game 2', '?team=ari&resolution=720p60&skip=pitches&date=yesterday&game=2'],
-      ['Nat\'l game 1 today', '?team=national.1&resolution=720p60&date=today'],
-      ['Nat\'l game 2 yesterday', '?team=national.2&resolution=720p60&date=yesterday']
+      ['Team live video', '?team=' + example_team + '&resolution=best'],
+      ['Team live radio', '?team=' + example_team + '&mediaType=Audio'],
+      ['Catch-up/condensed', '?team=' + example_team + '&resolution=best&skip=pitches&date=today'],
+      ['Condensed yesterday', '?team=' + example_team + '&resolution=best&skip=pitches&date=yesterday'],
+      ['Same but DH game 2', '?team=' + example_team + '&resolution=best&skip=pitches&date=yesterday&game=2'],
+      ['Nat\'l game 1 today', '?team=NATIONAL.1&resolution=best&date=today'],
+      ['Same but incl. blackouts', '?team=NATIONAL.1&resolution=best&includeBlackouts=true'],
+      ['Nat\'l game 2 yesterday', '?team=NATIONAL.2&resolution=best&date=yesterday']
     ]
+
+    if ( argv.free ) {
+      examples = examples.concat([
+        ['Free game 1 today', '?team=FREE.1&resolution=best&date=today'],
+        ['Same but incl. blackouts', '?team=FREE.1&resolution=best&includeBlackouts=true'],
+        ['Free game 2 yesterday', '?team=FREE.2&resolution=best&date=yesterday']
+      ])
+    }
 
     for (var i=0; i<examples.length; i++) {
       body += '&bull; ' + examples[i][0] + ': '
@@ -1588,6 +1672,8 @@ app.get('/', async function(req, res) {
 // Listen for OPTIONS requests and respond with CORS headers
 app.options('*', function(req, res) {
   session.debuglog('OPTIONS request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.debuglog('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.debuglog('using: ' + req.headers['user-agent'])
   var cors_headers = {
     'access-control-allow-headers': 'Origin, X-Requested-With, Content-Type, accessToken, Authorization, Accept, Range',
     'access-control-allow-origin': '*',
@@ -1604,6 +1690,8 @@ app.get('/live-stream-games*', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   session.debuglog('schedule request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
   // check for a linkType parameter in the url
   let linkType = VALID_LINK_TYPES[0]
@@ -1658,6 +1746,8 @@ app.get('/embed.html', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   session.log('embed.html request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
   let startFrom = VALID_START_FROM[0]
   if ( req.query.startFrom ) {
@@ -1708,6 +1798,8 @@ app.get('/advanced.html', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   session.log('advanced embed request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
   let server = 'http://' + req.headers.host
 
@@ -1731,6 +1823,8 @@ app.get('/chromecast.html', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   session.log('chromecast request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
   let server = 'http://' + req.headers.host
 
@@ -1754,6 +1848,8 @@ app.get('/channels.m3u', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   session.log('channels.m3u request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
   let mediaType = VALID_MEDIA_TYPES[0]
   if ( req.query.mediaType ) {
@@ -1786,7 +1882,12 @@ app.get('/channels.m3u', async function(req, res) {
     startingChannelNumber = req.query.startingChannelNumber
   }
 
-  var body = await session.getChannels(mediaType, includeTeams, excludeTeams, server, resolution, pipe, startingChannelNumber)
+  let includeBlackouts = 'false'
+  if ( req.query.includeBlackouts ) {
+    includeBlackouts = req.query.includeBlackouts
+  }
+
+  var body = await session.getTVData('channels', mediaType, includeTeams, excludeTeams, server, includeBlackouts, resolution, pipe, startingChannelNumber)
 
   res.writeHead(200, {'Content-Type': 'audio/x-mpegurl'})
   res.end(body)
@@ -1797,6 +1898,8 @@ app.get('/guide.xml', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   session.log('guide.xml request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
   let mediaType = VALID_MEDIA_TYPES[0]
   if ( req.query.mediaType ) {
@@ -1812,9 +1915,14 @@ app.get('/guide.xml', async function(req, res) {
     excludeTeams = req.query.excludeTeams.toUpperCase().split(',')
   }
 
+  let includeBlackouts = 'false'
+  if ( req.query.includeBlackouts ) {
+    includeBlackouts = req.query.includeBlackouts
+  }
+
   let server = 'http://' + req.headers.host
 
-  var body = await session.getGuide(mediaType, includeTeams, excludeTeams, server)
+  var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, server, includeBlackouts)
 
   res.end(body)
 })
@@ -1824,6 +1932,8 @@ app.get('/image.svg', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   session.debuglog('image request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.debuglog('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.debuglog('using: ' + req.headers['user-agent'])
 
   let teamId = 'MLB'
   if ( req.query.teamId ) {
@@ -1841,6 +1951,8 @@ app.get('/favicon.svg', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   session.debuglog('favicon request : ' + req.url)
+  if ( req.connection && req.connection.remoteAddress ) session.debuglog('from: ' + req.connection.remoteAddress)
+  if ( req.headers && req.headers['user-agent'] ) session.debuglog('using: ' + req.headers['user-agent'])
 
   var body = await session.getImage('MLB')
 
@@ -1854,6 +1966,8 @@ app.get('/highlights', async function(req, res) {
 
   try {
     session.log('highlights request : ' + req.url)
+    if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+    if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
     let highlightsData = ''
     if ( req.query.gamePk && req.query.gameDate ) {
@@ -1872,6 +1986,8 @@ app.get('/multiview', async function(req, res) {
 
   try {
     session.log('multiview request : ' + req.url)
+    if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+    if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
     try {
       ffmpeg_command.kill()
@@ -2149,6 +2265,8 @@ app.get('/kodi.strm', async function(req, res) {
 
   try {
     session.log('kodi.strm request : ' + req.url)
+    if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
+    if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
 
     let server = 'http://' + req.headers.host
 

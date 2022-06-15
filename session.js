@@ -36,7 +36,7 @@ const TEAM_IDS = {'ARI':'109','ATL':'144','BAL':'110','BOS':'111','CHC':'112','C
 // These are the events to ignore, if we're skipping breaks
 const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
 // These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
-const ACTION_TYPES = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Error', 'Out', 'Balk', 'Defensive Indiff']
+const ACTION_TYPES = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Error', 'Out', 'Balk', 'Defensive Indiff', 'Other Advance']
 const EVENT_START_PADDING = 0
 const PITCH_END_PADDING = 7
 const ACTION_END_PADDING = 8
@@ -52,7 +52,7 @@ class sessionClass {
 
     // Check if account credentials were provided and if they are different from the stored credentials
     if ( argv.account_username && argv.account_password && ((argv.account_username != this.credentials.account_username) || (argv.account_password != this.credentials.account_password)) ) {
-      this.debuglog('updating account credentials')
+      this.log('updating account credentials')
       this.credentials.account_username = argv.account_username
       this.credentials.account_password = argv.account_password
       this.save_credentials()
@@ -135,10 +135,16 @@ class sessionClass {
     }
 
     // Check if zip code was provided and if it is different from the stored one
-    if ( argv.zip_code && (argv.zip_code != this.credentials.zip_code) ) {
-      this.debuglog('updating zip code and blackout teams')
-      this.credentials.zip_code = argv.zip_code.toString()
-      this.updateBlackoutTeams()
+    if ( argv.zip_code ) {
+      let zip_code_arg = argv.zip_code.toString().toUpperCase()
+      if ( zip_code_arg == 'TRUE' ) {
+        zip_code_arg = ''
+      }
+      if ( (typeof(this.credentials.zip_code) === 'undefined') || (zip_code_arg != this.credentials.zip_code) ) {
+        this.log('updating zip code and blackout teams')
+        this.credentials.zip_code = zip_code_arg
+        this.updateBlackoutTeams()
+      }
     } else {
       // Prompt for zip code if it doesn't exist
       if ( !this.credentials.zip_code ) {
@@ -146,6 +152,43 @@ class sessionClass {
         this.credentials.zip_code = readlineSync.question('Enter 5-digit zip code (optional, for USA blackout labels): ').toString()
         this.updateBlackoutTeams()
       }
+    }
+
+    // Check if fav teams was provided and if they are different from the stored fav teams
+    if ( argv.fav_teams ) {
+      let fav_teams_arg = argv.fav_teams.toString().toUpperCase()
+      if ( fav_teams_arg == 'TRUE' ) {
+        fav_teams_arg = []
+      } else {
+        fav_teams_arg = fav_teams_arg.replace(/[^A-Z,]+/g,'').split(',')
+      }
+      if ( !this.credentials.fav_teams || (fav_teams_arg.toString() != this.credentials.fav_teams.toString()) ) {
+        this.log('updating fav teams')
+        this.credentials.fav_teams = fav_teams_arg
+        this.save_credentials()
+      }
+    } else {
+      // Prompt for fav_teams
+      if ( !this.credentials.fav_teams ) {
+        this.debuglog('prompting for fav teams')
+        let team_abbreviations = Object.keys(TEAM_IDS)
+        let team_abbr_list = ''
+        for (var i=0; i<team_abbreviations.length; i++ ) {
+          team_abbr_list += team_abbreviations[i] + ','
+        }
+        if ( team_abbr_list.substr(-2) == ',' ) {
+          team_abbr_list = team_abbr_list.slice(0, -2)
+        }
+        this.credentials.fav_teams = readlineSync.question('Enter favorite team(s) (optional, separate by comma from ' + team_abbr_list + '): ').toUpperCase().replace(/[^A-Z,]+/g,'').split(',')
+        this.save_credentials()
+      }
+    }
+
+    // Check if free account
+    this.free = false
+    if (argv.free) {
+      this.debuglog('labeling free games')
+      this.free = true
     }
   }
 
@@ -978,15 +1021,20 @@ class sessionClass {
   }
 
   // get mediaId for a live channel request
-  async getMediaId(team, mediaType, mediaDate, gameNumber) {
+  async getMediaId(team, mediaType, mediaDate, gameNumber, includeBlackouts) {
     try {
       this.debuglog('getMediaId')
 
       var mediaFeedType = 'mediaFeedType'
+      var language = 'en'
       if ( mediaType == 'Video' ) {
         mediaType = 'MLBTV'
-      } else if ( mediaType == 'Audio' ) {
+      } else if ( (mediaType == 'Audio') || (mediaType == 'Spanish') ) {
         mediaFeedType = 'type'
+        if ( mediaType == 'Spanish' ) {
+          mediaType = 'Audio'
+          language = 'es'
+        }
       }
 
       let gameDate = this.liveDate()
@@ -999,13 +1047,13 @@ class sessionClass {
       let mediaId = false
       let contentId = false
 
-      // First check if national game or if cached day data is available and non-expired
+      // First check if national game, free game, or if cached day data is available and non-expired
       // if not, just get data for this team
       let cache_data
       let cache_name = gameDate
       let cache_file = path.join(CACHE_DIRECTORY, gameDate+'.json')
       let currentDate = new Date()
-      if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) || (fs.existsSync(cache_file) && this.cache && this.cache.dates && this.cache.dates[cache_name] && this.cache.dates[cache_name].dateCacheExpiry && (currentDate <= new Date(this.cache.dates[cache_name].dateCacheExpiry))) ) {
+      if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) || (team.toUpperCase().indexOf('FREE.') == 0) || (fs.existsSync(cache_file) && this.cache && this.cache.dates && this.cache.dates[cache_name] && this.cache.dates[cache_name].dateCacheExpiry && (currentDate <= new Date(this.cache.dates[cache_name].dateCacheExpiry))) ) {
         cache_data = await this.getDayData(gameDate)
       } else {
         cache_data = await this.getDayData(gameDate, team)
@@ -1013,6 +1061,14 @@ class sessionClass {
 
       //if ( (cache_data.totalGamesInProgress > 0) || (mediaDate) ) {
         let nationalCount = 0
+        let freeCount = 0
+        let national_blackout = /(^\d{5}$)/.test(this.credentials.zip_code)
+
+        // check for simultaneous regular season Fox regional games, which generally aren't blacked out
+        let fox_national_blackout = national_blackout
+        if ( (fox_national_blackout == true) && (mediaType == 'MLBTV') ) {
+          fox_national_blackout = this.checkFoxBlackout(cache_data.dates[0].games)
+        }
         for (var j = 0; j < cache_data.dates[0].games.length; j++) {
           if ( mediaId ) break
           if ( (typeof cache_data.dates[0].games[j] !== 'undefined') && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.epg ) {
@@ -1020,13 +1076,22 @@ class sessionClass {
               if ( mediaId ) break
               if ( cache_data.dates[0].games[j].content.media.epg[k].title == mediaType ) {
                 for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
-                  // check that pay TV authentication isn't required
-                  if ( (mediaType == 'MLBTV') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                  // for video, check that it's not in-market and that pay TV authentication isn't required
+                  if ( (mediaType == 'MLBTV') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.startsWith('IN_MARKET_') || cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
                     continue
                   }
-                  if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
+                  if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].language) == 'undefined') || ((mediaType == 'Audio') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].language == language)) ) {
+                    let home_team = cache_data.dates[0].games[j].teams['home'].team.abbreviation
+                    let away_team = cache_data.dates[0].games[j].teams['away'].team.abbreviation
+                    let teamType = cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType]
+
+                    // check live blackout status
+                    if ( (mediaType == 'MLBTV') && (includeBlackouts == 'false') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') && ((national_blackout && (teamType == 'NATIONAL') && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters != 'FOX') || (fox_national_blackout == true))) || ((teamType != 'NATIONAL') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (this.credentials.blackout_teams.includes(home_team) || this.credentials.blackout_teams.includes(away_team)))) ) {
+                      continue
+                    }
+
                     //if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason)) ) {
-                    if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[i].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[i].seriesDescription != 'Spring Training'))) ) {
+                    if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training'))) ) {
                       nationalCount += 1
                       let nationalArray = team.split('.')
                       if ( (nationalArray.length == 2) && (nationalArray[1] == nationalCount) ) {
@@ -1035,7 +1100,20 @@ class sessionClass {
                           mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
                           contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
                         } else {
-                          this.log('event video not yet available')
+                          this.log('national event video not yet available')
+                        }
+                        break
+                      }
+                    } else if ( team.toUpperCase().startsWith('FREE.') && cache_data.dates[0].games[j].content.media.freeGame ) {
+                      freeCount += 1
+                      let freeArray = team.split('.')
+                      if ( (freeArray.length == 2) && (freeArray[1] == freeCount) ) {
+                        this.debuglog('matched free event')
+                        if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
+                          mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
+                          contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
+                        } else {
+                          this.log('free event video not yet available')
                         }
                         break
                       }
@@ -1051,7 +1129,7 @@ class sessionClass {
                             mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
                             contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
                           } else {
-                            this.log('event video not yet available')
+                            this.log('team event video not yet available')
                           }
                           break
                         }
@@ -1292,27 +1370,40 @@ class sessionClass {
     }
   }
 
-  // get live channels in M3U format
-  async getChannels(mediaType, includeTeams, excludeTeams, server, resolution, pipe, startingChannelNumber) {
+  // get TV data (channels or guide)
+  async getTVData(dataType, mediaType, includeTeams, excludeTeams, server, includeBlackouts, resolution='best', pipe='false', startingChannelNumber=1) {
     try {
-      this.debuglog('getChannels')
+      this.debuglog('getTVData for ' + dataType)
 
       var mediaFeedType = 'mediaFeedType'
+      var language = 'en'
       if ( mediaType == 'Video' ) {
         mediaType = 'MLBTV'
-      } else if ( mediaType == 'Audio' ) {
+      } else if ( (mediaType == 'Audio') || (mediaType == 'Spanish') ) {
         mediaFeedType = 'type'
+        if ( mediaType == 'Spanish' ) {
+          mediaType = 'Audio'
+          language = 'es'
+        }
       }
 
       let cache_data = await this.getWeeksData()
       if (cache_data) {
         var channels = {}
         var nationalChannels = {}
-        let prevDateIndex = {MLBTV:-1,Audio:-1}
+        var programs = ""
+        let prevDateIndex = {MLBTV:-1,Free:-1,Audio:-1}
         let national_blackout = /(^\d{5}$)/.test(this.credentials.zip_code)
         for (var i = 0; i < cache_data.dates.length; i++) {
-          let dateIndex = {MLBTV:i,Audio:i}
-          let nationalCounter = {MLBTV:0,Audio:0}
+          let dateIndex = {MLBTV:i,Free:i,Audio:i}
+          let gameCounter = {MLBTV:0,Free:0,Audio:0}
+
+          // check for simultaneous regular season Fox regional games, which generally aren't blacked out
+          let fox_national_blackout = national_blackout
+          if ( (fox_national_blackout == true) && (mediaType == 'MLBTV') ) {
+            fox_national_blackout = this.checkFoxBlackout(cache_data.dates[i].games)
+          }
+
           for (var j = 0; j < cache_data.dates[i].games.length; j++) {
             // First check if Winter League games
             if ( cache_data.dates[i].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
@@ -1324,201 +1415,17 @@ class sessionClass {
                     if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].broadcasts[k].name == 'MLB.TV') ) {
                       let team = cache_data.dates[i].games[j].teams['home'].team.clubName.toUpperCase()
                       let channelid = mediaType + '.' + team
-                      let channelMediaType = 'Video'
-                      let stream = server + '/stream.m3u8?event=' + encodeURIComponent(team) + '&mediaType=' + channelMediaType
+                      let streamMediaType = 'Video'
+                      let stream = server + '/stream.m3u8?event=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
                       stream += '&resolution=' + resolution
                       if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
                       if ( pipe == 'true' ) {
                         stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
                       }
                       channels[channelid] = {}
+                      channels[channelid].name = channelid
                       channels[channelid].stream = stream
                       channels[channelid].mediatype = mediaType
-                    }
-                  }
-                }
-              }
-            } else {
-              // Begin MLB games
-              if ( cache_data.dates[i].games[j].content && cache_data.dates[i].games[j].content.media && cache_data.dates[i].games[j].content.media.epg ) {
-                for (var k = 0; k < cache_data.dates[i].games[j].content.media.epg.length; k++) {
-                  let mediaTitle = cache_data.dates[i].games[j].content.media.epg[k].title
-                  if ( mediaType == mediaTitle ) {
-                    for (var x = 0; x < cache_data.dates[i].games[j].content.media.epg[k].items.length; x++) {
-                      // check that pay TV authentication isn't required
-                      if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
-                        continue
-                      }
-                      if ( ((((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1)) && (((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].language != 'es'))) ) {
-                        let teamType = cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType]
-                        //if ( (mediaType == 'MLBTV') && cache_data.dates[i].games[j].gameUtils.isPostSeason ) {
-                        if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[i].games[j].seriesDescription != 'Spring Training') ) {
-                          teamType = 'NATIONAL'
-                        }
-                        let team = cache_data.dates[i].games[j].teams['home'].team.abbreviation
-                        let opponent_team = cache_data.dates[i].games[j].teams['away'].team.abbreviation
-
-                        // check blackout status
-                        if ( (mediaType == 'MLBTV') && ((national_blackout && (teamType == 'NATIONAL')) || ((cache_data.dates[i].games[j].seriesDescription != 'Spring Training') && (this.credentials.blackout_teams.includes(team) || this.credentials.blackout_teams.includes(opponent_team)))) ) {
-                          continue
-                        }
-
-                        if ( teamType == 'NATIONAL' ) {
-                          if ( dateIndex[mediaTitle] > prevDateIndex[mediaTitle] ) {
-                            prevDateIndex[mediaTitle] = dateIndex[mediaTitle]
-                            nationalCounter[mediaTitle] = 1
-                          } else {
-                            nationalCounter[mediaTitle] += 1
-                          }
-                        } else {
-                          teamType = teamType.toLowerCase()
-                          let opponent_teamType = 'away'
-                          if ( teamType == 'away' ) {
-                            opponent_teamType = 'home'
-                          }
-                          team = cache_data.dates[i].games[j].teams[teamType].team.abbreviation
-                          opponent_team = cache_data.dates[i].games[j].teams[opponent_teamType].team.abbreviation
-                        }
-                        if ( (excludeTeams.length > 0) && (excludeTeams.includes(team) || excludeTeams.includes(opponent_team) || excludeTeams.includes(teamType)) ) {
-                          continue
-                        } else if ( (includeTeams.length == 0) || includeTeams.includes(team) || includeTeams.includes(teamType) ) {
-                          if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
-                            team = teamType + '.' + nationalCounter[mediaTitle]
-                          }
-                          let channelid = mediaType + '.' + team
-                          let channelMediaType = mediaType
-                          if ( mediaType == 'MLBTV' ) {
-                            channelMediaType = 'Video'
-                          }
-                          let stream = server + '/stream.m3u8?team=' + encodeURIComponent(team) + '&mediaType=' + channelMediaType
-                          if ( channelMediaType == 'Video' ) {
-                            stream += '&resolution=' + resolution
-                          }
-                          if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
-                          if ( pipe == 'true' ) {
-                            stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
-                          }
-                          let icon = server
-                          if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
-                            icon += '/image.svg?teamId=MLB'
-                            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
-                            nationalChannels[channelid] = {}
-                            nationalChannels[channelid].channellogo = icon
-                            nationalChannels[channelid].stream = stream
-                            nationalChannels[channelid].mediatype = mediaType
-                          } else {
-                            icon += '/image.svg?teamId=' + cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedSubType
-                            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
-                            channels[channelid] = {}
-                            channels[channelid].channellogo = icon
-                            channels[channelid].stream = stream
-                            channels[channelid].mediatype = mediaType
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        channels = this.sortObj(channels)
-        channels = Object.assign(channels, nationalChannels)
-
-        // Big Inning
-        if ( mediaType == 'MLBTV' ) {
-          if ( (excludeTeams.length > 0) && excludeTeams.includes('BIGINNING') ) {
-            // do nothing
-          } else if ( (includeTeams.length == 0) || includeTeams.includes('BIGINNING') ) {
-            let extraChannels = {}
-            let channelid = mediaType + '.BIGINNING'
-            let icon = server + '/image.svg?teamId=MLB'
-            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
-            let stream = server + '/stream.m3u8?event=biginning&mediaType=Video&resolution=' + resolution
-            if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
-            if ( pipe == 'true' ) {
-              stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
-            }
-            extraChannels[channelid] = {}
-            extraChannels[channelid].channellogo = icon
-            extraChannels[channelid].stream = stream
-            extraChannels[channelid].mediatype = mediaType
-            channels = Object.assign(channels, extraChannels)
-          }
-        }
-
-        // Multiview
-        if ( (mediaType == 'MLBTV') && (typeof this.data.multiviewStreamURLPath !== 'undefined') ) {
-          if ( (excludeTeams.length > 0) && excludeTeams.includes('MULTIVIEW') ) {
-            // do nothing
-          } else if ( (includeTeams.length == 0) || includeTeams.includes('MULTIVIEW') ) {
-            let extraChannels = {}
-            let channelid = mediaType + '.MULTIVIEW'
-            let icon = server + '/image.svg?teamId=MLB'
-            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
-            let stream = server.replace(':' + this.data.port, ':' + this.data.multiviewPort) + this.data.multiviewStreamURLPath
-            if ( pipe == 'true' ) {
-              stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
-            }
-            extraChannels[channelid] = {}
-            extraChannels[channelid].channellogo = icon
-            extraChannels[channelid].stream = stream
-            extraChannels[channelid].mediatype = mediaType
-            channels = Object.assign(channels, extraChannels)
-          }
-        }
-
-        let channelnumber = startingChannelNumber
-        var body = '#EXTM3U' + "\n"
-        //body += '#EXTINF:-1 CUID="MLBSERVER.SAMPLE.VIDEO" tvg-id="MLBSERVER.SAMPLE.VIDEO" tvg-name="MLBSERVER.SAMPLE.VIDEO",MLBSERVER SAMPLE VIDEO' + "\n"
-        //body += '/stream.m3u8' + "\n"
-        for (const [key, value] of Object.entries(channels)) {
-          body += '#EXTINF:-1 CUID="' + key + '" channelID="' + key + '" tvg-num="1.' + channelnumber + '" tvg-chno="1.' + channelnumber + '" tvg-id="' + key + '" tvg-name="' + key + '" tvg-logo="' + value.channellogo + '" group-title="' + value.mediatype + '",' + key + "\n"
-          body += value.stream + "\n"
-          channelnumber++
-        }
-        return body
-      }
-    } catch(e) {
-      this.log('getChannels error : ' + e.message)
-    }
-  }
-
-  // get guide.xml file, in XMLTV format
-  async getGuide(mediaType, includeTeams, excludeTeams, server) {
-    try {
-      this.debuglog('getGuide')
-
-      var mediaFeedType = 'mediaFeedType'
-      if ( mediaType == 'Video' ) {
-        mediaType = 'MLBTV'
-      } else if ( mediaType == 'Audio' ) {
-        mediaFeedType = 'type'
-      }
-
-      let cache_data = await this.getWeeksData()
-      if (cache_data) {
-        var channels = {}
-        var programs = ""
-        let prevDateIndex = {MLBTV:-1,Audio:-1}
-        let national_blackout = /(^\d{5}$)/.test(this.credentials.zip_code)
-        for (var i = 0; i < cache_data.dates.length; i++) {
-          let dateIndex = {MLBTV:i,Audio:i}
-          let nationalCounter = {MLBTV:0,Audio:0}
-          for (var j = 0; j < cache_data.dates[i].games.length; j++) {
-            // First check if Winter League games
-            if ( cache_data.dates[i].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
-              if ( (excludeTeams.length > 0) && excludeTeams.includes('LIDOM') ) {
-                continue
-              } else if ( (includeTeams.length == 0) || includeTeams.includes('LIDOM') ) {
-                if ( cache_data.dates[i].games[j].broadcasts ) {
-                  for (var k = 0; k < cache_data.dates[i].games[j].broadcasts.length; k++) {
-                    if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].broadcasts[k].name == 'MLB.TV') ) {
-                      let team = cache_data.dates[i].games[j].teams['home'].team.clubName.toUpperCase()
-                      let channelid = mediaType + '.' + team
-                      channels[channelid] = {}
-                      channels[channelid].name = channelid
 
                       let title = cache_data.dates[i].games[j].teams['home'].team.league.name + ': ' + cache_data.dates[i].games[j].teams['away'].team.name + ' at ' + cache_data.dates[i].games[j].teams['home'].team.name
 
@@ -1568,12 +1475,24 @@ class sessionClass {
                 for (var k = 0; k < cache_data.dates[i].games[j].content.media.epg.length; k++) {
                   let mediaTitle = cache_data.dates[i].games[j].content.media.epg[k].title
                   if ( mediaType == mediaTitle ) {
+                    // initial loop will count number of broadcasts
+                    let broadcast_count = 0
                     for (var x = 0; x < cache_data.dates[i].games[j].content.media.epg[k].items.length; x++) {
-                      // check that pay TV authentication isn't required
-                      if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                      // for video, check that it's not in-market and that pay TV authentication isn't required
+                      if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.startsWith('IN_MARKET_') || cache_data.dates[i].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                        continue
+                      } else if ( mediaType == mediaTitle ) {
+                        if ( ((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || ((mediaType == 'Audio') && (cache_data.dates[i].games[j].content.media.epg[k].items[x].language == language)) ) {
+                          broadcast_count++
+                        }
+                      }
+                    }
+                    for (var x = 0; x < cache_data.dates[i].games[j].content.media.epg[k].items.length; x++) {
+                      // for video, check that it's not in-market and that pay TV authentication isn't required
+                      if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.startsWith('IN_MARKET_') || cache_data.dates[i].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[i].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
                         continue
                       }
-                      if ( ((((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1)) && (((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[i].games[j].content.media.epg[k].items[x].language != 'es'))) ) {
+                      if ( ((typeof cache_data.dates[i].games[j].content.media.epg[k].items[x].language) == 'undefined') || ((mediaType == 'Audio') && (cache_data.dates[i].games[j].content.media.epg[k].items[x].language == language)) ) {
                         let teamType = cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType]
                         //if ( (mediaType == 'MLBTV') && cache_data.dates[i].games[j].gameUtils.isPostSeason ) {
                         if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[i].games[j].seriesDescription != 'Spring Training') ) {
@@ -1583,16 +1502,16 @@ class sessionClass {
                         let opponent_team = cache_data.dates[i].games[j].teams['away'].team.abbreviation
 
                         // check blackout status
-                        if ( (mediaType == 'MLBTV') && ((national_blackout && (teamType == 'NATIONAL')) || ((cache_data.dates[i].games[j].seriesDescription != 'Spring Training') && (this.credentials.blackout_teams.includes(team) || this.credentials.blackout_teams.includes(opponent_team)))) ) {
+                        if ( (mediaType == 'MLBTV') && (includeBlackouts == 'false') && ((national_blackout && (teamType == 'NATIONAL') && ((cache_data.dates[i].games[j].content.media.epg[k].items[x].callLetters != 'FOX') || (fox_national_blackout == true))) || ((teamType != 'NATIONAL') && (cache_data.dates[i].games[j].seriesDescription != 'Spring Training') && (this.credentials.blackout_teams.includes(team) || this.credentials.blackout_teams.includes(opponent_team)))) ) {
                           continue
                         }
 
                         if ( teamType == 'NATIONAL' ) {
                           if ( dateIndex[mediaTitle] > prevDateIndex[mediaTitle] ) {
                             prevDateIndex[mediaTitle] = dateIndex[mediaTitle]
-                            nationalCounter[mediaTitle] = 1
+                            gameCounter[mediaTitle] = 1
                           } else {
-                            nationalCounter[mediaTitle] += 1
+                            gameCounter[mediaTitle] += 1
                           }
                         } else {
                           teamType = teamType.toLowerCase()
@@ -1603,24 +1522,73 @@ class sessionClass {
                           team = cache_data.dates[i].games[j].teams[teamType].team.abbreviation
                           opponent_team = cache_data.dates[i].games[j].teams[opponent_teamType].team.abbreviation
                         }
-                        if ( (excludeTeams.length > 0) && (excludeTeams.includes(team) || excludeTeams.includes(opponent_team) || excludeTeams.includes(teamType)) ) {
+                        if ( (excludeTeams.length > 0) && (excludeTeams.includes(team) || excludeTeams.includes(opponent_team) || ((teamType == 'NATIONAL') && excludeTeams.includes(teamType))) ) {
                           continue
-                        } else if ( (includeTeams.length == 0) || includeTeams.includes(team) || includeTeams.includes(teamType) ) {
+                        } else if ( (includeTeams.length == 0) || includeTeams.includes(team) || ((teamType == 'NATIONAL') && (includeTeams.includes(teamType) || includeTeams.includes(opponent_team))) || ((broadcast_count == 1) && includeTeams.includes(opponent_team)) || (cache_data.dates[0].games[j].content.media.freeGame && includeTeams.includes('FREE')) ) {
+                          if ( (broadcast_count == 1) && !includeTeams.includes(team) && includeTeams.includes(opponent_team) ) {
+                            team = opponent_team
+                          }
                           //let icon = server
                           if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
-                            team = teamType + '.' + nationalCounter[mediaTitle]
-                            //icon += '/image.svg?teamId=MLB'
+                            team = teamType + '.' + gameCounter[mediaTitle]
+                          } else if ( includeTeams.includes('FREE') && cache_data.dates[0].games[j].content.media.freeGame ) {
+                            if ( dateIndex['Free'] > prevDateIndex['Free'] ) {
+                              prevDateIndex['Free'] = dateIndex['Free']
+                              gameCounter['Free'] = 1
+                            } else {
+                              gameCounter['Free'] += 1
+                            }
+                            team = 'FREE.' + gameCounter['Free']
                           } else {
                             //icon += '/image.svg?teamId=' + cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedSubType
                           }
                           //if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
                           let icon = 'https://img.mlbstatic.com/mlb-photos/image/upload/ar_167:215,c_crop/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':fill:spot.png,w_1.0,h_1,x_0.5,y_0,fl_no_overflow,e_distort:100p:0:200p:0:200p:100p:0:100p/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['away'].team.id + ':logo:spot:current,w_0.38,x_-0.25,y_-0.16/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':logo:spot:current,w_0.38,x_0.25,y_0.16/w_750/team/' + cache_data.dates[i].games[j].teams['away'].team.id + '/fill/spot.png'
-                          let channelid = mediaType + '.' + team
-                          channels[channelid] = {}
-                          channels[channelid].name = channelid
-                          channels[channelid].icon = icon
+                          let channelid = mediaType
+                          if ( language == 'es' ) {
+                            channelid = 'Spanish'
+                          }
+                          channelid += '.' + team
+                          let streamMediaType = mediaType
+                          let channelMediaType = mediaType
+                          if ( mediaType == 'MLBTV' ) {
+                            streamMediaType = 'Video'
+                          } else if ( language == 'es' ) {
+                            streamMediaType = 'Spanish'
+                            channelMediaType = 'Spanish'
+                          }
+                          let stream = server + '/stream.m3u8?team=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
+                          if ( streamMediaType == 'Video' ) {
+                            stream += '&resolution=' + resolution
+                          }
+                          if ( includeBlackouts == 'true' ) stream += '&includeBlackouts=' + includeBlackouts
+                          if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
+                          if ( pipe == 'true' ) {
+                            stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
+                          }
+                          let logo = server
+                          if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
+                            logo += '/image.svg?teamId=MLB'
+                            if ( this.protection.content_protect ) logo += '&content_protect=' + this.protection.content_protect
+                            nationalChannels[channelid] = {}
+                            nationalChannels[channelid].name = channelid
+                            nationalChannels[channelid].logo = logo
+                            nationalChannels[channelid].stream = stream
+                            nationalChannels[channelid].mediatype = channelMediaType
+                          } else {
+                            icon += '/image.svg?teamId=' + cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedSubType
+                            if ( this.protection.content_protect ) logo += '&content_protect=' + this.protection.content_protect
+                            channels[channelid] = {}
+                            channels[channelid].name = channelid
+                            channels[channelid].logo = logo
+                            channels[channelid].stream = stream
+                            channels[channelid].mediatype = channelMediaType
+                          }
 
                           let title = 'MLB Baseball: ' + cache_data.dates[i].games[j].teams['away'].team.teamName + ' at ' + cache_data.dates[i].games[j].teams['home'].team.teamName + ' (' + cache_data.dates[i].games[j].content.media.epg[k].items[x].callLetters
+                          if ( language == 'es' ) {
+                            title += ' Spanish'
+                          }
                           if ( mediaType == 'Audio' ) {
                             title += ' Radio'
                           }
@@ -1644,7 +1612,7 @@ class sessionClass {
                             }
                             description += '. '
                           }
-                          if ( teamType == 'NATIONAL' ) {
+                          if ( (mediaType == 'MLBTV') && ((teamType == 'NATIONAL') || (team == opponent_team)) ) {
                             if ( cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType] == 'AWAY' ) {
                               description += cache_data.dates[i].games[j].teams['away'].team.teamName
                             } else {
@@ -1691,19 +1659,31 @@ class sessionClass {
             }
           }
         }
+        channels = this.sortObj(channels)
+        channels = Object.assign(channels, nationalChannels)
 
         // Big Inning
         if ( mediaType == 'MLBTV' ) {
           if ( (excludeTeams.length > 0) && excludeTeams.includes('BIGINNING') ) {
             // do nothing
           } else if ( (includeTeams.length == 0) || includeTeams.includes('BIGINNING') ) {
-            /*let icon = server + '/image.svg?teamId=MLB'
-            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect*/
-            let icon = 'https://img.mlbstatic.com/mlb-images/image/private/ar_16:9,g_auto,q_auto:good,w_372,c_fill,f_jpg/mlb/uwr8vepua4t1fe8uwyki'
+            /*let logo = server + '/image.svg?teamId=MLB'
+            if ( this.protection.content_protect ) logo += '&content_protect=' + this.protection.content_protect*/
+            let logo = 'https://img.mlbstatic.com/mlb-images/image/private/ar_16:9,g_auto,q_auto:good,w_372,c_fill,f_jpg/mlb/uwr8vepua4t1fe8uwyki'
+            let extraChannels = {}
             let channelid = mediaType + '.BIGINNING'
-            channels[channelid] = {}
-            channels[channelid].name = channelid
-            channels[channelid].icon = icon
+            if ( this.protection.content_protect ) logo += '&content_protect=' + this.protection.content_protect
+            let stream = server + '/stream.m3u8?event=biginning&mediaType=Video&resolution=' + resolution
+            if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
+            if ( pipe == 'true' ) {
+              stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
+            }
+            extraChannels[channelid] = {}
+            extraChannels[channelid].name = channelid
+            extraChannels[channelid].logo = logo
+            extraChannels[channelid].stream = stream
+            extraChannels[channelid].mediatype = mediaType
+            channels = Object.assign(channels, extraChannels)
 
             let title = 'MLB Big Inning'
             let description = 'Live look-ins and big moments from around the league'
@@ -1719,7 +1699,7 @@ class sessionClass {
                 '      <title lang="en">' + title + '</title>' + "\n" +
                 '      <desc lang="en">' + description.trim() + '</desc>' + "\n" +
                 '      <category lang="en">Sports</category>' + "\n" +
-                '      <icon src="' + icon + '"></icon>' + "\n" +
+                '      <icon src="' + logo + '"></icon>' + "\n" +
                 '    </programme>'
               }
             }
@@ -1727,16 +1707,24 @@ class sessionClass {
         }
 
         // Multiview
-        if ( (mediaType == 'MLBTV') && (typeof this.data.multiviewStreamURL !== 'undefined') ) {
+        if ( (mediaType == 'MLBTV') && (typeof this.data.multiviewStreamURLPath !== 'undefined') ) {
           if ( (excludeTeams.length > 0) && excludeTeams.includes('MULTIVIEW') ) {
             // do nothing
           } else if ( (includeTeams.length == 0) || includeTeams.includes('MULTIVIEW') ) {
-            let icon = server + '/image.svg?teamId=MLB'
-            if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
+            let extraChannels = {}
             let channelid = mediaType + '.MULTIVIEW'
-            channels[channelid] = {}
-            channels[channelid].name = channelid
-            channels[channelid].icon = icon
+            let logo = server + '/image.svg?teamId=MLB'
+            if ( this.protection.content_protect ) logo += '&content_protect=' + this.protection.content_protect
+            let stream = server.replace(':' + this.data.port, ':' + this.data.multiviewPort) + this.data.multiviewStreamURLPath
+            if ( pipe == 'true' ) {
+              stream = 'pipe://ffmpeg -hide_banner -loglevel fatal -i "' + stream + '" -map 0:v -map 0:a -c copy -metadata service_provider="MLBTV" -metadata service_name="' + channelid + '" -f mpegts pipe:1'
+            }
+            extraChannels[channelid] = {}
+            extraChannels[channelid].name = channelid
+            extraChannels[channelid].logo = logo
+            extraChannels[channelid].stream = stream
+            extraChannels[channelid].mediatype = mediaType
+            channels = Object.assign(channels, extraChannels)
 
             let title = 'MLB Multiview'
             let description = 'Watch up to 4 games at once. Requires starting the multiview stream in the web interface first, and stopping it when done.'
@@ -1751,27 +1739,43 @@ class sessionClass {
               '      <title lang="en">' + title + '</title>' + "\n" +
               '      <desc lang="en">' + description.trim() + '</desc>' + "\n" +
               '      <category lang="en">Sports</category>' + "\n" +
-              '      <icon src="' + icon + '"></icon>' + "\n" +
+              '      <icon src="' + logo + '"></icon>' + "\n" +
               '    </programme>'
             }
           }
         }
 
-        var body = '<?xml version="1.0" encoding="UTF-8"?>' + "\n" +
-        '<!DOCTYPE tv SYSTEM "xmltv.dd">' + "\n" +
-        '  <tv generator-info-name="mlbserver" source-info-name="mlbserver">'
-        for (const [key, value] of Object.entries(channels)) {
-          body += "\n" + '    <channel id="' + key + '">' + "\n" +
-          '      <display-name>' + value.name + '</display-name>' + "\n" +
-          '      <icon src="' + value.icon + '"></icon>' + "\n" +
-          '    </channel>'
+        var body = ''
+
+        // output M3U channel data, if requested
+        if ( dataType == 'channels' ) {
+          let channelnumber = startingChannelNumber
+          body = '#EXTM3U' + "\n"
+          //body += '#EXTINF:-1 CUID="MLBSERVER.SAMPLE.VIDEO" tvg-id="MLBSERVER.SAMPLE.VIDEO" tvg-name="MLBSERVER.SAMPLE.VIDEO",MLBSERVER SAMPLE VIDEO' + "\n"
+          //body += '/stream.m3u8' + "\n"
+          for (const [key, value] of Object.entries(channels)) {
+            body += '#EXTINF:-1 CUID="' + key + '" channelID="' + key + '" tvg-num="1.' + channelnumber + '" tvg-chno="1.' + channelnumber + '" tvg-id="' + key + '" tvg-name="' + key + '" tvg-logo="' + value.logo + '" group-title="' + value.mediatype + '",' + key + "\n"
+            body += value.stream + "\n"
+            channelnumber++
+          }
+        // otherwise output XML guide data
+        } else {
+          body = '<?xml version="1.0" encoding="UTF-8"?>' + "\n" +
+          '<!DOCTYPE tv SYSTEM "xmltv.dd">' + "\n" +
+          '  <tv generator-info-name="mlbserver" source-info-name="mlbserver">'
+          for (const [key, value] of Object.entries(channels)) {
+            body += "\n" + '    <channel id="' + key + '">' + "\n" +
+            '      <display-name>' + value.name + '</display-name>' + "\n" +
+            '      <icon src="' + value.icon + '"></icon>' + "\n" +
+            '    </channel>'
+          }
+          body += programs + "\n" + '  </tv>'
         }
-        body += programs + "\n" + '  </tv>'
 
         return body
       }
     } catch(e) {
-      this.log('getGuide error : ' + e.message)
+      this.log('getTVData error : ' + e.message)
     }
   }
 
@@ -2395,12 +2399,11 @@ class sessionClass {
 
   // Update blackout teams
   async updateBlackoutTeams() {
-    this.debuglog('getBlackoutTeams for zip code ' + this.credentials.zip_code)
-
     let blackout_teams = []
 
     try {
       if ( /(^\d{5}$)/.test(this.credentials.zip_code) ) {
+        this.log('getBlackoutTeams for zip code ' + this.credentials.zip_code)
         let reqObj = {
           url: 'https://content.mlb.com/data/blackouts/' + this.credentials.zip_code + '.json',
           headers: {
@@ -2427,6 +2430,32 @@ class sessionClass {
     this.log('setting blackout teams to ' + JSON.stringify(blackout_teams))
     this.credentials.blackout_teams = blackout_teams
     this.save_credentials()
+  }
+
+  // Check Fox blackout status over games for a date
+  async checkFoxBlackout(games) {
+    let fox_start_time
+    let fox_blackout = true
+    for (var j = 0; j < games.length; j++) {
+      if ( (fox_blackout == true) && (games[j].seriesDescription == 'Regular Season') && games[j].content && games[j].content.media && games[j].content.media.epg ) {
+        for (var k = 0; k < games[j].content.media.epg.length; k++) {
+          if ( games[j].content.media.epg[k].title == 'MLBTV' ) {
+            for (var x = 0; x < games[j].content.media.epg[k].items.length; x++) {
+              if ( games[j].content.media.epg[k].items[x].callLetters == 'FOX' ) {
+                if ( fox_start_time && (games[j].gameDate == fox_start_time) ) {
+                  fox_blackout = false
+                  break
+                } else {
+                  fox_start_time = games[j].gameDate
+                }
+              }
+            }
+            break
+          }
+        }
+      }
+    }
+    return fox_blackout
   }
 
 }
