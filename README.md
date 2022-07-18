@@ -1,6 +1,6 @@
 # mlbserver
 
-Current version 2022.06.14
+Current version 2022.07.18
 
 Credit to https://github.com/tonycpsu/streamglob and https://github.com/mafintosh/hls-decryptor
 
@@ -45,6 +45,7 @@ Advanced command line options:
 --page_username (username to protect pages; default is no protection)
 --page_password (password to protect pages; default is no protection)
 --content_protect (specify the content protection key to include as a URL parameter, if page protection is enabled)
+--gamechanger_delay (specify extra delay for the gamechanger switches in 10 second increments, default is 0)
 ```
 
 For multiview, the default software encoder is limited by your CPU. You may want to experiment with different ffmpeg hardware encoders. "h264_videotoolbox" is confirmed to work on supported Macs, and "h264_v4l2m2m" is confirmed to work on a Raspberry Pi 4 (and likely other Linux systems) when ffmpeg is compiled with this patch: https://www.raspberrypi.org/forums/viewtopic.php?p=1780625#p1780625

@@ -32,7 +32,7 @@ const VALID_SCORES = [ 'Hide', 'Show' ]
 const VALID_RESOLUTIONS = [ 'adaptive', '720p60', '720p', '540p', '504p', '360p', 'none'  ]
 const DEFAULT_MULTIVIEW_RESOLUTION = '540p'
 // Corresponding andwidths to display for above resolutions
-const VALID_BANDWIDTHS = [ '', '6600k', '4160k', '2950k', '2120k', '1400k', '' ]
+const DISPLAY_BANDWIDTHS = [ '', '6600k', '4160k', '2950k', '2120k', '1400k', '' ]
 const VALID_AUDIO_TRACKS = [ 'all', 'English', 'English Radio', 'Radio Española', 'none' ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
 const VALID_SKIP = [ 'off', 'breaks', 'idle time', 'pitches' ]
@@ -46,6 +46,47 @@ const SECONDS_PER_SEGMENT = 5
 
 // for favorites: text, then background, based on https://teamcolors.jim-nielsen.com/
 const TEAM_COLORS = {'ARI': ['E3D4AD', 'A71930'], 'ATL': ['13274F', 'CE1141'], 'BAL': ['000000', 'DF4601'], 'BOS': ['0D2B56', 'BD3039'], 'CHC': ['CC3433', '0E3386'], 'CWS': ['000000', 'C4CED4'], 'CIN': ['FFFFFF', 'C6011F'], 'CLE': ['002B5C', 'E31937'], 'COL': ['C4CED4', '333366'], 'DET': ['0C2C56', 'FFFFFF'], 'HOU': ['002D62', 'EB6E1F'], 'KC': ['C09A5B', '004687'], 'LAA': ['FFFFFF', 'BA0021'], 'LAD': ['FFFFFF', '005A9C'], 'MIA': ['0077C8', 'FF6600'], 'MIL': ['0A2351', 'B6922E'], 'MIN': ['D31145', '002B5C'], 'NYM': ['002D72', 'FF5910'], 'NYY': ['FFFFFF', '003087'], 'OAK': ['003831', 'EFB21E'], 'PHI': ['284898', 'E81828'], 'PIT': ['000000', 'FDB827'], 'STL': ['FEDB00', 'C41E3A'], 'SD': ['FEC325', '7F411C'], 'SF': ['000000', 'FD5A1E'], 'SEA': ['C4CED4', '005C5C'], 'TB': ['092C5C', '8FBCE6'], 'TEX': ['003278', 'C0111F'], 'TOR': ['FFFFFF', '134A8E'], 'WSH': ['AB0003', '11225B']}
+
+// Gamechanger resolutions
+const GAMECHANGER_RESOLUTIONS = {
+  '504p': {
+    'resolution': '896x504',
+    'frame_rate': '29.97',
+    'url_bandwidth': '1800',
+    'bandwidth': '2120',
+    'codec': '4d001f'
+  },
+  '360p': {
+    'resolution': '640x360',
+    'frame_rate': '29.97',
+    'url_bandwidth': '1200',
+    'bandwidth': '1400',
+    'codec': '4d001f'
+  },
+  '540p': {
+    'resolution': '960x540',
+    'frame_rate': '29.97',
+    'url_bandwidth': '2500',
+    'bandwidth': '2950',
+    'codec': '4d001f'
+  },
+  '720p': {
+    'resolution': '1280x720',
+    'frame_rate': '29.97',
+    'url_bandwidth': '3500',
+    'bandwidth': '4160',
+    'codec': '640028'
+  },
+  '720p60': {
+    'resolution': '1280x720',
+    'frame_rate': '59.94',
+    'url_bandwidth': '5600',
+    'bandwidth': '6600',
+    'codec': '640028'
+  }
+}
+const GAMECHANGER_LIST_SIZE = 6
+const GAMECHANGER_RESPONSE_HEADERS = {"statusCode":200,"headers":{"content-type":"application/x-mpegURL","access-control-allow-origin":"*"}}
 
 // Basic command line arguments, if specified:
 // --port or -p (primary port to run on; defaults to 9999 if not specified)
@@ -69,6 +110,7 @@ const TEAM_COLORS = {'ARI': ['E3D4AD', 'A71930'], 'ATL': ['13274F', 'CE1141'], '
 // --page_username (username to protect pages; default is no protection)
 // --page_password (password to protect pages; default is no protection)
 // --content_protect (specify the content protection key to include as a URL parameter, if page protection is enabled)
+// --gamechanger_delay (specify extra delay for the gamechanger switches in 10 second increments, default is 0)
 var argv = minimist(process.argv, {
   alias: {
     p: 'port',
@@ -79,7 +121,7 @@ var argv = minimist(process.argv, {
     v: 'version'
   },
   boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version', 'free'],
-  string: ['port', 'account_username', 'account_password', 'multiview_port', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect']
+  string: ['port', 'account_username', 'account_password', 'multiview_port', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'gamechanger_delay']
 })
 
 // Version
@@ -168,9 +210,7 @@ app.get('/stream.m3u8', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   try {
-    session.log('stream.m3u8 request : ' + req.url)
-    if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-    if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+    session.requestlog('stream.m3u8', req)
 
     let mediaId
     let contentId
@@ -354,25 +394,11 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
       session.debuglog(response.body)
 
-      var body = response.body.trim().split('\n')
+      var body = response.body.replace(/^\s+|\s+$/g, '').split('\n')
 
       // check if HLS
-      let hls_detected = false
-      for (var i=0; i<body.length; i++) {
-        if ( body[i] == '#EXTM3U' ) {
-          session.debuglog('hls detected')
-          hls_detected = true
-          break
-        } else if ( body[i] == '' ) {
-          session.debuglog('skipping blank lines at beginning of file')
-          continue
-        } else {
-          session.debuglog(body[i])
-          break
-        }
-      }
-      if ( !hls_detected ) {
-        session.log('not a valid hls stream')
+      if ( body[0] != '#EXTM3U' ) {
+        session.log('not a valid hls stream at ' + streamURL)
         return
       }
 
@@ -426,7 +452,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           return line
         } else if ( segment_found ) {
           segment_found = false
-          return 'ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect + referer_parameter
+          return '/ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect + referer_parameter
         }
 
         // Omit keyframe tracks
@@ -460,7 +486,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
               //var parsed = line.match(/URI="([^"]+)"?$/)
               var parsed = line.match(',URI="([^"]+)"')
               if ( parsed[1] ) {
-                newurl = 'playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
+                newurl = '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
                 if ( force_vod != VALID_FORCE_VOD[0] ) newurl += '&force_vod=on'
                 if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
                 if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
@@ -515,7 +541,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
           if ( contentId ) newurl += '&contentId=' + contentId
           newurl += content_protect + referer_parameter
-          return 'playlist?url='+newurl
+          return '/playlist?url='+newurl
         }
       })
       .filter(function(line) {
@@ -541,9 +567,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 app.get('/playlist', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.debuglog('playlist request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.debuglog('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.debuglog('using: ' + req.headers['user-agent'])
+  session.requestlog('playlist', req, true)
 
   delete req.headers.host
 
@@ -571,30 +595,17 @@ app.get('/playlist', async function(req, res) {
       headers.referer = referer
       headers.origin = getOriginFromURL(referer)
     }
+
     requestRetry(u, headers, function(err, response) {
       if (err) return res.error(err)
 
       //session.debuglog(response.body)
 
-      var body = response.body.trim().split('\n')
+      var body = response.body.replace(/^\s+|\s+$/g, '').split('\n')
 
       // check if HLS
-      let hls_detected = false
-      for (var i=0; i<body.length; i++) {
-        if ( body[i] == '#EXTM3U' ) {
-          session.debuglog('hls detected')
-          hls_detected = true
-          break
-        } else if ( body[i] == '' ) {
-          session.debuglog('skipping blank lines at beginning of file')
-          continue
-        } else {
-          session.debuglog(body[i])
-          break
-        }
-      }
-      if ( !hls_detected ) {
-        session.log('not a valid hls stream')
+      if ( body[0] != '#EXTM3U' ) {
+        session.log('not a valid hls stream at ' + u)
         return
       }
 
@@ -671,8 +682,8 @@ app.get('/playlist', async function(req, res) {
 
         if (line[0] === '#') return line
 
-        if ( key ) return 'ts?url='+encodeURIComponent(url.resolve(u, line.trim()))+'&key='+encodeURIComponent(key)+'&iv='+encodeURIComponent(iv) + content_protect + referer_parameter
-        else return 'ts?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter
+        if ( key ) return '/ts?url='+encodeURIComponent(url.resolve(u, line.trim()))+'&key='+encodeURIComponent(key)+'&iv='+encodeURIComponent(iv) + content_protect + referer_parameter
+        else return '/ts?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter
       })
       .filter(function(line) {
         return line
@@ -716,9 +727,7 @@ app.get('/playlist', async function(req, res) {
 app.get('/ts', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.debuglog('ts request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.debuglog('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.debuglog('using: ' + req.headers['user-agent'])
+  session.requestlog('ts', req, true)
 
   delete req.headers.host
 
@@ -738,32 +747,248 @@ app.get('/ts', async function(req, res) {
     if (err) return res.error(err)
     if (!req.query.key) return respond(response, res, response.body)
 
-    //var ku = url.resolve(manifest, req.query.key)
-    var ku = req.query.key
-    if ( ku.substr(0,4) != 'http' ) {
-      var iv = Buffer.from(req.query.iv, 'hex')
-      session.debuglog('iv : 0x'+req.query.iv)
-
-      let key = Buffer.from(ku, "base64")
-
-      var dc = crypto.createDecipheriv('aes-128-cbc', key, iv)
-      var buffer = Buffer.concat([dc.update(response.body), dc.final()])
-
-      respond(response, res, buffer)
-    } else {
-      getKey(ku, headers, function(err, key) {
-        if (err) return res.error(err)
-
+    try {
+      //var ku = url.resolve(manifest, req.query.key)
+      var ku = req.query.key
+      if ( ku.substr(0,4) != 'http' ) {
         var iv = Buffer.from(req.query.iv, 'hex')
         session.debuglog('iv : 0x'+req.query.iv)
+
+        let key = Buffer.from(ku, "base64")
 
         var dc = crypto.createDecipheriv('aes-128-cbc', key, iv)
         var buffer = Buffer.concat([dc.update(response.body), dc.final()])
 
         respond(response, res, buffer)
-      })
+      } else {
+        getKey(ku, headers, function(err, key) {
+          if (err) return res.error(err)
+
+          var iv = Buffer.from(req.query.iv, 'hex')
+          session.debuglog('iv : 0x'+req.query.iv)
+
+          var dc = crypto.createDecipheriv('aes-128-cbc', key, iv)
+          var buffer = Buffer.concat([dc.update(response.body), dc.final()])
+
+          respond(response, res, buffer)
+        })
+      }
+    } catch (e) {
+      session.log('key decode error : ' + e.message)
+      return respond(response, res, '')
     }
   })
+})
+
+
+// Listen for gamechanger.m3u master playlist requests
+app.get('/gamechanger.m3u8', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  session.requestlog('gamechanger.m3u8', req, true)
+
+  // use a random string as the identifier for this gamechanger (for caching purposes)
+  var id = session.getRandomString(16)
+
+  var resolution
+  if ( req.query.resolution && (req.query.resolution == 'best') ) {
+    resolution = VALID_RESOLUTIONS[1]
+  } else {
+    resolution = session.returnValidItem(req.query.resolution, VALID_RESOLUTIONS)
+  }
+  if ( resolution == VALID_RESOLUTIONS[0] ) {
+    resolution = VALID_RESOLUTIONS[1]
+  }
+
+  var content_protect = ''
+  if ( session.protection.content_protect ) {
+    content_protect = '&content_protect=' + session.protection.content_protect
+  }
+
+  var body = '#EXTM3U' + '\n' + '#EXT-X-INDEPENDENT-SEGMENTS' + '\n' + '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",LANGUAGE="en",NAME="English",AUTOSELECT=YES,DEFAULT=YES' + '\n' + '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",LANGUAGE="en",NAME="English",INSTREAM-ID="CC1",AUTOSELECT=YES,DEFAULT=YES' + '\n'
+
+  for ( gamechanger_resolution in GAMECHANGER_RESOLUTIONS ) {
+    if ( resolution == gamechanger_resolution ) {
+      body += '#EXT-X-STREAM-INF:BANDWIDTH=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].bandwidth + '000,RESOLUTION=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].resolution + ',FRAME-RATE=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].frame_rate + ',CODECS="mp4a.40.2,avc1.' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].codec + '",CLOSED-CAPTIONS="cc",AUDIO="aac"' + '\n' + '/gamechangerplaylist?id=' + id + '&resolution=' + gamechanger_resolution + content_protect + '\n'
+      break
+    }
+  }
+
+  session.debuglog(body)
+
+  let response = {"statusCode":200,"headers":{"content-type":"application/x-mpegURL","access-control-allow-origin":"*"}}
+
+  respond(response, res, Buffer.from(body))
+})
+
+
+// Listen for gamechanger playlist requests
+app.get('/gamechangerplaylist', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  session.requestlog('gamechangerplaylist', req, true)
+
+  let gamechangerAccess = new Date()
+
+  delete req.headers.host
+
+  var id = req.query.id || null
+  if ( !id ) {
+    session.log('Game changer error : no id specified')
+    respond(GAMECHANGER_RESPONSE_HEADERS, res, Buffer.from(''))
+  } else {
+    var game_changer_title = 'Game changer ' + id + ' '
+
+    var resolution = req.query.resolution || VALID_RESOLUTIONS[1]
+
+    var req = async function () {
+      var headers = {}
+
+      var content_protect = ''
+      if ( session.protection.content_protect ) {
+        content_protect = '&content_protect=' + session.protection.content_protect
+      }
+
+      // if 30+ seconds since our last access, assume stream was stopped and reset this gamechanger
+      if ( !session.temp_cache.gamechanger || !session.temp_cache.gamechanger[id] || !session.temp_cache.gamechanger[id].segments || (session.temp_cache.gamechanger[id].segments.length == 0) || !session.temp_cache.gamechanger[id].lastAccess || (gamechangerAccess >= (new Date(new Date(session.temp_cache.gamechanger[id].lastAccess).getTime() + 30000))) ) {
+        session.log(game_changer_title + 'starting/resetting gamechanger')
+        await session.resetGameChanger(id)
+      }
+      session.temp_cache.gamechanger[id].lastAccess = gamechangerAccess
+
+      if ( !session.temp_cache.gamechanger.start || (gamechangerAccess < session.temp_cache.gamechanger.start) || !session.temp_cache.gamechanger.end || (gamechangerAccess > session.temp_cache.gamechanger.end) ) {
+        session.log(game_changer_title + 'outside of games starting/ending, skipping')
+        respond(GAMECHANGER_RESPONSE_HEADERS, res, Buffer.from(''))
+      } else {
+        let streamURL = await session.getBestGame(id)
+
+        let discontinuity = false
+        if ( streamURL && (streamURL != session.temp_cache.gamechanger.streamURL) ) {
+          session.log(game_changer_title + 'game changed')
+          session.temp_cache.gamechanger.streamURL = streamURL
+          if ( session.temp_cache.gamechanger[id].segments.length == GAMECHANGER_LIST_SIZE ) {
+            discontinuity = true
+            session.temp_cache.gamechanger[id].discontinuitySequence++
+          }
+        }
+
+        if ( !streamURL ) streamURL = session.temp_cache.gamechanger.streamURL
+
+        if ( !streamURL ) {
+          session.log(game_changer_title + 'no stream found')
+          respond(GAMECHANGER_RESPONSE_HEADERS, res, Buffer.from(''))
+        } else {
+          // check for new segments
+          if ( !session.temp_cache.gamechanger[id].playlist[resolution] || !session.temp_cache.gamechanger[id].lastAccess[resolution] || (gamechangerAccess >= (new Date(new Date(session.temp_cache.gamechanger[id].lastAccess[resolution]).getTime() + 1500))) ) {
+            session.temp_cache.gamechanger[id].lastAccess[resolution] = gamechangerAccess
+            session.debuglog(game_changer_title + 'checking for new segments')
+            let u = streamURL + '/' + GAMECHANGER_RESOLUTIONS[resolution].url_bandwidth + 'K/' + GAMECHANGER_RESOLUTIONS[resolution].url_bandwidth + '_complete.m3u8'
+            requestRetry(u, headers, function(err, response) {
+              session.debuglog(game_changer_title + 'requested ' + u)
+              if (err) return res.error(err)
+
+              session.debuglog(response.body)
+
+              var body = response.body.replace(/^\s+|\s+$/g, '').split('\n')
+
+              // check if HLS
+              if ( body[0] != '#EXTM3U' ) {
+                session.log(game_changer_title + 'not a valid hls stream at ' + u)
+                return
+              }
+
+              // find the new segments, and make sure all segments have valid keys
+              let segments_to_key = []
+              let new_segments = []
+              let new_segments_complete = false
+              let segment_count = 0
+              for (var i=(body.length-1); i>=0; i--) {
+                if ( body[i].startsWith('#EXTINF:') ) {
+                  let line = url.resolve(u, body[i+1])
+                  if ( !new_segments_complete ) {
+                    session.debuglog(game_changer_title + 'found segment ' + line)
+                    if ( discontinuity ) {
+                      session.debuglog(game_changer_title + 'only getting newest segment after stream change')
+                      segments_to_key.unshift({'extinf':body[i], 'ts':line})
+                      new_segments_complete = true
+                    } else if ( !discontinuity && (session.temp_cache.gamechanger[id].segments.length > 0) && (line == session.temp_cache.gamechanger[id].segments[session.temp_cache.gamechanger[id].segments.length-1].ts) ) {
+                      session.debuglog(game_changer_title + 'found previous last segment')
+                      new_segments_complete = true
+                    } else if ( segment_count == GAMECHANGER_LIST_SIZE ) {
+                      session.debuglog(game_changer_title + 'segments full')
+                      if ( !discontinuity && (session.temp_cache.gamechanger[id].segments.length > 0) ) {
+                        discontinuity = true
+                        session.temp_cache.gamechanger[id].discontinuitySequence++
+                      }
+                      new_segments_complete = true
+                    } else {
+                      segments_to_key.unshift({'extinf':body[i], 'ts':line})
+                    }
+                  }
+                  segment_count++
+                } else if ( body[i].indexOf('-KEY:METHOD=AES-128') > 0 ) {
+                  session.debuglog(game_changer_title + 'found key : ' + body[i])
+                  var parsed = body[i].match(/URI="([^"]+)"(?:,IV=(.+))?$/)
+                  let key = parsed[1]
+                  let iv = parsed[2].slice(2).toLowerCase()
+                  session.debuglog(game_changer_title + 'new segments to key: ' + JSON.stringify(segments_to_key))
+                  for (var j=0; j<segments_to_key.length; j++) {
+                    segments_to_key[j].key = key
+                    segments_to_key[j].iv = iv
+                  }
+                  new_segments = segments_to_key.concat(new_segments)
+                  segments_to_key = []
+                  if ( new_segments_complete ) {
+                    break
+                  }
+                }
+              }
+
+              if ( discontinuity && (new_segments.length > 0) ) {
+                new_segments[0].discontinuity = true
+              }
+              session.debuglog(game_changer_title + 'new segments : ' + JSON.stringify(new_segments))
+
+              // remove stored segments
+              while ( session.temp_cache.gamechanger[id].segments.length > (GAMECHANGER_LIST_SIZE - new_segments.length) ) {
+                session.debuglog(game_changer_title + 'removing old segment')
+                session.temp_cache.gamechanger[id].segments.shift()
+                session.temp_cache.gamechanger[id].sequence++
+              }
+              session.debuglog(game_changer_title + 'removing old segments complete')
+
+              // append new segments to cache
+              session.temp_cache.gamechanger[id].segments = session.temp_cache.gamechanger[id].segments.concat(new_segments)
+              //session.debuglog(game_changer_title + 'new segments appended : ' + JSON.stringify(session.temp_cache.gamechanger[id].segments))
+
+              // now generate playlists
+              session.temp_cache.gamechanger[id].playlist[resolution] = '#EXTM3U' + '\n' + '#EXT-X-VERSION:6' + '\n' + '#EXT-X-TARGETDURATION:6' + '\n' + '#EXT-X-MEDIA-SEQUENCE:' + session.temp_cache.gamechanger[id].sequence + '\n' + '#EXT-X-DISCONTINUITY-SEQUENCE:' + session.temp_cache.gamechanger[id].discontinuitySequence + '\n'
+              for (var i=0; i<session.temp_cache.gamechanger[id].segments.length; i++) {
+                if ( session.temp_cache.gamechanger[id].segments[i].discontinuity ) {
+                  session.temp_cache.gamechanger[id].playlist[resolution] += '#EXT-X-DISCONTINUITY' + '\n'
+                }
+                session.temp_cache.gamechanger[id].playlist[resolution] += session.temp_cache.gamechanger[id].segments[i].extinf + '\n' + '/ts?url=' + encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].ts) + '&key='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].key) + '&iv='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].iv) + content_protect + '\n'
+              }
+
+              session.debuglog(game_changer_title + 'playlist ' + session.temp_cache.gamechanger[id].playlist[resolution])
+              respond(GAMECHANGER_RESPONSE_HEADERS, res, Buffer.from(session.temp_cache.gamechanger[id].playlist[resolution]))
+            })
+            session.debuglog(game_changer_title + 'check for new segments complete')
+          } else {
+            session.debuglog(game_changer_title + 'using stored playlist')
+            respond(GAMECHANGER_RESPONSE_HEADERS, res, Buffer.from(session.temp_cache.gamechanger[id].playlist[resolution]))
+          }
+        }
+      }
+    }
+
+    return req()
+
+    requestRetry(u, headers, function(err, res) {
+      if (err) return res.error(err)
+      req()
+    })
+  }
 })
 
 // Protect pages by password, or content by content_protect url parameter
@@ -809,27 +1034,26 @@ app.get('/', async function(req, res) {
   try {
     if ( ! (await protect(req, res)) ) return
 
-    session.log('homepage request : ' + req.url)
-    if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-    if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+    session.requestlog('homepage', req)
 
     let server = 'http://' + req.headers.host
     let multiview_server = server.replace(':' + session.data.port, ':' + session.data.multiviewPort)
 
     let gameDate = session.liveDate()
     let today = gameDate
+    let yesterday = session.yesterdayDate()
     let todayUTCHours = session.getTodayUTCHours()
     let curDate = new Date()
     if ( req.query.date ) {
       if ( req.query.date == VALID_DATES[1] ) {
-        gameDate = session.yesterdayDate()
+        gameDate = yesterday
       } else if ( req.query.date != VALID_DATES[0] ) {
         gameDate = req.query.date
       }
     } else {
       let utcHours = curDate.getUTCHours()
       if ( (utcHours >= todayUTCHours) && (utcHours < YESTERDAY_UTC_HOURS) ) {
-        gameDate = session.yesterdayDate()
+        gameDate = yesterday
       }
     }
     var cache_data = await session.getDayData(gameDate)
@@ -926,7 +1150,7 @@ app.get('/', async function(req, res) {
 
     // Reload function, called after options change
     // audio_url is disabled here, now used in multiview instead
-    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + session.yesterdayDate() + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + session.yesterdayDate() + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}/*if (audio_url != ""){newurl+="audio_url="+encodeURIComponent(audio_url)+"&"}*/if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}/*if (audio_url != ""){newurl+="audio_url="+encodeURIComponent(audio_url)+"&"}*/if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
     // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
@@ -948,7 +1172,7 @@ app.get('/', async function(req, res) {
     body += '<p><span class="tooltip">Date<span class="tooltiptext">"today" lasts until ' + todayUTCHours + ' AM EST. Home page will default to yesterday between ' + todayUTCHours + ' AM - ' + (YESTERDAY_UTC_HOURS - 4) + ' AM EST.</span></span>: <input type="date" id="gameDate" value="' + gameDate + '"/> '
     for (var i = 0; i < VALID_DATES.length; i++) {
       body += '<button '
-      if ( ((VALID_DATES[i] == VALID_DATES[0]) && (gameDate == today)) || ((VALID_DATES[i] == VALID_DATES[1]) && (gameDate == session.yesterdayDate())) ) body += 'class="default" '
+      if ( ((VALID_DATES[i] == VALID_DATES[0]) && (gameDate == today)) || ((VALID_DATES[i] == VALID_DATES[1]) && (gameDate == yesterday)) ) body += 'class="default" '
       body += 'onclick="date=\'' + VALID_DATES[i] + '\';reload()">' + VALID_DATES[i] + '</button> '
     }
     body += '</p>' + "\n" + '<p><span class="tinytext">Updated ' + session.getCacheUpdatedDate(gameDate) + '</span></p>' + "\n"
@@ -1043,424 +1267,474 @@ app.get('/', async function(req, res) {
     }
     var thislink = '/' + link
 
-    if ( (mediaType == 'MLBTV') && big_inning && big_inning.start ) {
-      body += '<tr><td>' + new Date(big_inning.start).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + new Date(big_inning.end).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '</td><td>'
+    if ( mediaType == 'MLBTV' ) {
       let currentDate = new Date()
-      let compareStart = new Date(big_inning.start)
-      compareStart.setMinutes(compareStart.getMinutes()-10)
-      let compareEnd = new Date(big_inning.end)
-      compareEnd.setHours(compareEnd.getHours()+1)
-      if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
-        let querystring = '?event=biginning'
-        let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
-        if ( linkType == VALID_LINK_TYPES[0] ) {
-          if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
-          if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+
+      // Big Inning
+      if ( big_inning && big_inning.start ) {
+        body += '<tr><td>' + new Date(big_inning.start).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + new Date(big_inning.end).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '</td><td>'
+        let compareStart = new Date(big_inning.start)
+        compareStart.setMinutes(compareStart.getMinutes()-10)
+        let compareEnd = new Date(big_inning.end)
+        compareEnd.setHours(compareEnd.getHours()+1)
+        if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
+          let querystring = '?event=biginning'
+          let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+          if ( linkType == VALID_LINK_TYPES[0] ) {
+            if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+            if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+          }
+          if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+          if ( linkType == VALID_LINK_TYPES[1] ) {
+            if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+          }
+          querystring += content_protect_b
+          multiviewquerystring += content_protect_b
+          body += '<a href="' + thislink + querystring + '">Big Inning</a>'
+          body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+        } else {
+          body += 'Big Inning'
         }
-        if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
-        if ( linkType == VALID_LINK_TYPES[1] ) {
-          if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
-        }
-        querystring += content_protect_b
-        multiviewquerystring += content_protect_b
-        body += '<a href="' + thislink + querystring + '">Big Inning</a>'
-        body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
-      } else {
-        body += 'Big Inning'
+        body += '</td></tr>' + "\n"
       }
-      body += '</td></tr>' + "\n"
+
+      // Game Changer
+      if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) ) {
+        let blackouts = await session.get_blackout_games(cache_data.dates[0].games)
+        let gameIndexes = await session.get_first_and_last_games(cache_data.dates[0].games, blackouts)
+        if ( (typeof gameIndexes.firstGameIndex !== 'undefined') && (typeof gameIndexes.lastGameIndex !== 'undefined') && (gameIndexes.firstGameIndex !== gameIndexes.lastGameIndex) ) {
+          let compareStart = new Date(cache_data.dates[0].games[gameIndexes.firstGameIndex].gameDate)
+          let compareEnd = new Date(cache_data.dates[0].games[gameIndexes.lastGameIndex].gameDate)
+          if ( cache_data.dates[0].games[gameIndexes.lastGameIndex].status && (cache_data.dates[0].games[gameIndexes.lastGameIndex].status.startTimeTBD == true) ) {
+            compareEnd = new Date(cache_data.dates[0].games[gameIndexes.lastGameIndex-1].gameDate)
+            compareEnd.setHours(compareEnd.getHours()+4)
+          }
+          compareEnd.setHours(compareEnd.getHours()+4)
+          body += '<tr><td><span class="tooltip">' + compareStart.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + compareEnd.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to best resolution if not specified.</span></span></td><td>'
+          if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
+            let streamURL = server + '/gamechanger.m3u8'
+            let multiviewquerystring = streamURL + '?resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+            multiviewquerystring += content_protect_b
+            if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += '?resolution=' + resolution
+            streamURL += content_protect_b
+            if ( linkType != VALID_LINK_TYPES[1] ) {
+              streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b
+            }
+            body += '<a href="' + streamURL + '">Game Changer</a>'
+            body += '<input type="checkbox" value="' + multiviewquerystring + '" onclick="addmultiview(this)">'
+          } else {
+            body += 'Game Changer'
+          }
+          body += '</td></tr>' + "\n"
+        }
+      }
     }
 
     // assume national broadcasts are blacked out if a USA zip code is set
     let national_blackout = /(^\d{5}$)/.test(session.credentials.zip_code)
+    let regional_fox_games_exist
 
-    // check for simultaneous regular season Fox regional games, which generally aren't blacked out
-    let fox_national_blackout = national_blackout
-    if ( (fox_national_blackout == true) && (mediaType == 'MLBTV') ) {
-      fox_national_blackout = await session.checkFoxBlackout(cache_data.dates[0].games)
-    }
+    if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games ) {
+      for (var j = 0; j < cache_data.dates[0].games.length; j++) {
+        let game_started = false
 
-    for (var j = 0; j < cache_data.dates[0].games.length; j++) {
-      let game_started = false
+        let blackout_type
+        let blackout_time
 
-      let blackout_type
-      let blackout_time
+        let awayteam = cache_data.dates[0].games[j].teams['away'].team.abbreviation
+        let hometeam = cache_data.dates[0].games[j].teams['home'].team.abbreviation
+        if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
+          awayteam = cache_data.dates[0].games[j].teams['away'].team.name
+          hometeam = cache_data.dates[0].games[j].teams['home'].team.name
+        }
 
-      let awayteam = cache_data.dates[0].games[j].teams['away'].team.abbreviation
-      let hometeam = cache_data.dates[0].games[j].teams['home'].team.abbreviation
-      if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
-        awayteam = cache_data.dates[0].games[j].teams['away'].team.name
-        hometeam = cache_data.dates[0].games[j].teams['home'].team.name
-      }
+        let teams = awayteam + " @ " + hometeam
+        let pitchers = ""
+        let state = "<br/>"
 
-      let teams = awayteam + " @ " + hometeam
-      let pitchers = ""
-      let state = "<br/>"
+        if ( cache_data.dates[0].games[j].status.startTimeTBD == true ) {
+          state += "Time TBD"
+        } else {
+          let startTime = new Date(cache_data.dates[0].games[j].gameDate)
+          state += startTime.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true })
+        }
 
-      if ( cache_data.dates[0].games[j].status.startTimeTBD == true ) {
-        state += "Time TBD"
-      } else {
-        let startTime = new Date(cache_data.dates[0].games[j].gameDate)
-        state += startTime.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true })
-      }
+        var abstractGameState = cache_data.dates[0].games[j].status.abstractGameState
+        var detailedState = cache_data.dates[0].games[j].status.detailedState
 
-      var abstractGameState = cache_data.dates[0].games[j].status.abstractGameState
-      var detailedState = cache_data.dates[0].games[j].status.detailedState
-
-      var scheduledInnings = '9'
-      if ( cache_data.dates[0].games[j].linescore && cache_data.dates[0].games[j].linescore.scheduledInnings ) {
-        scheduledInnings = cache_data.dates[0].games[j].linescore.scheduledInnings
-          if ( detailedState.startsWith('Completed Early') && cache_data.dates[0].games[j].linescore.currentInning ) {
-            scheduledInnings = cache_data.dates[0].games[j].linescore.currentInning
-          }
-      }
-      var relative_inning = (inning_number - (9 - scheduledInnings))
-      relative_inning = relative_inning < 0 ? 0 : relative_inning
-      //if ( (scores == VALID_SCORES[1]) && (cache_data.dates[0].games[j].gameUtils.isLive || cache_data.dates[0].games[j].gameUtils.isFinal) && !cache_data.dates[0].games[j].gameUtils.isCancelled && !cache_data.dates[0].games[j].gameUtils.isPostponed ) {
-      if ( (scores == VALID_SCORES[1]) && (abstractGameState != 'Preview') && (detailedState != 'Postponed') ) {
-        let awayscore = ''
-        let homescore = ''
-        if ( (inning_number != VALID_INNING_NUMBER[0]) && cache_data.dates[0].games[j].linescore && cache_data.dates[0].games[j].linescore.innings ) {
-          awayscore = 0
-          homescore = 0
-          let display_inning = ''
-          for (var k = 0; k < cache_data.dates[0].games[j].linescore.innings.length; k++) {
-            if ( cache_data.dates[0].games[j].linescore.innings[k] ) {
-              if ( (cache_data.dates[0].games[j].linescore.innings[k].num < relative_inning) ) {
-                display_inning = 'T' + cache_data.dates[0].games[j].linescore.innings[k].num
-                if ( typeof cache_data.dates[0].games[j].linescore.innings[k].away.runs !== 'undefined' ) awayscore += cache_data.dates[0].games[j].linescore.innings[k].away.runs
-                if ( typeof cache_data.dates[0].games[j].linescore.innings[k].home.runs !== 'undefined' ) {
-                  display_inning = 'B' + cache_data.dates[0].games[j].linescore.innings[k].num
-                  homescore += cache_data.dates[0].games[j].linescore.innings[k].home.runs
-                  if ( cache_data.dates[0].games[j].linescore.innings[k+1] ) {
-                    display_inning = 'T' + (cache_data.dates[0].games[j].linescore.innings[k].num + 1)
+        var scheduledInnings = '9'
+        if ( cache_data.dates[0].games[j].linescore && cache_data.dates[0].games[j].linescore.scheduledInnings ) {
+          scheduledInnings = cache_data.dates[0].games[j].linescore.scheduledInnings
+            if ( detailedState.startsWith('Completed Early') && cache_data.dates[0].games[j].linescore.currentInning ) {
+              scheduledInnings = cache_data.dates[0].games[j].linescore.currentInning
+            }
+        }
+        var relative_inning = (inning_number - (9 - scheduledInnings))
+        relative_inning = relative_inning < 0 ? 0 : relative_inning
+        //if ( (scores == VALID_SCORES[1]) && (cache_data.dates[0].games[j].gameUtils.isLive || cache_data.dates[0].games[j].gameUtils.isFinal) && !cache_data.dates[0].games[j].gameUtils.isCancelled && !cache_data.dates[0].games[j].gameUtils.isPostponed ) {
+        if ( (scores == VALID_SCORES[1]) && (abstractGameState != 'Preview') && (detailedState != 'Postponed') ) {
+          let awayscore = ''
+          let homescore = ''
+          if ( (inning_number != VALID_INNING_NUMBER[0]) && cache_data.dates[0].games[j].linescore && cache_data.dates[0].games[j].linescore.innings ) {
+            awayscore = 0
+            homescore = 0
+            let display_inning = ''
+            for (var k = 0; k < cache_data.dates[0].games[j].linescore.innings.length; k++) {
+              if ( cache_data.dates[0].games[j].linescore.innings[k] ) {
+                if ( (cache_data.dates[0].games[j].linescore.innings[k].num < relative_inning) ) {
+                  display_inning = 'T' + cache_data.dates[0].games[j].linescore.innings[k].num
+                  if ( typeof cache_data.dates[0].games[j].linescore.innings[k].away.runs !== 'undefined' ) awayscore += cache_data.dates[0].games[j].linescore.innings[k].away.runs
+                  if ( typeof cache_data.dates[0].games[j].linescore.innings[k].home.runs !== 'undefined' ) {
+                    display_inning = 'B' + cache_data.dates[0].games[j].linescore.innings[k].num
+                    homescore += cache_data.dates[0].games[j].linescore.innings[k].home.runs
+                    if ( cache_data.dates[0].games[j].linescore.innings[k+1] ) {
+                      display_inning = 'T' + (cache_data.dates[0].games[j].linescore.innings[k].num + 1)
+                    }
                   }
-                }
-              } else if ( (inning_half == VALID_INNING_HALF[2]) && (cache_data.dates[0].games[j].linescore.innings[k].num == relative_inning) ) {
-                if ( typeof cache_data.dates[0].games[j].linescore.innings[k].away.runs !== 'undefined' ) {
-                  display_inning = 'B' + cache_data.dates[0].games[j].linescore.innings[k].num
-                  awayscore += cache_data.dates[0].games[j].linescore.innings[k].away.runs
+                } else if ( (inning_half == VALID_INNING_HALF[2]) && (cache_data.dates[0].games[j].linescore.innings[k].num == relative_inning) ) {
+                  if ( typeof cache_data.dates[0].games[j].linescore.innings[k].away.runs !== 'undefined' ) {
+                    display_inning = 'B' + cache_data.dates[0].games[j].linescore.innings[k].num
+                    awayscore += cache_data.dates[0].games[j].linescore.innings[k].away.runs
+                  }
+                } else {
+                  break
                 }
               } else {
                 break
               }
-            } else {
-              break
+            }
+            if ( display_inning != '' ) {
+              state = "<br/>" + display_inning
+            }
+          } else {
+            awayscore = cache_data.dates[0].games[j].teams['away'].score
+            homescore = cache_data.dates[0].games[j].teams['home'].score
+            //if ( cache_data.dates[0].games[j].gameUtils.isLive && !cache_data.dates[0].games[j].gameUtils.isFinal ) {
+            if ( abstractGameState == 'Live' ) {
+              state = "<br/>" + cache_data.dates[0].games[j].linescore.inningHalf.substr(0,1) + cache_data.dates[0].games[j].linescore.currentInning
+            //} else if ( cache_data.dates[0].games[j].gameUtils.isFinal ) {
+            } else if ( abstractGameState == 'Final' ) {
+              state = "<br/>" + detailedState
+            }
+            if ( cache_data.dates[0].games[j].flags.perfectGame == true ) {
+              state += "<br/>Perfect Game"
+            } else if ( cache_data.dates[0].games[j].flags.noHitter == true ) {
+              state += "<br/>No-Hitter"
             }
           }
-          if ( display_inning != '' ) {
-            state = "<br/>" + display_inning
-          }
-        } else {
-          awayscore = cache_data.dates[0].games[j].teams['away'].score
-          homescore = cache_data.dates[0].games[j].teams['home'].score
-          //if ( cache_data.dates[0].games[j].gameUtils.isLive && !cache_data.dates[0].games[j].gameUtils.isFinal ) {
-          if ( abstractGameState == 'Live' ) {
-            state = "<br/>" + cache_data.dates[0].games[j].linescore.inningHalf.substr(0,1) + cache_data.dates[0].games[j].linescore.currentInning
-          //} else if ( cache_data.dates[0].games[j].gameUtils.isFinal ) {
-          } else if ( abstractGameState == 'Final' ) {
-            state = "<br/>" + detailedState
-          }
-          if ( cache_data.dates[0].games[j].flags.perfectGame == true ) {
-            state += "<br/>Perfect Game"
-          } else if ( cache_data.dates[0].games[j].flags.noHitter == true ) {
-            state += "<br/>No-Hitter"
-          }
+          teams = awayteam + " " + awayscore + " @ " + hometeam + " " + homescore
+        //} else if ( cache_data.dates[0].games[j].gameUtils.isCancelled || cache_data.dates[0].games[j].gameUtils.isPostponed || cache_data.dates[0].games[j].gameUtils.isSuspended ) {
+        } else if ( detailedState == 'Postponed' ) {
+          state = "<br/>" + detailedState
+        //} else if ( cache_data.dates[0].games[j].gameUtils.isDelayed ) {
+        } else if ( detailedState.startsWith('Delayed') ) {
+          state += "<br/>" + detailedState
         }
-        teams = awayteam + " " + awayscore + " @ " + hometeam + " " + homescore
-      //} else if ( cache_data.dates[0].games[j].gameUtils.isCancelled || cache_data.dates[0].games[j].gameUtils.isPostponed || cache_data.dates[0].games[j].gameUtils.isSuspended ) {
-      } else if ( detailedState == 'Postponed' ) {
-        state = "<br/>" + detailedState
-      //} else if ( cache_data.dates[0].games[j].gameUtils.isDelayed ) {
-      } else if ( detailedState.startsWith('Delayed') ) {
-        state += "<br/>" + detailedState
-      }
-      if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
-        state += "<br/>" + cache_data.dates[0].games[j].teams['home'].team.league.name
-      }
+        if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
+          state += "<br/>" + cache_data.dates[0].games[j].teams['home'].team.league.name
+        }
 
-      if ( cache_data.dates[0].games[j].doubleHeader != 'N'  ) {
-        state += "<br/>Game " + cache_data.dates[0].games[j].gameNumber
-      }
-      if ( cache_data.dates[0].games[j].description ) {
-        state += "<br/>" + cache_data.dates[0].games[j].description
-      }
-      if ( scheduledInnings != '9' ) {
-        state += "<br/>" + scheduledInnings + "-inning game"
-      }
-      var resumeStatus = false
-      if ( cache_data.dates[0].games[j].resumeGameDate || cache_data.dates[0].games[j].resumedFromDate ) {
-        state += '<br/>Resum'
-        let resumeDate
-        if ( cache_data.dates[0].games[j].resumeGameDate ) {
-          resumeDate = new Date(cache_data.dates[0].games[j].resumeDate)
-          state += 'ing on'
-        } else {
-          resumeDate = new Date(cache_data.dates[0].games[j].resumedFrom)
-          state += 'ed from'
+        if ( cache_data.dates[0].games[j].doubleHeader != 'N'  ) {
+          state += "<br/>Game " + cache_data.dates[0].games[j].gameNumber
         }
-        state += '<br/>' + resumeDate.toLocaleString('default', { month: 'long', day: 'numeric' })
-        // Also show the status by the media links, if one of them is live
-        resumeStatus = 'archived'
-        if ( ((typeof cache_data.dates[0].games[j].content.media) != 'undefined') || ((typeof cache_data.dates[0].games[j].content.media.epg) != 'undefined') ) {
-          for (var k = 0; k < cache_data.dates[0].games[j].content.media.epg.length; k++) {
-            for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
-              if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') ) {
-                resumeStatus = 'live'
-                break
-              }
-            }
-            if ( resumeStatus ) break
+        if ( cache_data.dates[0].games[j].description ) {
+          state += "<br/>" + cache_data.dates[0].games[j].description
+        }
+        if ( scheduledInnings != '9' ) {
+          state += "<br/>" + scheduledInnings + "-inning game"
+        }
+        var resumeStatus = false
+        if ( cache_data.dates[0].games[j].resumeGameDate || cache_data.dates[0].games[j].resumedFromDate ) {
+          state += '<br/>Resum'
+          let resumeDate
+          if ( cache_data.dates[0].games[j].resumeGameDate ) {
+            resumeDate = new Date(cache_data.dates[0].games[j].resumeDate)
+            state += 'ing on'
+          } else {
+            resumeDate = new Date(cache_data.dates[0].games[j].resumedFrom)
+            state += 'ed from'
           }
-        }
-      }
-
-      if ( (cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName) || (cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName) ) {
-        pitchers = "<br/>"
-        if ( cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName ) {
-          pitchers += getLastName(cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName) + '</a>'
-        } else {
-          pitchers += 'TBD'
-        }
-        pitchers += ' vs '
-        if ( cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName ) {
-          pitchers += getLastName(cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName) + '</a>'
-        } else {
-          pitchers += 'TBD'
-        }
-      }
-
-      body += '<tr'
-      let fav_style = ''
-      if ( argv.free && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.freeGame ) {
-        body += ' class="freegame"'
-      } else if ( session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['away'].team.abbreviation) || session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['home'].team.abbreviation) ) {
-        let fav_team = cache_data.dates[0].games[j].teams['away'].team.abbreviation
-        if ( session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['home'].team.abbreviation) ) {
-          fav_team = cache_data.dates[0].games[j].teams['home'].team.abbreviation
-        }
-        fav_style = ' style="color:#' + TEAM_COLORS[fav_team][0] + ';background:#' + TEAM_COLORS[fav_team][1] + ';"'
-        body += fav_style
-      }
-      body += '><td>' + teams + pitchers + state + '</td>'
-
-      // Check if Winter League game first
-      if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
-        body += "<td>"
-        if ( cache_data.dates[0].games[j].broadcasts ) {
-          for (var k = 0; k < cache_data.dates[0].games[j].broadcasts.length; k++) {
-            if ( (mediaType == 'MLBTV') && (cache_data.dates[0].games[j].broadcasts[k].name == 'MLB.TV') ) {
-              // Check if game should be live
-              let currentTime = new Date()
-              let startTime = new Date(cache_data.dates[0].games[j].gameDate)
-              startTime.setMinutes(startTime.getMinutes()-30)
-              let endTime = new Date(cache_data.dates[0].games[j].gameDate)
-              endTime.setHours(endTime.getHours()+4)
-              if ( (currentTime >= startTime) && (currentTime < endTime) ) {
-                let querystring
-                querystring = '?event=' + cache_data.dates[0].games[j].teams['home'].team.clubName.toLowerCase()
-                let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
-                if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
-                if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + encodeURIComponent(audio_track)
-                querystring += content_protect_b
-                multiviewquerystring += content_protect_b
-                body += '<a href="' + thislink + querystring + '">' + cache_data.dates[0].games[j].broadcasts[k].name + '</a>'
-                body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
-              } else {
-                body += cache_data.dates[0].games[j].broadcasts[k].name
-              }
-              break
-            }
-          }
-        }
-        body += "</td>"
-      } else {
-        // Begin MLB games
-        if ( ((typeof cache_data.dates[0].games[j].content.media) == 'undefined') || ((typeof cache_data.dates[0].games[j].content.media.epg) == 'undefined') ) {
-          body += "<td></td>"
-        } else {
-          body += "<td>"
-          for (var k = 0; k < cache_data.dates[0].games[j].content.media.epg.length; k++) {
-            let epgTitle = cache_data.dates[0].games[j].content.media.epg[k].title
-            if ( epgTitle == mediaType ) {
+          state += '<br/>' + resumeDate.toLocaleString('default', { month: 'long', day: 'numeric' })
+          // Also show the status by the media links, if one of them is live
+          resumeStatus = 'archived'
+          if ( ((typeof cache_data.dates[0].games[j].content.media) != 'undefined') || ((typeof cache_data.dates[0].games[j].content.media.epg) != 'undefined') ) {
+            for (var k = 0; k < cache_data.dates[0].games[j].content.media.epg.length; k++) {
               for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
-                // check that pay TV authentication isn't required
-                //if ( (mediaType == 'MLBTV') && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[0].games[j].gameUtils.isFinal) && (cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
-                if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired ) {
-                  continue
+                if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') ) {
+                  resumeStatus = 'live'
+                  break
                 }
-                if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
-                  if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].language == language) ) {
-                    let teamabbr
-                    //if ( (((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL')) || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason) ) {
-                    if ( (((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL')) || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training')) ) {
-                      teamabbr = 'NATIONAL'
-                    } else {
-                      teamabbr = hometeam
-                      if ( cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'AWAY' ) {
-                        teamabbr = awayteam
-                      }
-                    }
-                    let station = cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters
+              }
+              if ( resumeStatus ) break
+            }
+          }
+        }
 
-                    // estimate blackout expiration, if necessary
-                    if ( !blackout_type && (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL') && ((station != 'FOX') || (fox_national_blackout == true))) || ((teamabbr != 'NATIONAL') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
-                      if ( national_blackout && (teamabbr == 'NATIONAL') ) {
-                        blackout_type = 'National'
+        if ( (cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName) || (cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName) ) {
+          pitchers = "<br/>"
+          if ( cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName ) {
+            pitchers += getLastName(cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName) + '</a>'
+          } else {
+            pitchers += 'TBD'
+          }
+          pitchers += ' vs '
+          if ( cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName ) {
+            pitchers += getLastName(cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName) + '</a>'
+          } else {
+            pitchers += 'TBD'
+          }
+        }
+
+        body += '<tr'
+        let fav_style = ''
+        if ( argv.free && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.freeGame ) {
+          body += ' class="freegame"'
+        } else if ( session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['away'].team.abbreviation) || session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['home'].team.abbreviation) ) {
+          let fav_team = cache_data.dates[0].games[j].teams['away'].team.abbreviation
+          if ( session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['home'].team.abbreviation) ) {
+            fav_team = cache_data.dates[0].games[j].teams['home'].team.abbreviation
+          }
+          fav_style = ' style="color:#' + TEAM_COLORS[fav_team][0] + ';background:#' + TEAM_COLORS[fav_team][1] + ';"'
+          body += fav_style
+        }
+        body += '><td>' + teams + pitchers + state + '</td>'
+
+        // Check if Winter League game first
+        if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
+          body += "<td>"
+          if ( cache_data.dates[0].games[j].broadcasts ) {
+            for (var k = 0; k < cache_data.dates[0].games[j].broadcasts.length; k++) {
+              if ( (mediaType == 'MLBTV') && (cache_data.dates[0].games[j].broadcasts[k].name == 'MLB.TV') ) {
+                // Check if game should be live
+                let currentTime = new Date()
+                let startTime = new Date(cache_data.dates[0].games[j].gameDate)
+                startTime.setMinutes(startTime.getMinutes()-30)
+                let endTime = new Date(cache_data.dates[0].games[j].gameDate)
+                endTime.setHours(endTime.getHours()+4)
+                if ( (currentTime >= startTime) && (currentTime < endTime) ) {
+                  let querystring
+                  querystring = '?event=' + cache_data.dates[0].games[j].teams['home'].team.clubName.toLowerCase()
+                  let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
+                  if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+                  if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + encodeURIComponent(audio_track)
+                  querystring += content_protect_b
+                  multiviewquerystring += content_protect_b
+                  body += '<a href="' + thislink + querystring + '">' + cache_data.dates[0].games[j].broadcasts[k].name + '</a>'
+                  body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+                } else {
+                  body += cache_data.dates[0].games[j].broadcasts[k].name
+                }
+                break
+              }
+            }
+          }
+          body += "</td>"
+        } else {
+          // Begin MLB games
+          if ( ((typeof cache_data.dates[0].games[j].content.media) == 'undefined') || ((typeof cache_data.dates[0].games[j].content.media.epg) == 'undefined') ) {
+            body += "<td></td>"
+          } else {
+            body += "<td>"
+            for (var k = 0; k < cache_data.dates[0].games[j].content.media.epg.length; k++) {
+              let epgTitle = cache_data.dates[0].games[j].content.media.epg[k].title
+              if ( epgTitle == mediaType ) {
+                for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
+                  // check that pay TV authentication isn't required
+                  //if ( (mediaType == 'MLBTV') && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState != 'MEDIA_ARCHIVE') || !cache_data.dates[0].games[j].gameUtils.isFinal) && (cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                  if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired ) {
+                    continue
+                  }
+                  if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.indexOf('IN_MARKET_') == -1) ) {
+                    if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].language == language) ) {
+                      let teamabbr
+                      //if ( (((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL')) || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason) ) {
+                      if ( (((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL')) || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training')) ) {
+                        teamabbr = 'NATIONAL'
                       } else {
-                        blackout_type = 'Local'
+                        teamabbr = hometeam
+                        if ( cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'AWAY' ) {
+                          teamabbr = awayteam
+                        }
                       }
-                      if ( (resumeStatus == false) && (cache_data.dates[0].games[j].status.startTimeTBD == false) ) {
-                        // avg 9 inning game was 3:11 in 2021, or 21.22 minutes per inning
-                        let gameDurationMinutes = 21.22 * scheduledInnings
-                        // default to assuming the scheduled game time is the first pitch time
-                        let firstPitch = new Date(cache_data.dates[0].games[j].gameDate)
-                        if ( cache_data.dates[0].games[j].gameInfo ) {
-                          // check if firstPitch has been updated with a valid time (later than the scheduled game time)
-                          if ( cache_data.dates[0].games[j].gameInfo.firstPitch && (cache_data.dates[0].games[j].gameInfo.firstPitch >= cache_data.dates[0].games[j].gameDate) ) {
-                            firstPitch = new Date(cache_data.dates[0].games[j].gameInfo.firstPitch)
-                            // for completed games, get the duration too
-                            if ( cache_data.dates[0].games[j].gameInfo.gameDurationMinutes ) {
-                              gameDurationMinutes = cache_data.dates[0].games[j].gameInfo.gameDurationMinutes
-                              // add any delays
-                              if ( cache_data.dates[0].games[j].gameInfo.delayDurationMinutes ) {
-                                gameDurationMinutes += cache_data.dates[0].games[j].gameInfo.delayDurationMinutes
+                      let station = cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters
+
+                      // check blackout status
+                      if ( !blackout_type ) {
+                        if ( (mediaType == 'MLBTV') && national_blackout && (gameDate >= today) ) {
+                          if (teamabbr == 'NATIONAL') {
+                            if ( (station == 'FOX') && (cache_data.dates[0].games[j].seriesDescription == 'Regular Season') ) {
+                              if ( !regional_fox_games_exist ) {
+                                regional_fox_games_exist = await session.check_regional_fox_games(cache_data.dates[0].games)
                               }
-                            }
-                          }
-                        }
-                        gameDurationMinutes += 90
-                        blackout_time = firstPitch
-                        blackout_time.setMinutes(blackout_time.getMinutes()+gameDurationMinutes)
-                      }
-                    } else if ( !blackout_type ) {
-                      blackout_type = 'None'
-                    }
-
-                    // display blackout tooltip, if necessary
-                    if ( blackout_type != 'None' ) {
-                      body += '<span class="tooltip"><span class="blackout">' + teamabbr + '</span><span class="tooltiptext">' + blackout_type + ' video blackout until approx. 90 min. after the game'
-                      if ( blackout_time ) {
-                        body += ' (~' + blackout_time.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ')'
-                      }
-                      body += '</span></span>'
-                    } else if ( (station == 'FOX') && (fox_national_blackout == false) ) {
-                      body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">Regional FOX game</span></span>'
-                    } else {
-                      body += teamabbr
-                    }
-                    body += ': '
-                    //if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal ) {
-                    if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (abstractGameState == 'Final') ) {
-                      let gameTime = new Date(cache_data.dates[0].games[j].gameDate)
-                      gameTime.setMinutes(gameTime.getMinutes()-10)
-                      if ( curDate >= gameTime ) {
-                        game_started = true
-                      }
-                      let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
-                      if ( (mediaType == 'MLBTV') && (gameDate == today) && session.cache.media && session.cache.media[mediaId] && session.cache.media[mediaId].blackout && session.cache.media[mediaId].blackoutExpiry && (new Date(session.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
-                        body += '<span class="blackout">' + station + '</span>'
-                      } else {
-                        let querystring
-                        querystring = '?mediaId=' + mediaId
-                        let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
-                        if ( linkType == VALID_LINK_TYPES[0] ) {
-                          if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
-                          if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
-                        }
-                        if ( mediaType == 'MLBTV' ) {
-                          if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
-                          if ( inning_number != VALID_INNING_NUMBER[0] ) querystring += '&inning_number=' + relative_inning
-                          if ( skip != VALID_SKIP[0] ) querystring += '&skip=' + skip
-                          if ( (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0]) ) {
-                            let contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
-                            querystring += '&contentId=' + contentId
-                          }
-                          if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
-                          if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + encodeURIComponent(audio_track)
-                          // audio_url is disabled here, now used in multiview instead
-                          //if ( audio_url != '' ) querystring += '&audio_url=' + encodeURIComponent(audio_url)
-                        }
-                        if ( pad != VALID_PAD[0] ) querystring += '&pad=' + pad
-                        if ( linkType == VALID_LINK_TYPES[1] ) {
-                          if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON' ) {
-                            if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
-                          }
-                        }
-                        querystring += content_protect_b
-                        multiviewquerystring += content_protect_b
-                        stationlink = '<a' + fav_style + ' href="' + thislink + querystring + '">' + station + '</a>'
-                        if ( (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL')) || ((cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
-                          body += '<span class="blackout">' + stationlink + '</span>'
-                        } else {
-                          body += stationlink
-                        }
-                        if ( mediaType == 'MLBTV' ) {
-                          body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
-                        }
-                        if ( resumeStatus ) {
-                          body += '('
-                          // for suspended games that haven't finished yet, we can simply use the mediaState to determine the status
-                          if ( resumeStatus == 'live' ) {
-                            if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE' ) {
-                              body += '1'
+                              if ( regional_fox_games_exist == 'false' ) {
+                                blackout_type = 'National'
+                              }
                             } else {
-                              body += '2'
+                              blackout_type = 'National'
                             }
-                          // otherwise, for completed games, we need to check the airings data
-                          } else {
-                            airings_data = await session.getAiringsData('', cache_data.dates[0].games[j].gamePk)
-                            if ( airings_data.data && airings_data.data.Airings && (airings_data.data.Airings.length > 0) ) {
-                              for (var y = 0; y < airings_data.data.Airings.length; y++) {
-                                if ( airings_data.data.Airings[y].contentId == cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId ) {
-                                  if ( (cache_data.dates[0].games[j].resumeDate && (cache_data.dates[0].games[j].resumeDate == airings_data.data.Airings[y].startDate)) || (cache_data.dates[0].games[j].resumedFrom && (cache_data.dates[0].games[j].gameDate == airings_data.data.Airings[y].startDate)) ) {
-                                    body += '2'
-                                  } else {
-                                    body += '1'
+                          }
+
+                          if ( !blackout_type && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(hometeam) || session.credentials.blackout_teams.includes(awayteam)) ) {
+                            blackout_type = 'Local'
+                          }
+                        }
+
+                        if ( !blackout_type ) {
+                          blackout_type = 'None'
+                        }
+
+                        if ( blackout_type != 'None' ) {
+                          if ( (resumeStatus == false) && (cache_data.dates[0].games[j].status.startTimeTBD == false) ) {
+                            // avg 9 inning game was 3:11 in 2021, or 21.22 minutes per inning
+                            let gameDurationMinutes = 21.22 * scheduledInnings
+                            // default to assuming the scheduled game time is the first pitch time
+                            let firstPitch = new Date(cache_data.dates[0].games[j].gameDate)
+                            if ( cache_data.dates[0].games[j].gameInfo ) {
+                              // check if firstPitch has been updated with a valid time (later than the scheduled game time)
+                              if ( cache_data.dates[0].games[j].gameInfo.firstPitch && (cache_data.dates[0].games[j].gameInfo.firstPitch >= cache_data.dates[0].games[j].gameDate) ) {
+                                firstPitch = new Date(cache_data.dates[0].games[j].gameInfo.firstPitch)
+                                // for completed games, get the duration too
+                                if ( cache_data.dates[0].games[j].gameInfo.gameDurationMinutes ) {
+                                  gameDurationMinutes = cache_data.dates[0].games[j].gameInfo.gameDurationMinutes
+                                  // add any delays
+                                  if ( cache_data.dates[0].games[j].gameInfo.delayDurationMinutes ) {
+                                    gameDurationMinutes += cache_data.dates[0].games[j].gameInfo.delayDurationMinutes
                                   }
-                                  break
                                 }
                               }
                             }
+                            gameDurationMinutes += 150
+                            blackout_time = firstPitch
+                            blackout_time.setMinutes(blackout_time.getMinutes()+gameDurationMinutes)
                           }
-                          body += ')'
+                        }
+                      }
+
+                      // display blackout tooltip, if necessary
+                      if ( blackout_type != 'None' ) {
+                        body += '<span class="tooltip"><span class="blackout">' + teamabbr + '</span><span class="tooltiptext">' + blackout_type + ' video blackout until approx. 2.5 hours after the game'
+                        if ( blackout_time ) {
+                          body += ' (~' + blackout_time.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ')'
+                        }
+                        body += '</span></span>'
+                      } else if ( (station == 'FOX') ) {
+                        body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">Regional FOX game</span></span>'
+                      } else {
+                        body += teamabbr
+                      }
+                      body += ': '
+                      //if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal ) {
+                      if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (abstractGameState == 'Final') ) {
+                        let gameTime = new Date(cache_data.dates[0].games[j].gameDate)
+                        gameTime.setMinutes(gameTime.getMinutes()-10)
+                        if ( curDate >= gameTime ) {
+                          game_started = true
+                        }
+                        let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
+                        if ( (mediaType == 'MLBTV') && (gameDate == today) && session.cache.media && session.cache.media[mediaId] && session.cache.media[mediaId].blackout && session.cache.media[mediaId].blackoutExpiry && (new Date(session.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
+                          body += '<span class="blackout">' + station + '</span>'
+                        } else {
+                          let querystring
+                          querystring = '?mediaId=' + mediaId
+                          let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
+                          if ( linkType == VALID_LINK_TYPES[0] ) {
+                            if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+                            if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+                          }
+                          if ( mediaType == 'MLBTV' ) {
+                            if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
+                            if ( inning_number != VALID_INNING_NUMBER[0] ) querystring += '&inning_number=' + relative_inning
+                            if ( skip != VALID_SKIP[0] ) querystring += '&skip=' + skip
+                            if ( (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0]) ) {
+                              let contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
+                              querystring += '&contentId=' + contentId
+                            }
+                            if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+                            if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + encodeURIComponent(audio_track)
+                            // audio_url is disabled here, now used in multiview instead
+                            //if ( audio_url != '' ) querystring += '&audio_url=' + encodeURIComponent(audio_url)
+                          }
+                          if ( pad != VALID_PAD[0] ) querystring += '&pad=' + pad
+                          if ( linkType == VALID_LINK_TYPES[1] ) {
+                            if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON' ) {
+                              if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+                            }
+                          }
+                          querystring += content_protect_b
+                          multiviewquerystring += content_protect_b
+                          stationlink = '<a' + fav_style + ' href="' + thislink + querystring + '">' + station + '</a>'
+                          if ( (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL')) || ((cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
+                            body += '<span class="blackout">' + stationlink + '</span>'
+                          } else {
+                            body += stationlink
+                          }
+                          if ( mediaType == 'MLBTV' ) {
+                            body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+                          }
+                          if ( resumeStatus ) {
+                            body += '('
+                            // for suspended games that haven't finished yet, we can simply use the mediaState to determine the status
+                            if ( resumeStatus == 'live' ) {
+                              if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE' ) {
+                                body += '1'
+                              } else {
+                                body += '2'
+                              }
+                            // otherwise, for completed games, we need to check the airings data
+                            } else {
+                              airings_data = await session.getAiringsData('', cache_data.dates[0].games[j].gamePk)
+                              if ( airings_data.data && airings_data.data.Airings && (airings_data.data.Airings.length > 0) ) {
+                                for (var y = 0; y < airings_data.data.Airings.length; y++) {
+                                  if ( airings_data.data.Airings[y].contentId == cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId ) {
+                                    if ( (cache_data.dates[0].games[j].resumeDate && (cache_data.dates[0].games[j].resumeDate == airings_data.data.Airings[y].startDate)) || (cache_data.dates[0].games[j].resumedFrom && (cache_data.dates[0].games[j].gameDate == airings_data.data.Airings[y].startDate)) ) {
+                                      body += '2'
+                                    } else {
+                                      body += '1'
+                                    }
+                                    break
+                                  }
+                                }
+                              }
+                            }
+                            body += ')'
+                          }
+                          body += ', '
+                        }
+                      } else {
+                        if ( blackout_type != 'None' ) {
+                          body += '<s>' + station + '</s>'
+                        } else {
+                          body += station
                         }
                         body += ', '
                       }
-                    } else {
-                      if ( (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL') && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters != 'FOX') || (fox_national_blackout == true))) || ((teamabbr != 'NATIONAL') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
-                        body += '<s>' + station + '</s>'
-                      } else {
-                        body += station
+                      // add YouTube link where available
+                      if ( (mediaType == 'MLBTV') && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId ) {
+                        body += '<a' + fav_style + ' href="https://www.youtube.com/watch?v=' + cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId + '" target="_blank">' + station + '</a>'
                       }
-                      body += ', '
-                    }
-                    // add YouTube link where available
-                    if ( (mediaType == 'MLBTV') && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId ) {
-                      body += '<a' + fav_style + ' href="https://www.youtube.com/watch?v=' + cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId + '" target="_blank">' + station + '</a>'
                     }
                   }
                 }
+                break
               }
-              break
+            }
+            if ( body.substr(-2) == ', ' ) {
+              body = body.slice(0, -2)
+            }
+            //if ( (mediaType == 'MLBTV') && (game_started) && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.summary && cache_data.dates[0].games[j].content.summary.hasHighlightsVideo ) {
+            if ( (mediaType == 'MLBTV') && (game_started) ) {
+              body += '<br/><a' + fav_style + ' href="javascript:showhighlights(\'' + cache_data.dates[0].games[j].gamePk + '\',\'' + gameDate + '\')">Highlights</a>'
             }
           }
-          if ( body.substr(-2) == ', ' ) {
-            body = body.slice(0, -2)
-          }
-          //if ( (mediaType == 'MLBTV') && (game_started) && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.summary && cache_data.dates[0].games[j].content.summary.hasHighlightsVideo ) {
-          if ( (mediaType == 'MLBTV') && (game_started) ) {
-            body += '<br/><a' + fav_style + ' href="javascript:showhighlights(\'' + cache_data.dates[0].games[j].gamePk + '\',\'' + gameDate + '\')">Highlights</a>'
-          }
+          body += "</td>"
+          body += "</tr>" + "\n"
         }
-        body += "</td>"
-        body += "</tr>" + "\n"
       }
     }
     body += "</table>" + "\n"
 
     if ( national_blackout && (gameDate >= today) ) {
-      body += '<span class="tooltip tinytext"><span class="blackout">strikethrough</span> indicates a live blackout<span class="tooltiptext">USA only. Blackout labels are purely informative and based on the USA zip code, if any, you provided when starting the server. The actual blackouts are based on your location, not on the provided zip code, so providing a different zip code will not enable you to see different games. Tap or hover over the team abbreviation to see an estimate of when the blackout will be lifted (~90 minutes after the game ends).</span></span>' + "\n"
+      body += '<span class="tooltip tinytext"><span class="blackout">strikethrough</span> indicates a live blackout<span class="tooltiptext">USA only. Blackout labels are purely informative and based on the USA zip code, if any, you provided when starting the server. The actual blackouts are based on your location, not on the provided zip code, so providing a different zip code will not enable you to see different games. Tap or hover over the team abbreviation to see an estimate of when the blackout will be lifted (officially ~90 minutes, but more likely ~150 minutes or ~2.5 hours after the game ends).</span></span>' + "\n"
       if ( argv.free ) {
         body += '<br/>'
       }
@@ -1481,8 +1755,8 @@ app.get('/', async function(req, res) {
           body += '<button '
           if ( resolution == VALID_RESOLUTIONS[i] ) body += 'class="default" '
           body += 'onclick="resolution=\'' + VALID_RESOLUTIONS[i] + '\';reload()">' + VALID_RESOLUTIONS[i]
-          if ( VALID_BANDWIDTHS[i] != '' ) {
-            body += '<br/><span class="tinytext">' + VALID_BANDWIDTHS[i] + '</span>'
+          if ( DISPLAY_BANDWIDTHS[i] != '' ) {
+            body += '<br/><span class="tinytext">' + DISPLAY_BANDWIDTHS[i] + '</span>'
           }
           body += '</button> '
         }
@@ -1582,7 +1856,13 @@ app.get('/', async function(req, res) {
 
     body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include (or exclude) Multiview<span class="tooltiptext">Requires starting and stopping the multiview stream from the web interface.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=multiview' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">guide.xml</a></p>' + "\n"
+    let gamechanger_resolution = resolution
+    if ( gamechanger_resolution == VALID_RESOLUTIONS[0] ) {
+      gamechanger_resolution = 'best'
+    }
+    body += '<p><span class="tooltip">Include (or exclude) Game Changer<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to best resolution if not specified.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + gamechanger_resolution + '&includeTeams=gamechanger' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=gamechanger' + content_protect_b + '">guide.xml</a></p>' + "\n"
+
+    body += '<p><span class="tooltip">Include (or exclude) Multiview<span class="tooltiptext">Requires starting and stopping the multiview stream from the web interface.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     if ( argv.free ) {
       body += '<p><span class="tooltip">Free games only<span class="tooltiptext">Only includes games marked as free. Blackouts still apply. If a zip code has been provided, channels/games subject to blackout will be omitted by default.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=free' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">guide.xml</a></p>' + "\n"
@@ -1671,9 +1951,7 @@ app.get('/', async function(req, res) {
 
 // Listen for OPTIONS requests and respond with CORS headers
 app.options('*', function(req, res) {
-  session.debuglog('OPTIONS request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.debuglog('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.debuglog('using: ' + req.headers['user-agent'])
+  session.requestlog('options', req, true)
   var cors_headers = {
     'access-control-allow-headers': 'Origin, X-Requested-With, Content-Type, accessToken, Authorization, Accept, Range',
     'access-control-allow-origin': '*',
@@ -1689,9 +1967,7 @@ app.options('*', function(req, res) {
 app.get('/live-stream-games*', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.debuglog('schedule request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+  session.requestlog('live-stream-games', req)
 
   // check for a linkType parameter in the url
   let linkType = VALID_LINK_TYPES[0]
@@ -1745,9 +2021,7 @@ app.get('/live-stream-games*', async function(req, res) {
 app.get('/embed.html', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.log('embed.html request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+  session.requestlog('embed.html', req)
 
   let startFrom = VALID_START_FROM[0]
   if ( req.query.startFrom ) {
@@ -1797,9 +2071,7 @@ app.get('/embed.html', async function(req, res) {
 app.get('/advanced.html', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.log('advanced embed request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+  session.requestlog('advanced.html', req)
 
   let server = 'http://' + req.headers.host
 
@@ -1822,9 +2094,7 @@ app.get('/advanced.html', async function(req, res) {
 app.get('/chromecast.html', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.log('chromecast request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+  session.requestlog('chromecast.html', req)
 
   let server = 'http://' + req.headers.host
 
@@ -1847,9 +2117,7 @@ app.get('/chromecast.html', async function(req, res) {
 app.get('/channels.m3u', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.log('channels.m3u request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+  session.requestlog('channels.m3u', req)
 
   let mediaType = VALID_MEDIA_TYPES[0]
   if ( req.query.mediaType ) {
@@ -1897,9 +2165,7 @@ app.get('/channels.m3u', async function(req, res) {
 app.get('/guide.xml', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.log('guide.xml request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+  session.requestlog('guide.xml', req)
 
   let mediaType = VALID_MEDIA_TYPES[0]
   if ( req.query.mediaType ) {
@@ -1931,9 +2197,7 @@ app.get('/guide.xml', async function(req, res) {
 app.get('/image.svg', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.debuglog('image request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.debuglog('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.debuglog('using: ' + req.headers['user-agent'])
+  session.requestlog('image.svg', req, true)
 
   let teamId = 'MLB'
   if ( req.query.teamId ) {
@@ -1950,9 +2214,7 @@ app.get('/image.svg', async function(req, res) {
 app.get('/favicon.svg', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.debuglog('favicon request : ' + req.url)
-  if ( req.connection && req.connection.remoteAddress ) session.debuglog('from: ' + req.connection.remoteAddress)
-  if ( req.headers && req.headers['user-agent'] ) session.debuglog('using: ' + req.headers['user-agent'])
+  session.requestlog('favicon.svg', req, true)
 
   var body = await session.getImage('MLB')
 
@@ -1965,9 +2227,7 @@ app.get('/highlights', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   try {
-    session.log('highlights request : ' + req.url)
-    if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-    if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+    session.requestlog('highlights', req)
 
     let highlightsData = ''
     if ( req.query.gamePk && req.query.gameDate ) {
@@ -1985,9 +2245,7 @@ app.get('/multiview', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   try {
-    session.log('multiview request : ' + req.url)
-    if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-    if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+    session.requestlog('multiview', req)
 
     try {
       ffmpeg_command.kill()
@@ -2264,9 +2522,7 @@ app.get('/kodi.strm', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   try {
-    session.log('kodi.strm request : ' + req.url)
-    if ( req.connection && req.connection.remoteAddress ) session.log('from: ' + req.connection.remoteAddress)
-    if ( req.headers && req.headers['user-agent'] ) session.log('using: ' + req.headers['user-agent'])
+    session.requestlog('kodi.strm', req)
 
     let server = 'http://' + req.headers.host
 
