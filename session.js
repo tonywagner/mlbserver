@@ -1347,6 +1347,9 @@ class sessionClass {
       opts.headers['Referer'] = opts.referer
       delete opts.headers.Authorization
     }
+    if ( opts.origin ) {
+      opts.headers['Origin'] = opts.origin
+    }
     this.request(u, opts, cb)
     .catch(function(e) {
       let curDate = new Date()
@@ -1868,7 +1871,7 @@ class sessionClass {
                     let away_team = cache_data.dates[0].games[j].teams['away'].team.abbreviation
                     let teamType = cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType]
 
-                    let station = cache_data.dates[i].games[j].content.media.epg[k].items[x].callLetters
+                    let station = cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters
 
                     // check live blackout status
                     if ( (mediaType == 'MLBTV') && (includeBlackouts == 'false') && national_blackout ) {
@@ -1885,7 +1888,7 @@ class sessionClass {
                         }
                       }
 
-                      if ( (cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (this.credentials.blackout_teams.includes(team) || this.credentials.blackout_teams.includes(opponent_team)) ) {
+                      if ( (cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (this.credentials.blackout_teams.includes(home_team) || this.credentials.blackout_teams.includes(away_team)) ) {
                         continue
                       }
                     }
@@ -3513,6 +3516,12 @@ class sessionClass {
                 let strikes = parseInt(cache_data.data.games.game[i].status.s)
                 let away_score = parseInt(cache_data.data.games.game[i].linescore.r.away)
                 let home_score = parseInt(cache_data.data.games.game[i].linescore.r.home)
+
+                // Game hasn't started yet
+                if ( (inning_num == 1) && (inning_half == 'top') && (outs == 0) && (balls == 0) && (strikes == 0) && (away_score == 0) && (runners_on_str == '_ _ _') ) {
+                  omitted_games.inactive.push(teams)
+                  continue
+                }
 
                 // Game is between innings
                 if ( (inning_half == 'Middle') || (inning_half == 'End') || (outs == 3) ) {
