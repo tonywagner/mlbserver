@@ -33,7 +33,8 @@ const VALID_RESOLUTIONS = [ 'adaptive', '720p60', '720p', '540p', '504p', '360p'
 const DEFAULT_MULTIVIEW_RESOLUTION = '540p'
 // Corresponding andwidths to display for above resolutions
 const DISPLAY_BANDWIDTHS = [ '', '6600k', '4160k', '2950k', '2120k', '1400k', '' ]
-const VALID_AUDIO_TRACKS = [ 'all', 'English', 'English Radio', 'Radio Española', 'none' ]
+const VALID_AUDIO_TRACKS = [ 'all', 'English', 'English Radio', 'Radio Española', 'Away Radio', 'Away Spanish', 'none' ]
+const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spanish', 'Away', 'Away Spanish', 'none' ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
 const VALID_SKIP = [ 'off', 'breaks', 'idle time', 'pitches' ]
 const VALID_PAD = [ 'off', 'on' ]
@@ -214,6 +215,7 @@ app.get('/stream.m3u8', async function(req, res) {
 
     let mediaId
     let contentId
+    let gameDate
     let streamURL
     let options = {}
     let includeBlackouts = 'false'
@@ -231,7 +233,6 @@ app.get('/stream.m3u8', async function(req, res) {
         options.resolution = session.returnValidItem(req.query.resolution, VALID_RESOLUTIONS)
       }
       options.audio_track = session.returnValidItem(req.query.audio_track, VALID_AUDIO_TRACKS)
-      options.audio_url = req.query.audio_url || ''
       options.force_vod = req.query.force_vod || VALID_FORCE_VOD[0]
 
       options.inning_half = req.query.inning_half || VALID_INNING_HALF[0]
@@ -257,16 +258,26 @@ app.get('/stream.m3u8', async function(req, res) {
         if ( req.query.contentId ) {
           contentId = req.query.contentId
         }
+        if ( req.query.gameDate ) {
+          gameDate = req.query.gameDate
+        }
         if ( req.query.mediaId ) {
           mediaId = req.query.mediaId
         } else if ( req.query.contentId ) {
-          mediaId = await session.getMediaIdFromContentId(contentId)
+          let mediaInfo = await session.getMediaIdFromContentId(contentId)
+          if ( mediaInfo ) {
+            mediaId = mediaInfo.mediaId
+            gameDate = mediaInfo.gameDate
+          } else {
+            session.log('no matching game found ' + req.url)
+          }
         } else if ( req.query.team ) {
           let mediaType = req.query.mediaType || VALID_MEDIA_TYPES[0]
           let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), mediaType, req.query.date, req.query.game, includeBlackouts)
           if ( mediaInfo ) {
             mediaId = mediaInfo.mediaId
             contentId = mediaInfo.contentId
+            gameDate = mediaInfo.gameDate
           } else {
             session.log('no matching game found ' + req.url)
           }
@@ -290,8 +301,13 @@ app.get('/stream.m3u8', async function(req, res) {
         options.resolution = VALID_RESOLUTIONS[0]
       }
 
-      if ( req.query.audio_url && (req.query.audio_url != '') ) {
-        options.audio_url = await session.getAudioPlaylistURL(req.query.audio_url)
+      // add away radio tracks for national games
+      if ( streamURL.includes('/National_VIDEO_') && mediaId && gameDate && (gameDate != '') && ((options.audio_track == VALID_AUDIO_TRACKS[0]) || (options.audio_track == VALID_AUDIO_TRACKS[4]) || (options.audio_track == VALID_AUDIO_TRACKS[5])) ) {
+        session.debuglog('looking for awayRadioStreams')
+        let team = false
+        if ( req.query.team ) team = decodeURIComponent(req.query.team)
+        options.away_radio_streams = await session.getAwayRadioStreams(gameDate, team, mediaId)
+        session.debuglog('found awayRadioStreams ' + JSON.stringify(options.away_radio_streams))
       }
 
       if ( (options.inning_half != VALID_INNING_HALF[0]) || (options.inning_number != VALID_INNING_NUMBER[0]) || (options.skip != VALID_SKIP[0]) ) {
@@ -404,7 +420,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
       let resolution = options.resolution || VALID_RESOLUTIONS[0]
       let audio_track = options.audio_track || VALID_AUDIO_TRACKS[0]
-      let audio_url = options.audio_url || ''
+      let away_radio_streams = options.away_radio_streams || []
       let force_vod = options.force_vod || VALID_FORCE_VOD[0]
 
       let inning_half = options.inning_half || VALID_INNING_HALF[0]
@@ -467,21 +483,34 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
         // Parse audio tracks to only include matching one, if specified
         if (line.indexOf('#EXT-X-MEDIA:TYPE=AUDIO') === 0) {
+          // user specified no audio tracks
+          if ( audio_track == VALID_AUDIO_TRACKS[VALID_AUDIO_TRACKS.length-1] ) return
+
+          // user specified TV audio only
+          if ( audio_track == VALID_AUDIO_TRACKS[1] ) return line
+
+          // user specified no video, so we have to skip the embedded TV audio track
+          if ( (resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1]) && !line.includes(',URI=') ) return
+
+          // if we've already returned our desired audio track, we can skip subsequent ones
           if ( audio_track_matched ) return
-          if ( audio_url != '' ) {
-            audio_track_matched = true
-            return '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="Alternate Audio",AUTOSELECT=YES,DEFAULT=YES,URI="' + audio_url + content_protect + referer_parameter + '"'
+
+          // we'll append to this and output track(s) at the end of this code block
+          let audio_output = ''
+
+          // if user specified home radio or home Spanish audio track, check if this one matches
+          if ( (audio_track == VALID_AUDIO_TRACKS[2]) || (audio_track == VALID_AUDIO_TRACKS[3]) ) {
+            if ( line.includes('NAME="'+audio_track+'"') || line.includes('NAME="'+audio_track.substring(0,audio_track.length-1)+'"') ) {
+              audio_track_matched = true
+              line = line.replace('AUTOSELECT=NO','AUTOSELECT=YES')
+              if ( !line.includes(',DEFAULT=YES') ) line = line.replace('AUTOSELECT=YES','AUTOSELECT=YES,DEFAULT=YES')
+            } else {
+              return
+            }
           }
-          if ( audio_track == VALID_AUDIO_TRACKS[VALID_AUDIO_TRACKS.length-1]) return
-          if ( (resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1]) && (line.indexOf(',URI=') < 0) ) return
-          if ( (audio_track != VALID_AUDIO_TRACKS[0]) && ((line.indexOf('NAME="'+audio_track+'"') > 0) || (line.indexOf('NAME="'+audio_track.substring(0,audio_track.length-1)+'"') > 0)) ) {
-            audio_track_matched = true
-            line = line.replace('AUTOSELECT=NO','AUTOSELECT=YES')
-            if ( line.indexOf(',DEFAULT=YES') < 0 ) line = line.replace('AUTOSELECT=YES','AUTOSELECT=YES,DEFAULT=YES')
-          } else if ( (audio_track != VALID_AUDIO_TRACKS[0]) && ((line.indexOf('NAME="'+audio_track+'"') === -1) || (line.indexOf('NAME="'+audio_track.substring(0,audio_track.length-1)+'"') === -1)) ) {
-            return
-          }
-          if (line.indexOf(',URI=') > 0) {
+
+          // process alternate audio tracks
+          if (line.includes(',URI=') ) {
             if ( line.match ) {
               //var parsed = line.match(/URI="([^"]+)"?$/)
               var parsed = line.match(',URI="([^"]+)"')
@@ -494,14 +523,65 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
                 if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
                 if ( contentId ) newurl += '&contentId=' + contentId
                 newurl += content_protect + referer_parameter
+
+                // if user specified "none" for video track
                 if ( resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1] ) {
                   audio_track_matched = true
-                  return line.replace(parsed[0],'') + "\n" + '#EXT-X-STREAM-INF:BANDWIDTH=50000,CODECS="mp4a.40.2",AUDIO="aac"' + "\n" + newurl
+                  if (audio_output != '') audio_output += "\n"
+                  audio_output += line.replace(parsed[0],'') + "\n" + '#EXT-X-STREAM-INF:BANDWIDTH=50000,CODECS="mp4a.40.2",AUDIO="aac"' + "\n" + newurl
                 }
-                return line.replace(parsed[1],newurl)
+
+                if (audio_output != '') audio_output += "\n"
+                audio_output += line.replace(parsed[1],newurl)
+              }
+            }
+          } else {
+            // otherwise it is the TV audio track
+            if ( (audio_track != VALID_AUDIO_TRACKS[0]) && (audio_track != VALID_AUDIO_TRACKS[1]) ) {
+              line = line.replace('DEFAULT=YES','DEFAULT=NO')
+            }
+            audio_output += line
+          }
+
+          // process any away radio streams we've passed in
+          if ( !audio_track_matched ) {
+            for (var i=0; i<away_radio_streams.length; i++) {
+              if ( audio_track_matched ) break
+
+              if ( (audio_track == VALID_AUDIO_TRACKS[4]) || (audio_track == VALID_AUDIO_TRACKS[5]) ) {
+                if ( audio_track != away_radio_streams[i].name ) {
+                  continue
+                }
+              }
+
+              session.debuglog('processing away radio stream ' + JSON.stringify(away_radio_streams[i]))
+              newurl = '/playlist?url='+encodeURIComponent(away_radio_streams[i].url)
+              if ( force_vod != VALID_FORCE_VOD[0] ) newurl += '&force_vod=on'
+              if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
+              if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
+              if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
+              if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
+              if ( contentId ) newurl += '&contentId=' + contentId
+              newurl += content_protect + referer_parameter
+
+              if (audio_output != '') audio_output += "\n"
+              audio_output += '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="' + away_radio_streams[i].name + '",AUTOSELECT=YES,DEFAULT='
+              if ( audio_track == away_radio_streams[i].name ) {
+                audio_track_matched = true
+                audio_output += 'YES'
+              } else {
+                audio_output += 'NO'
+              }
+              audio_output += ',URI="' + newurl + '"'
+              if ( audio_track_matched ) {
+                break
               }
             }
           }
+          // clear away radio streams after processing
+          away_radio_streams = []
+
+          return audio_output
         }
 
         // Parse video tracks to only include matching one, if specified
@@ -800,6 +880,18 @@ app.get('/gamechanger.m3u8', async function(req, res) {
     resolution = VALID_RESOLUTIONS[1]
   }
 
+  var includeTeams = ''
+  if ( req.query.includeTeams ) {
+    includeTeams = '&includeTeams=' + req.query.includeTeams.toUpperCase()
+    session.debuglog('Game changer including teams ' + includeTeams)
+  }
+
+  var excludeTeams = ''
+  if ( req.query.excludeTeams ) {
+    excludeTeams = '&excludeTeams=' + req.query.excludeTeams.toUpperCase()
+    session.debuglog('Game changer excluding teams ' + excludeTeams)
+  }
+
   var content_protect = ''
   if ( session.protection.content_protect ) {
     content_protect = '&content_protect=' + session.protection.content_protect
@@ -809,7 +901,7 @@ app.get('/gamechanger.m3u8', async function(req, res) {
 
   for ( gamechanger_resolution in GAMECHANGER_RESOLUTIONS ) {
     if ( resolution == gamechanger_resolution ) {
-      body += '#EXT-X-STREAM-INF:BANDWIDTH=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].bandwidth + '000,RESOLUTION=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].resolution + ',FRAME-RATE=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].frame_rate + ',CODECS="mp4a.40.2,avc1.' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].codec + '",CLOSED-CAPTIONS="cc",AUDIO="aac"' + '\n' + '/gamechangerplaylist?id=' + id + '&resolution=' + gamechanger_resolution + content_protect + '\n'
+      body += '#EXT-X-STREAM-INF:BANDWIDTH=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].bandwidth + '000,RESOLUTION=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].resolution + ',FRAME-RATE=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].frame_rate + ',CODECS="mp4a.40.2,avc1.' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].codec + '",CLOSED-CAPTIONS="cc",AUDIO="aac"' + '\n' + '/gamechangerplaylist?id=' + id + '&resolution=' + gamechanger_resolution + includeTeams + excludeTeams + content_protect + '\n'
       break
     }
   }
@@ -841,6 +933,12 @@ app.get('/gamechangerplaylist', async function(req, res) {
 
     var resolution = req.query.resolution || VALID_RESOLUTIONS[1]
 
+    var includeTeams = req.query.includeTeams || []
+    if ( includeTeams.length > 0 ) includeTeams = includeTeams.split(',')
+
+    var excludeTeams = req.query.excludeTeams || []
+    if ( excludeTeams.length > 0 ) excludeTeams = excludeTeams.split(',')
+
     var req = async function () {
       var headers = {}
 
@@ -852,7 +950,7 @@ app.get('/gamechangerplaylist', async function(req, res) {
       // if 30+ seconds since our last access, assume stream was stopped and reset this gamechanger
       if ( !session.temp_cache.gamechanger || !session.temp_cache.gamechanger[id] || !session.temp_cache.gamechanger[id].segments || (session.temp_cache.gamechanger[id].segments.length == 0) || !session.temp_cache.gamechanger[id].lastAccess || (gamechangerAccess >= (new Date(new Date(session.temp_cache.gamechanger[id].lastAccess).getTime() + 30000))) ) {
         session.log(game_changer_title + 'starting/resetting gamechanger')
-        await session.resetGameChanger(id)
+        await session.resetGameChanger(id, includeTeams, excludeTeams)
       }
       session.temp_cache.gamechanger[id].lastAccess = gamechangerAccess
 
@@ -863,16 +961,16 @@ app.get('/gamechangerplaylist', async function(req, res) {
         let streamURL = await session.getBestGame(id)
 
         let discontinuity = false
-        if ( streamURL && (streamURL != session.temp_cache.gamechanger.streamURL) ) {
+        if ( streamURL && (streamURL != session.temp_cache.gamechanger[id].streamURL) ) {
           session.log(game_changer_title + 'game changed')
-          session.temp_cache.gamechanger.streamURL = streamURL
+          session.temp_cache.gamechanger[id].streamURL = streamURL
           if ( session.temp_cache.gamechanger[id].segments.length == GAMECHANGER_LIST_SIZE ) {
             discontinuity = true
             session.temp_cache.gamechanger[id].discontinuitySequence++
           }
         }
 
-        if ( !streamURL ) streamURL = session.temp_cache.gamechanger.streamURL
+        if ( !streamURL ) streamURL = session.temp_cache.gamechanger[id].streamURL
 
         if ( !streamURL ) {
           session.log(game_changer_title + 'no stream found')
@@ -1111,11 +1209,6 @@ app.get('/', async function(req, res) {
     if ( req.query.pad ) {
       pad = req.query.pad
     }
-    // audio_url is disabled here, now used in multiview instead
-    /*var audio_url = ''
-    if ( req.query.audio_url ) {
-      audio_url = req.query.audio_url
-    }*/
 
     var scan_mode = session.data.scan_mode
     if ( req.query.scan_mode && (req.query.scan_mode != session.data.scan_mode) ) {
@@ -1145,12 +1238,9 @@ app.get('/', async function(req, res) {
 
     // Define option variables in page
     body += 'var date="' + gameDate + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var pad="' + pad + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var controls="' + controls + '";var scan_mode="' + scan_mode + '";var content_protect="' + content_protect + '";' + "\n"
-    // audio_url is disabled here, now used in multiview instead
-    //body += 'var audio_url="' + audio_url + '";' + "\n"
 
     // Reload function, called after options change
-    // audio_url is disabled here, now used in multiview instead
-    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}/*if (audio_url != ""){newurl+="audio_url="+encodeURIComponent(audio_url)+"&"}*/if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
     // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
@@ -1365,7 +1455,7 @@ app.get('/', async function(req, res) {
         var scheduledInnings = '9'
         if ( cache_data.dates[0].games[j].linescore && cache_data.dates[0].games[j].linescore.scheduledInnings ) {
           scheduledInnings = cache_data.dates[0].games[j].linescore.scheduledInnings
-            if ( detailedState.startsWith('Completed Early') && cache_data.dates[0].games[j].linescore.currentInning ) {
+            if ( (abstractGameState == 'Final') && cache_data.dates[0].games[j].linescore.currentInning && (cache_data.dates[0].games[j].linescore.currentInning < 9) ) {
               scheduledInnings = cache_data.dates[0].games[j].linescore.currentInning
             }
         }
@@ -1636,6 +1726,7 @@ app.get('/', async function(req, res) {
                         } else {
                           let querystring
                           querystring = '?mediaId=' + mediaId
+                          if ( teamabbr == 'NATIONAL' ) querystring += '&gameDate=' + gameDate
                           let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
                           if ( linkType == VALID_LINK_TYPES[0] ) {
                             if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
@@ -1651,8 +1742,6 @@ app.get('/', async function(req, res) {
                             }
                             if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
                             if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + encodeURIComponent(audio_track)
-                            // audio_url is disabled here, now used in multiview instead
-                            //if ( audio_url != '' ) querystring += '&audio_url=' + encodeURIComponent(audio_url)
                           }
                           if ( pad != VALID_PAD[0] ) querystring += '&pad=' + pad
                           if ( linkType == VALID_LINK_TYPES[1] ) {
@@ -1663,7 +1752,8 @@ app.get('/', async function(req, res) {
                           querystring += content_protect_b
                           multiviewquerystring += content_protect_b
                           stationlink = '<a' + fav_style + ' href="' + thislink + querystring + '">' + station + '</a>'
-                          if ( (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL')) || ((cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
+                          //if ( (mediaType == 'MLBTV') && (gameDate >= today) && ((national_blackout && (teamabbr == 'NATIONAL')) || ((cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (session.credentials.blackout_teams.includes(awayteam) || session.credentials.blackout_teams.includes(hometeam)))) ) {
+                          if ( blackout_type != 'None' ) {
                             body += '<span class="blackout">' + stationlink + '</span>'
                           } else {
                             body += stationlink
@@ -1762,14 +1852,12 @@ app.get('/', async function(req, res) {
         }
         body += '</p>' + "\n"
 
-        body += '<p><span class="tooltip">Audio<span class="tooltiptext">For video streams only: you can manually specifiy which audio track to include. Some media players can accept them all and let you choose. English is the TV broadcast audio, and the default for multiview (see below).<br/><br/>If you select "none" for video above, picking an audio track here will make it an audio-only feed that supports the inning start and skip breaks options.</span></span>: '
+        body += '<p><span class="tooltip">Audio<span class="tooltiptext">For video streams only: you can manually specifiy which audio track to include. Some media players can accept them all and let you choose. Not all tracks are available for all games.<br/><br/>If you select "none" for video above, picking an audio track here will make it an audio-only feed that supports the inning start and skip breaks options.</span></span>: '
         for (var i = 0; i < VALID_AUDIO_TRACKS.length; i++) {
           body += '<button '
           if ( audio_track == VALID_AUDIO_TRACKS[i] ) body += 'class="default" '
-          body += 'onclick="audio_track=\'' + VALID_AUDIO_TRACKS[i] + '\';reload()">' + VALID_AUDIO_TRACKS[i] + '</button> '
+          body += 'onclick="audio_track=\'' + VALID_AUDIO_TRACKS[i] + '\';reload()">' + DISPLAY_AUDIO_TRACKS[i] + '</button> '
         }
-        // audio_url is disabled here, now used in multiview instead
-        //body += '<br/><span class="tooltip">or enter a separate audio stream URL<span class="tooltiptext">EXPERIMENTAL! May not actually work. For video streams only: you can also include a separate audio stream URL as an alternate audio track. This is useful if you want to pair the road radio feed with a national TV broadcast (which only includes home radio feeds by default).<br/><br/>After entering the audio stream URL, click the Update button to include it in the video links above; click the Reset button when done with this option.<br/><br/>Warning: does not support inning start or skip options.</span></span>: <span class="tinytext">(copy one from the <button onclick="mediaType=\'Audio\';reload()">Audio</button> page</a>)</span><br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)">' + audio_url + '</textarea><br/><button onclick="audio_url=document.getElementById(\'audio_url\').value;reload()">Update Audio URL</button> <button onclick="audio_url=\'\';reload()">Reset Audio URL</button><br/>'
         body += '</p>' + "\n"
 
         body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove breaks, idle time, or non-action pitches from the stream (useful to make your own "condensed games").<br/><br/>NOTE: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream.</span></span>: '
@@ -1804,7 +1892,7 @@ app.get('/', async function(req, res) {
         body += '<input type="checkbox" id="dvr"/> <span class="tooltip">DVR: allow pausing/seeking multiview<span class="tooltiptext">If this is enabled, it will use more disk space but you will be able to pause and seek in the multiview stream. Not necessary if you are strictly watching live.</span></span><br/>' + "\n"
         body += '<input type="checkbox" id="faster" onchange="if (this.checked){document.getElementById(\'dvr\').checked=true}"/> <span class="tooltip">Encode faster than real-time<span class="tooltiptext">Implies DVR. Not necessary for live streams (which are only delivered in real-time), but if you want to seek ahead in archive streams using multiview, you may want to enable this. WARNING: ffmpeg may approach 100% CPU usage if you use this while combining multiple archive video streams in multiview.</span></span><br/>' + "\n"
         body += '<input type="checkbox" id="reencode"/> <span class="tooltip">Re-encode all audio<span class="tooltiptext">Uses more CPU. Generally only necessary if you need the multiview stream to continue after one of the individual streams has ended. (Any streams with sync adjustments above will automatically be re-encoded, regardless of this setting.)</span></span><br/>' + "\n"
-        body += '<hr><span class="tooltip">Alternate audio URL and sync<span class="tooltiptext">Optional: you can also include a separate audio-only URL as an additional alternate audio track. This is useful if you want to pair the road radio feed with a national TV broadcast (which only includes home radio feeds by default). Archive games will likely require a very large negative sync value, as the radio broadcasts may not be trimmed like the video archives.</span></span>:<br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)"></textarea><input id="audio_url_seek" type="number" value="0" style="vertical-align:top;font-size:.8em;width:4em"/>'
+        body += '<hr><span class="tooltip">Alternate audio URL and sync<span class="tooltiptext">Optional: you can also include a separate audio-only URL as an additional alternate audio track. Archive games will likely require a very large negative sync value, as the radio broadcasts may not be trimmed like the video archives.</span></span>:<br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)"></textarea><input id="audio_url_seek" type="number" value="0" style="vertical-align:top;font-size:.8em;width:4em"/>'
         body += '<hr>Watch: <a href="/embed.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Embed</a> | <a href="' + multiview_server + multiview_url_path + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Advanced</a><br/><span class="tinytext">Download: <a href="/kodi.strm?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Kodi STRM file</a> (<a href="/kodi.strm?version=18&src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Leia/18</a>)</span>'
         body += '</td></tr></table><br/>' + "\n"
     }
@@ -1841,7 +1929,7 @@ app.get('/', async function(req, res) {
     if ( session.credentials.fav_teams.length > 0 ) {
       include_teams = session.credentials.fav_teams.toString()
     }
-    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team (by abbreviation, in a comma-separated list if more than 1) will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include blackouts<span class="tooltiptext">An optional parameter added to the URL will include channels/games subject to blackout (although you may not be able to play those games).</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
@@ -1850,7 +1938,7 @@ app.get('/', async function(req, res) {
       exclude_teams = session.credentials.blackout_teams.toString()
       exclude_teams += ',national'
     }
-    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from, even if you have not provided a zip code. Excluding a team will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from, even if you have not provided a zip code. Excluding a team (by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
@@ -1871,7 +1959,7 @@ app.get('/', async function(req, res) {
     body += '</td></tr></table><br/>' + "\n"
 
     body += '<table><tr><td>' + "\n"
-    body += '<p>Example links:</p>' + "\n"
+    body += '<p><span class="tooltip">Example links<span class="tooltiptext">Some examples how to generate predictable links.</span></span>:</p>' + "\n"
     body += '<p>' + "\n"
     let example_types = [ ['embed.html', 'Embed'], ['stream.m3u8', 'Stream'], ['chromecast.html', 'Chromecast'], ['kodi.strm', 'Kodi'] ]
 
@@ -1912,6 +2000,17 @@ app.get('/', async function(req, res) {
         }
       }
     }
+    body += '</p>' + "\n"
+
+    body += '<p><span class="tooltip">Game Changer by team examples<span class="tooltiptext">Game Changer supports specifying certain teams to include or exclude. Useful for following a group of teams.</span></span>:</p>' + "\n"
+    body += '<p>' + "\n"
+    let gamechanger_streamURL = server + '/gamechanger.m3u8?resolution=best' + content_protect_b
+    let gamechanger_types = ['in', 'ex']
+    for (var i=0; i<gamechanger_types.length; i++) {
+      let example_streamURL = gamechanger_streamURL + '&' + gamechanger_types[i] + 'cludeTeams=ARI,ATL'
+      body += '&bull; ' + gamechanger_types[i] + 'clude: <a href="/embed.html?src=' + encodeURIComponent(example_streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b + '">Embed</a> | <a href="' + example_streamURL + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Advanced</a> | <a href="/kodi.strm?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Kodi</a><br/>' + "\n"
+    }
+
     body += '</p></td></tr></table><br/>' + "\n"
 
     let local_url = '' // default to embedded player
@@ -2313,13 +2412,13 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, audio_url,
     // Video
     let video_output = '0'
     for (var i=0; i<stream_count; i++) {
-      let url = streams[i]
+      let video_url = streams[i]
 
       // Stream URL for testing
-      //url = SAMPLE_STREAM_URL
+      //video_url = SAMPLE_STREAM_URL
 
       // Set input stream and its thread queue size
-      ffmpeg_command.input(url)
+      ffmpeg_command.input(video_url)
       .addInputOption('-thread_queue_size', '4096')
 
       // We'll limit our encoding to real-time as long as the "faster" box wasn't checked
@@ -2336,7 +2435,7 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, audio_url,
       }
 
       // Check if audio is present
-      if ( url.indexOf('audio_track=none') === -1 ) {
+      if ( video_url.indexOf('audio_track=none') === -1 ) {
         audio_present.push(i)
       }
     }

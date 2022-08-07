@@ -5,6 +5,7 @@
 // Required Node packages for the session class
 const fs = require('fs')
 const path = require('path')
+const url = require('url')
 const readlineSync = require('readline-sync')
 const FileCookieStore = require('tough-cookie-filestore')
 const parseString = require('xml2js').parseString
@@ -1142,6 +1143,12 @@ class sessionClass {
     this.save_cache_data()
   }
 
+  setBreakExpiry(id, game_pk) {
+    let currentDate = new Date()
+    currentDate.setSeconds(currentDate.getSeconds()+109)
+    this.temp_cache.gamechanger[id].break_expiries[game_pk] = currentDate
+  }
+
   createContentCache(contentId) {
     if ( !this.cache.content ) {
       this.cache.content = {}
@@ -1160,9 +1167,10 @@ class sessionClass {
     }
   }
 
-  cacheMediaId(contentId, mediaId) {
+  cacheMediaId(contentId, mediaId, gameDate) {
     this.createContentCache(contentId)
     this.cache.content[contentId].mediaId = mediaId
+    this.cache.content[contentId].gameDate = gameDate
     this.save_cache_data()
   }
 
@@ -1359,11 +1367,12 @@ class sessionClass {
     })
   }
 
-  // request to use when fetching audio playlist URL
-  async getAudioPlaylistURL(url) {
+  // request to use when fetching audio playlist URL from master URL
+  async getAudioPlaylistURL(streamURL) {
+    this.debuglog('getAudioPlaylistURL from ' + streamURL)
     var playlistURL
     let reqObj = {
-      url: url,
+      url: streamURL,
       headers: {
         'Authorization': this.data.bamAccessToken,
         'User-Agent': USER_AGENT
@@ -1378,9 +1387,10 @@ class sessionClass {
       }
     }
     if ( playlistURL ) {
-      return playlistURL
+      this.debuglog('getAudioPlaylistURL resolving ' + playlistURL)
+      return url.resolve(streamURL, playlistURL)
     } else {
-      this.log('Failed to find audio playlist URL from ' + url)
+      this.log('Failed to getAudioPlaylistURL')
       return ''
     }
   }
@@ -1483,8 +1493,17 @@ class sessionClass {
     } else {
       let cache_data = await this.getAiringsData(contentId)
       let mediaId = cache_data.data.Airings[0].mediaId
-      this.cacheMediaId(contentId, mediaId)
-      return mediaId
+      let gameDate = ''
+      if ( cache_data.data.Airings[0].airings_tags && (cache_data.data.Airings[0].airings_tags.length > 0) ) {
+        for (var i=0; i<cache_data.data.Airings[0].airings_tags[0].length; i++) {
+          if ( cache_data.data.Airings[0].airings_tags[0][i].type == 'gameDate' ) {
+            gameDate = cache_data.data.Airings[0].airings_tags[0][i].value
+            break
+          }
+        }
+      }
+      this.cacheMediaId(contentId, mediaId, gameDate)
+      return { mediaId, gameDate }
     }
   }
 
@@ -1827,114 +1846,163 @@ class sessionClass {
         }
       }
 
-      let gameDate = this.liveDate()
+      let today = this.liveDate()
+      let gameDate = today
       if ( mediaDate == 'yesterday' ) {
         gameDate = this.yesterdayDate()
       } else if ( (mediaDate) && (mediaDate != 'today') ) {
         gameDate = mediaDate
       }
 
-      let mediaId = false
-      let contentId = false
+      if ( gameDate <= today ) {
+        // no blackouts on previous days
+        if ( gameDate < today ) {
+          includeBlackouts = 'true'
+        }
 
-      // First check if national game, free game, or if cached day data is available and non-expired
-      // if not, just get data for this team
-      let cache_data
-      let cache_name = gameDate
-      let cache_file = path.join(CACHE_DIRECTORY, gameDate+'.json')
-      let currentDate = new Date()
-      if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) || (team.toUpperCase().indexOf('FREE.') == 0) || (fs.existsSync(cache_file) && this.cache && this.cache.dates && this.cache.dates[cache_name] && this.cache.dates[cache_name].dateCacheExpiry && (currentDate <= new Date(this.cache.dates[cache_name].dateCacheExpiry))) ) {
+        let mediaId = false
+        let contentId = false
+
+        let cache_data
+        let cache_name = gameDate
+        let cache_file = path.join(CACHE_DIRECTORY, gameDate+'.json')
+        let currentDate = new Date()
         cache_data = await this.getDayData(gameDate)
-      } else {
-        cache_data = await this.getDayData(gameDate, team)
-      }
 
-      //if ( (cache_data.totalGamesInProgress > 0) || (mediaDate) ) {
-        let nationalCount = 0
-        let freeCount = 0
-        let national_blackout = /(^\d{5}$)/.test(this.credentials.zip_code)
-        let regional_fox_games_exist
+        if ( cache_data ) {
+          let nationalCount = 0
+          let freeCount = 0
+          let national_blackout = /(^\d{5}$)/.test(this.credentials.zip_code)
+          let blackouts = []
+          if ( national_blackout && (includeBlackouts == 'false') ) blackouts = await this.get_blackout_games(cache_data.dates[0].games)
 
-        for (var j = 0; j < cache_data.dates[0].games.length; j++) {
-          if ( mediaId ) break
-          if ( (typeof cache_data.dates[0].games[j] !== 'undefined') && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.epg ) {
-            for (var k = 0; k < cache_data.dates[0].games[j].content.media.epg.length; k++) {
-              if ( mediaId ) break
-              if ( cache_data.dates[0].games[j].content.media.epg[k].title == mediaType ) {
-                for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
-                  // for video, check that it's not in-market and that pay TV authentication isn't required
-                  if ( (mediaType == 'MLBTV') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.startsWith('IN_MARKET_') || cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
-                    continue
-                  }
-                  if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].language) == 'undefined') || ((mediaType == 'Audio') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].language == language)) ) {
-                    let home_team = cache_data.dates[0].games[j].teams['home'].team.abbreviation
-                    let away_team = cache_data.dates[0].games[j].teams['away'].team.abbreviation
-                    let teamType = cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType]
+          for (var j = 0; j < cache_data.dates[0].games.length; j++) {
+            if ( mediaId ) break
+            if ( (typeof cache_data.dates[0].games[j] !== 'undefined') && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.epg ) {
+              let home_team = cache_data.dates[0].games[j].teams['home'].team.abbreviation
+              let away_team = cache_data.dates[0].games[j].teams['away'].team.abbreviation
 
-                    let station = cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters
+              // check that that game involves the requested team, or if it's a national or free game and we've requested that
+              if ( (team.toUpperCase() == home_team) || (team.toUpperCase() == away_team) || ((team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training')))) || (team.toUpperCase().startsWith('FREE.') && cache_data.dates[0].games[j].content.media.freeGame) ) {
 
-                    // check live blackout status
-                    if ( (mediaType == 'MLBTV') && (includeBlackouts == 'false') && national_blackout ) {
-                      if (teamType == 'NATIONAL') {
-                        if ( (station == 'FOX') && (cache_data.dates[0].games[j].seriesDescription == 'Regular Season') ) {
-                          if ( !regional_fox_games_exist ) {
-                            regional_fox_games_exist = await this.check_regional_fox_games(cache_data.dates[0].games)
-                          }
-                          if ( regional_fox_games_exist == 'false' ) {
-                            continue
-                          }
-                        } else {
-                          continue
-                        }
-                      }
+                let blackout_time
+                for (var k = 0; k < cache_data.dates[0].games[j].content.media.epg.length; k++) {
+                  if ( mediaId ) break
+                  let mediaTitle = cache_data.dates[0].games[j].content.media.epg[k].title
+                  if ( mediaType == mediaTitle ) {
 
-                      if ( (cache_data.dates[0].games[j].seriesDescription != 'Spring Training') && (this.credentials.blackout_teams.includes(home_team) || this.credentials.blackout_teams.includes(away_team)) ) {
+                    // initial loop will count number of broadcasts
+                    let broadcast_count = 0
+                    for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
+                      // for video, check that it's not in-market and that pay TV authentication isn't required
+                      if ( (mediaType == 'MLBTV') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.startsWith('IN_MARKET_') || cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
                         continue
+                      } else if ( mediaType == mediaTitle ) {
+                        if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].language) == 'undefined') || ((mediaType == 'Audio') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].language == language)) ) {
+                          broadcast_count++
+                        }
                       }
                     }
 
-                    //if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason)) ) {
-                    if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training'))) ) {
-                      nationalCount += 1
-                      let nationalArray = team.split('.')
-                      if ( (nationalArray.length == 2) && (nationalArray[1] == nationalCount) ) {
-                        this.debuglog('matched national event')
-                        if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
-                          mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
-                          contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
-                        } else {
-                          this.log('national event video not yet available')
-                        }
-                        break
+                    for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
+                      // for video, check that it's not in-market and that pay TV authentication isn't required
+                      if ( (mediaType == 'MLBTV') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType.startsWith('IN_MARKET_') || cache_data.dates[0].games[j].content.media.epg[k].items[x].foxAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].tbsAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].espnAuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].fs1AuthRequired || cache_data.dates[0].games[j].content.media.epg[k].items[x].mlbnAuthRequired) ) {
+                        continue
                       }
-                    } else if ( team.toUpperCase().startsWith('FREE.') && cache_data.dates[0].games[j].content.media.freeGame ) {
-                      freeCount += 1
-                      let freeArray = team.split('.')
-                      if ( (freeArray.length == 2) && (freeArray[1] == freeCount) ) {
-                        this.debuglog('matched free event')
-                        if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
-                          mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
-                          contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
-                        } else {
-                          this.log('free event video not yet available')
-                        }
-                        break
-                      }
-                    } else {
-                      let teamType = cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType].toLowerCase()
-                      if ( (teamType != 'national') && (team.toUpperCase() == cache_data.dates[0].games[j].teams[teamType].team.abbreviation) ) {
-                        if ( gameNumber && (gameNumber > 1) ) {
-                          this.debuglog('matched team for game number 1')
-                          gameNumber--
-                        } else {
-                          this.debuglog('matched team for event')
-                          if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
-                            mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
-                            contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
-                          } else {
-                            this.log('team event video not yet available')
+                      if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].language) == 'undefined') || ((mediaType == 'Audio') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].language == language)) ) {
+                        let teamType = cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType]
+
+                        let station = cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters
+
+                        // check live blackout status, if necessary
+                        if ( (mediaType == 'MLBTV') && (includeBlackouts == 'false') && blackouts.includes(cache_data.dates[0].games[j].gamePk.toString()) ) {
+
+                          // Calculate blackout time, if we haven't already
+                          if ( !blackout_time ) {
+
+                            if ( !cache_data.dates[0].games[j].resumeGameDate && !cache_data.dates[0].games[j].resumedFromDate && (cache_data.dates[0].games[j].status.startTimeTBD == false) ) {
+                              var scheduledInnings = '9'
+                              if ( cache_data.dates[0].games[j].linescore && cache_data.dates[0].games[j].linescore.scheduledInnings ) {
+                                scheduledInnings = cache_data.dates[0].games[j].linescore.scheduledInnings
+                                  if ( (cache_data.dates[0].games[j].status.abstractGameState == 'Final') && cache_data.dates[0].games[j].linescore.currentInning && (cache_data.dates[0].games[j].linescore.currentInning < 9) ) {
+                                    scheduledInnings = cache_data.dates[0].games[j].linescore.currentInning
+                                  }
+                              }
+
+                              // avg 9 inning game was 3:11 in 2021, or 21.22 minutes per inning
+                              let gameDurationMinutes = 21.22 * scheduledInnings
+                              // default to assuming the scheduled game time is the first pitch time
+                              let firstPitch = new Date(cache_data.dates[0].games[j].gameDate)
+                              if ( cache_data.dates[0].games[j].gameInfo ) {
+                                // check if firstPitch has been updated with a valid time (later than the scheduled game time)
+                                if ( cache_data.dates[0].games[j].gameInfo.firstPitch && (cache_data.dates[0].games[j].gameInfo.firstPitch >= cache_data.dates[0].games[j].gameDate) ) {
+                                  firstPitch = new Date(cache_data.dates[0].games[j].gameInfo.firstPitch)
+                                  // for completed games, get the duration too
+                                  if ( cache_data.dates[0].games[j].gameInfo.gameDurationMinutes ) {
+                                    gameDurationMinutes = cache_data.dates[0].games[j].gameInfo.gameDurationMinutes
+                                    // add any delays
+                                    if ( cache_data.dates[0].games[j].gameInfo.delayDurationMinutes ) {
+                                      gameDurationMinutes += cache_data.dates[0].games[j].gameInfo.delayDurationMinutes
+                                    }
+                                  }
+                                }
+                              }
+                              gameDurationMinutes += 150
+                              blackout_time = firstPitch
+                              blackout_time.setMinutes(blackout_time.getMinutes()+gameDurationMinutes)
+                            }
                           }
-                          break
+
+                          if ( currentDate < blackout_time ) {
+                            this.debuglog('getMediaId requested game is blacked out')
+                            continue
+                          }
+                        }
+
+                        //if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && cache_data.dates[0].games[j].gameUtils.isPostSeason)) ) {
+                        if ( (team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training'))) ) {
+                          nationalCount += 1
+                          let nationalArray = team.split('.')
+                          if ( (nationalArray.length == 2) && (nationalArray[1] == nationalCount) ) {
+                            this.debuglog('matched national event')
+                            if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
+                              mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
+                              contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
+                            } else {
+                              this.log('national event video not yet available')
+                            }
+                            break
+                          }
+                        } else if ( team.toUpperCase().startsWith('FREE.') && cache_data.dates[0].games[j].content.media.freeGame ) {
+                          freeCount += 1
+                          let freeArray = team.split('.')
+                          if ( (freeArray.length == 2) && (freeArray[1] == freeCount) ) {
+                            this.debuglog('matched free event')
+                            if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
+                              mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
+                              contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
+                            } else {
+                              this.log('free event video not yet available')
+                            }
+                            break
+                          }
+                        } else if ( (team.toUpperCase() == home_team) || (team.toUpperCase() == away_team) ) {
+
+                          if ( ((team.toUpperCase() == home_team) && (teamType == 'HOME')) || (broadcast_count == 1) ) {
+                            if ( gameNumber && (gameNumber > 1) ) {
+                              this.debuglog('matched team for game number 1')
+                              gameNumber--
+                            } else {
+                              this.debuglog('matched team for event')
+                              if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || ((mediaDate) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (cache_data.dates[0].games[j].status.abstractGameState == 'Final'))) ) {
+                                mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
+                                contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
+                              } else {
+                                this.log('team event video not yet available')
+                              }
+                              break
+                            }
+                          }
                         }
                       }
                     }
@@ -1943,15 +2011,71 @@ class sessionClass {
               }
             }
           }
-        //}
 
-        if (mediaId) {
-          return { mediaId, contentId }
+          if (mediaId) {
+            return { mediaId, contentId, gameDate }
+          }
         }
+        this.log('could not find mediaId')
+      } else {
+        this.log('will not find mediaId for future date')
       }
-      this.log('could not find mediaId')
     } catch(e) {
       this.log('getMediaId error : ' + e.message)
+    }
+  }
+
+  // getAwayRadioStreams for a given mediaId/date (and optionally team)
+  async getAwayRadioStreams(gameDate, team, mediaId) {
+    if ( team ) {
+      this.debuglog('getAwayRadioStreams for ' + mediaId + ' on ' + gameDate + ', ' + team)
+    } else {
+      this.debuglog('getAwayRadioStreams for ' + mediaId + ' on ' + gameDate)
+    }
+
+    let awayRadioStreams = []
+    let mediaIdMatch = false
+
+    let cache_data = await this.getDayData(gameDate, team)
+
+    if (cache_data) {
+      for (var j = 0; j < cache_data.dates[0].games.length; j++) {
+        if ( mediaIdMatch ) break
+        if ( (typeof cache_data.dates[0].games[j] !== 'undefined') && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.epg ) {
+          for (var y= 0; y < cache_data.dates[0].games[j].content.media.epg[0].items.length; y++) {
+            if ( cache_data.dates[0].games[j].content.media.epg[0].items[y].mediaId == mediaId ) {
+              mediaIdMatch = true
+              this.debuglog('getAwayRadioStreams found mediaId match')
+              for (var k = 1; k < cache_data.dates[0].games[j].content.media.epg.length; k++) {
+                if ( cache_data.dates[0].games[j].content.media.epg[k].title == 'Audio' ) {
+                  for (var x= 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
+                    if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].type == 'AWAY' ) {
+                      this.debuglog('getAwayRadioStreams found ' + cache_data.dates[0].games[j].content.media.epg[k].items[x].language)
+                      let streamName = 'Away '
+                      if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].language == 'es' ) {
+                        streamName += 'Spanish'
+                      } else {
+                        streamName += 'Radio'
+                      }
+                      let streamURL = await this.getStreamURL(cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId)
+                      let playlistURL = await this.getAudioPlaylistURL(streamURL)
+                      let awayRadioStream = {'name': streamName, 'url': playlistURL}
+                      awayRadioStreams.push(awayRadioStream)
+                    }
+                  }
+                  break
+                }
+              }
+              break
+            }
+          }
+        }
+      }
+
+      return awayRadioStreams
+    } else {
+      this.log('Failed to get day data for getAwayRadioStreams')
+      return ''
     }
   }
 
@@ -2049,12 +2173,12 @@ class sessionClass {
     try {
       let cache_data
       let cache_name = dateString
-      //let url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&sportId=17&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&leagueId=103&leagueId=131&contextTeamId='
-      let url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1,51&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=game(content(media(epg))),probablePitcher,linescore,team,flags,gameInfo'
-      if ( team ) {
+      //let data_url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&sportId=17&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&leagueId=103&leagueId=131&contextTeamId='
+      let data_url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1,51&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=game(content(media(epg))),probablePitcher,linescore,team,flags,gameInfo'
+      if ( team && !team.toUpperCase().startsWith('NATIONAL.') && !team.toUpperCase().startsWith('FREE.') ) {
         this.debuglog('getDayData for team ' + team + ' on date ' + dateString)
         cache_name = team.toUpperCase() + dateString
-        url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=' + TEAM_IDS[team.toUpperCase()] + '&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=team,game(content(media(epg)))'
+        data_url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=' + TEAM_IDS[team.toUpperCase()] + '&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=team,game(content(media(epg)))'
       } else {
         this.debuglog('getDayData for date ' + dateString)
       }
@@ -2062,7 +2186,7 @@ class sessionClass {
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.dates || !this.cache.dates[cache_name] || !this.cache.dates[cache_name].dateCacheExpiry || (currentDate > new Date(this.cache.dates[cache_name].dateCacheExpiry)) ) {
         let reqObj = {
-          url: url,
+          url: data_url,
           headers: {
             'User-agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
@@ -2443,14 +2567,14 @@ class sessionClass {
                             }
                             description += '. '
                           }
-                          if ( (mediaType == 'MLBTV') && ((teamType == 'NATIONAL') || (team == opponent_team)) && (cache_data.dates[i].games[j].seriesDescription != 'All-Star Game') ) {
+                          /*if ( (mediaType == 'MLBTV') && ((teamType == 'NATIONAL') || (team == opponent_team)) && (cache_data.dates[i].games[j].seriesDescription != 'All-Star Game') ) {
                             if ( cache_data.dates[i].games[j].content.media.epg[k].items[x][mediaFeedType] == 'AWAY' ) {
                               description += cache_data.dates[i].games[j].teams['away'].team.teamName
                             } else {
                               description += cache_data.dates[i].games[j].teams['home'].team.teamName
                             }
                             description += ' alternate audio. '
-                          }
+                          }*/
 
                           let gameDate = new Date(cache_data.dates[i].games[j].gameDate)
                           let gameHours = 3
@@ -2700,12 +2824,12 @@ class sessionClass {
 
       let cache_data
       let cache_name = contentId
-      let url = 'https://search-api-mlbtv.mlb.com/svc/search/v2/graphql/persisted/query/core/Airings'
+      let data_url = 'https://search-api-mlbtv.mlb.com/svc/search/v2/graphql/persisted/query/core/Airings'
       let qs = { variables: '%7B%22contentId%22%3A%22' + contentId + '%22%7D' }
       if ( gamePk ) {
         this.debuglog('getAiringsData for game ' + gamePk)
         cache_name = 'a' + gamePk
-        url = 'https://search-api-mlbtv.mlb.com/svc/search/v2/graphql/persisted/query/core/Airings?variables={%22partnerProgramIds%22%3A[%22' + gamePk + '%22]}'
+        data_url = 'https://search-api-mlbtv.mlb.com/svc/search/v2/graphql/persisted/query/core/Airings?variables={%22partnerProgramIds%22%3A[%22' + gamePk + '%22]}'
         qs = {}
       } else {
         this.debuglog('getAiringsData for content ' + contentId)
@@ -2714,7 +2838,7 @@ class sessionClass {
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.airings || !this.cache.airings[cache_name] || !this.cache.airings[cache_name].airingsCacheExpiry || (currentDate > new Date(this.cache.airings[cache_name].airingsCacheExpiry)) ) {
         let reqObj = {
-          url: url,
+          url: data_url,
           qs: qs,
           headers: {
             'Accept': 'application/json',
@@ -3318,6 +3442,7 @@ class sessionClass {
 
   // Check if Fox regional games exist for a date
   async check_regional_fox_games(games) {
+    this.debuglog('check_regional_fox_games')
     let fox_start_time
     let regional_fox_games_exist = 'false'
     for (var j = 0; j < games.length; j++) {
@@ -3327,6 +3452,7 @@ class sessionClass {
             for (var x = 0; x < games[j].content.media.epg[k].items.length; x++) {
               if ( games[j].content.media.epg[k].items[x].callLetters == 'FOX' ) {
                 if ( fox_start_time && (games[j].gameDate == fox_start_time) ) {
+                  this.debuglog('check_regional_fox_games found')
                   regional_fox_games_exist = 'true'
                   break
                 } else {
@@ -3383,7 +3509,7 @@ class sessionClass {
     return blackouts
   }
 
-  async resetGameChanger(id) {
+  async resetGameChanger(id, includeTeams, excludeTeams) {
     let today = this.liveDate()
     if ( !this.temp_cache.gamechanger || !this.temp_cache.gamechanger.date || (this.temp_cache.gamechanger.date != today) ) {
       this.log('updating gamechanger for ' + today)
@@ -3409,12 +3535,9 @@ class sessionClass {
         start: start,
         end: end,
         dateString: today.substring(0,4) + '/month_' + today.substring(5,7) + '/day_' + today.substring(8,10),
-        streamURL: null,
-        games: [],
-        players: [],
-        gamePk: null,
         blackouts: blackouts,
-        gamechangerCacheExpiry: null
+        gamechangerCacheExpiry: null,
+        cache_data: null
       }
     }
 
@@ -3423,21 +3546,32 @@ class sessionClass {
       segments: [],
       sequence: 0,
       discontinuitySequence: 0,
-      playlist: {}
+      playlist: {},
+      includeTeams: includeTeams,
+      excludeTeams: excludeTeams,
+      streamURL: null,
+      games: [],
+      players: [],
+      inning_states: [],
+      break_expiries: {},
+      gamePk: null
     }
   }
 
   // get best active live game by leverage
   async getBestGame(id) {
     var game_changer_title = 'Game changer ' + id + ' '
+
     try {
+      let cache_data
+      let cache_name = 'gamechanger'
+      let cache_file = path.join(CACHE_DIRECTORY, cache_name + '.json')
       let currentDate = new Date()
-      if ( this.cache.gamechangerCacheExpiry && (currentDate < new Date(this.cache.gamechangerCacheExpiry)) ) {
-        this.debuglog(game_changer_title + 'using cached streamURL')
-        return
-      } else {
-        currentDate.setSeconds(currentDate.getSeconds()+10)
-        this.cache.gamechangerCacheExpiry = currentDate
+      if ( !this.temp_cache.gamechanger.cache_data || !this.temp_cache.gamechangerCacheExpiry || (currentDate > new Date(this.temp_cache.gamechangerCacheExpiry)) ) {
+        this.debuglog(game_changer_title + 'fetching new gamechanger data')
+        let cacheExpiry = new Date()
+        cacheExpiry.setSeconds(cacheExpiry.getSeconds()+9)
+        this.temp_cache.gamechangerCacheExpiry = cacheExpiry
         let reqObj = {
           url: 'http://gd2.mlb.com/components/game/mlb/year_' + this.temp_cache.gamechanger.dateString + '/master_scoreboard.json',
           headers: {
@@ -3451,291 +3585,383 @@ class sessionClass {
         }
         var response = await this.httpGet(reqObj)
         if ( this.isValidJson(response) ) {
+          this.debuglog(game_changer_title + 'valid json response')
           this.debuglog(response)
-          let cache_data = JSON.parse(response)
+          this.temp_cache.gamechanger.cache_data = JSON.parse(response)
+        } else {
+          this.log(game_changer_title + 'error : invalid json from url ' + reqObj.url)
+          return
+        }
+      } else {
+        this.debuglog(game_changer_title + 'using cached gamechanger data')
+      }
+      cache_data = this.temp_cache.gamechanger.cache_data
 
-          if ( cache_data.data && cache_data.data.games && cache_data.data.games.game && (cache_data.data.games.game.length > 0) ) {
-            var games = []
-            var best_games = []
-            var players = {}
-            for (var x=1; x<5; x++) {
-              var omitted_games = {'blackout': [], 'inactive': [], 'break': [], 'pitching_change': []}
-              for (var i=0; i<cache_data.data.games.game.length; i++) {
-                let teams = cache_data.data.games.game[i].away_name_abbrev + '@' + cache_data.data.games.game[i].home_name_abbrev
+      if ( cache_data ) {
+        if ( cache_data.data && cache_data.data.games && cache_data.data.games.game && (cache_data.data.games.game.length > 0) ) {
+          var games = []
+          var best_games = []
+          var players = {}
+          var inning_states
+          var omitted_games
+          // if we don't have a current game, and nothing is found on loop #1, expand the criteria to include:
+          // 2. challenge/replay review games
+          // 3. games in break
+          // 4. warmup
+          for (var x=1; x<5; x++) {
+            inning_states = {}
+            omitted_games = {'excluded': [], 'blackout': [], 'warmup': [], 'inactive': [], 'break': [], 'pitching_change': [], 'review': []}
 
-                // Game is blacked out
-                let game_pk = cache_data.data.games.game[i].game_pk.toString()
-                if ( this.temp_cache.gamechanger.blackouts.includes(game_pk) ) {
-                  omitted_games.blackout.push(teams)
-                  continue
-                }
-
-                // Game is not active (not started, game over, or in replay review)
-                if ( (cache_data.data.games.game[i].status.status != 'In Progress') && ((x < 2) || cache_data.data.games.game[i].status.status.toLowerCase().includes('challenge') || cache_data.data.games.game[i].status.status.toLowerCase().includes('review')) ) {
-                  omitted_games.inactive.push(teams)
-                  continue
-                }
-
-                let inning_half = cache_data.data.games.game[i].status.inning_state
-                if (inning_half == 'Bottom') {
-                  inning_half = 'bot'
-                } else if (inning_half == 'Top') {
-                  inning_half = 'top'
-                }
-
-                let inning_num = parseInt(cache_data.data.games.game[i].status.inning)
-                if ( Number.isNaN(inning_num) ) {
-                  omitted_games.inactive.push(teams)
-                  continue
-                }
-                let outs = parseInt(cache_data.data.games.game[i].status.o)
-                if ( Number.isNaN(outs) ) {
-                  omitted_games.inactive.push(teams)
-                  continue
-                }
-                let runners_on_str = '_ _ _'
-                if ( cache_data.data.games.game[i].runners_on_base ) {
-                  let runners_on_base = cache_data.data.games.game[i].runners_on_base
-                  if ( runners_on_base.runner_on_1b ) {
-                    runners_on_str = '1 '
-                  } else {
-                    runners_on_str = '_ '
-                  }
-                  if ( runners_on_base.runner_on_2b ) {
-                    runners_on_str += '2 '
-                  } else {
-                    runners_on_str += '_ '
-                  }
-                  if ( runners_on_base.runner_on_3b ) {
-                    runners_on_str += '3'
-                  } else {
-                    runners_on_str += '_'
-                  }
-                }
-                let balls = parseInt(cache_data.data.games.game[i].status.b)
-                let strikes = parseInt(cache_data.data.games.game[i].status.s)
-                let away_score = parseInt(cache_data.data.games.game[i].linescore.r.away)
-                let home_score = parseInt(cache_data.data.games.game[i].linescore.r.home)
-
-                // Game hasn't started yet
-                if ( (inning_num == 1) && (inning_half == 'top') && (outs == 0) && (balls == 0) && (strikes == 0) && (away_score == 0) && (runners_on_str == '_ _ _') ) {
-                  omitted_games.inactive.push(teams)
-                  continue
-                }
-
-                // Game is between innings
-                if ( (inning_half == 'Middle') || (inning_half == 'End') || (outs == 3) ) {
-                  if ( x < 4 ) {
-                    omitted_games.break.push(teams)
-                    continue
-                  } else {
-                    if (inning_half == 'Middle') {
-                      // check for finished games
-                      if ( (inning_num == 9) && (away_score < home_score) ) {
-                        omitted_games.break.push(teams)
-                        continue
-                      }
-                      inning_half = 'bot'
-                    } else if (inning_half == 'End') {
-                      // check for finished games
-                      if ( (inning_num == 9) && (away_score < home_score) ) {
-                        omitted_games.break.push(teams)
-                        continue
-                      }
-                      inning_half = 'top'
-                      inning_num += 1
-                      outs = 0
-                      runners_on_str = '_ _ _'
-                      balls = 0
-                      strikes = 0
-                    }
-                  }
-                }
-
-                let pitcher = null
-                if ( cache_data.data.games.game[i].pitcher && cache_data.data.games.game[i].pitcher.id ) {
-                  pitcher = cache_data.data.games.game[i].pitcher.id
-                  if ( (x < 3) && this.temp_cache.gamechanger.players && (this.temp_cache.gamechanger.players.length > 0) && this.temp_cache.gamechanger.players[0][game_pk] && (this.temp_cache.gamechanger.players[0][game_pk].pitcher != pitcher) ) {
-                    omitted_games.pitching_change.push(teams)
-                    continue
-                  }
-                }
-                let batter = null
-                if ( cache_data.data.games.game[i].batter && cache_data.data.games.game[i].batter.id ) {
-                  batter = cache_data.data.games.game[i].batter.id
-                }
-                let new_batter = false
-                if ( ((balls == 0) && (strikes == 0)) || (balls == 4) || (strikes == 3) || (this.temp_cache.gamechanger.players && (this.temp_cache.gamechanger.players.length > 0) && this.temp_cache.gamechanger.players[0][game_pk] && (this.temp_cache.gamechanger.players[0][game_pk].batter != batter)) ) {
-                  new_batter = true
-                }
-
-                // bump perfect games or no hitters in the 9th inning to the top of the leverage list
-                let leverage_adjust = 0
-                if ( (inning_num == 9) && ((cache_data.data.games.game[i].status.is_perfect_game == 'Y') || (cache_data.data.games.game[i].status.is_no_hitter == 'Y')) ) {
-                  let away_hits = parseInt(cache_data.data.games.game[i].linescore.h.away)
-                  if ( ((away_hits == 0) && (inning_half == 'top')) || (inning_half == 'bot') ) {
-                    if ( cache_data.data.games.game[i].status.is_perfect_game == 'Y' ) {
-                      this.debuglog(game_changer_title + 'adjusting ' + teams + ' for perfect game')
-                      leverage_adjust = MAX_LEVERAGE * 2
-                    } else{
-                      this.debuglog(game_changer_title + 'adjusting ' + teams + ' for no hitter')
-                      leverage_adjust = MAX_LEVERAGE
-                    }
-                  }
-                }
-
-                let run_differential_index = Math.max(-4, Math.min((home_score - away_score), 4)) + 4
-                let inning_num_index = Math.min(inning_num, 9)
-
-                let leverage_index = LI_TABLE[inning_num_index][inning_half][runners_on_str][outs][run_differential_index] + leverage_adjust
-
-                games.push({
-                  'leverage_index': leverage_index,
-                  'teams': teams,
-                  'away_score': away_score,
-                  'home_score': home_score,
-                  'inning_half': inning_half,
-                  'inning_num': inning_num,
-                  'outs': outs,
-                  'runners_on_base': runners_on_str,
-                  'balls': balls,
-                  'strikes': strikes,
-                  'new_batter': new_batter,
-                  'game_pk': game_pk
-                })
-
-                players[game_pk] = {'pitcher': pitcher, 'batter': batter}
-              }
-
-              if ( this.temp_cache.gamechanger.gamePk || (games.length > 0) ) {
-                this.debuglog(game_changer_title + 'omitted games ' + JSON.stringify(omitted_games))
-                break
-              }
+            // reset all break expiries if we're on our third loop and including games in break
+            if ( x == 3 ) {
+              this.temp_cache.gamechanger[id].break_expiries = {}
             }
 
-            if ( games.length > 0 ) {
-              //best_games = games.sort(this.GetSortOrderReverse('leverage_index'))
-              // sort games by leverage index (desc), then inning number (desc), then inning half (top before bottom), then finally outs (desc)
-              best_games = games.sort(function (a, b) {
-                return b.leverage_index - a.leverage_index || b.inning_num - a.inning_num || b.inning_half.localeCompare(a.inning_half) || b.outs - a.outs;
+            for (var i=0; i<cache_data.data.games.game.length; i++) {
+              let teams = cache_data.data.games.game[i].away_name_abbrev + '@' + cache_data.data.games.game[i].home_name_abbrev
+              let game_pk = cache_data.data.games.game[i].game_pk.toString()
+
+              // Check break expiry, if available
+              if ( this.temp_cache.gamechanger[id].break_expiries[game_pk] && (this.temp_cache.gamechanger[id].break_expiries[game_pk] > currentDate) ) {
+                this.debuglog(game_changer_title + teams + ' still in break')
+                omitted_games.break.push(teams)
+                continue
+              }
+
+              // Game is not included
+              if ( (this.temp_cache.gamechanger[id].includeTeams.length > 0) && !this.temp_cache.gamechanger[id].includeTeams.includes(cache_data.data.games.game[i].away_name_abbrev) && !this.temp_cache.gamechanger[id].includeTeams.includes(cache_data.data.games.game[i].home_name_abbrev) ) {
+                omitted_games.excluded.push(teams)
+                continue
+              }
+
+              // Game is excluded
+              if ( (this.temp_cache.gamechanger[id].excludeTeams.length > 0) && (this.temp_cache.gamechanger[id].excludeTeams.includes(cache_data.data.games.game[i].away_name_abbrev) || this.temp_cache.gamechanger[id].excludeTeams.includes(cache_data.data.games.game[i].home_name_abbrev)) ) {
+                omitted_games.excluded.push(teams)
+                continue
+              }
+
+              // Game is blacked out
+              if ( this.temp_cache.gamechanger.blackouts.includes(game_pk) ) {
+                omitted_games.blackout.push(teams)
+                continue
+              }
+
+              if ( cache_data.data.games.game[i].status.status.toLowerCase().includes('challenge') || cache_data.data.games.game[i].status.status.toLowerCase().includes('review') ) {
+                // Game is in replay review
+                if ( x < 2 ) {
+                  omitted_games.review.push(teams)
+                  continue
+                }
+              } else if ( cache_data.data.games.game[i].status.status == 'Warmup' ) {
+                // Game is in warmup
+                if ( x < 4 ) {
+                  omitted_games.warmup.push(teams)
+                  continue
+                }
+              } else if ( cache_data.data.games.game[i].status.status != 'In Progress' ) {
+                // Game is otherwise not active (not started or game over)
+                omitted_games.inactive.push(teams)
+                continue
+              }
+
+              let inning_half = cache_data.data.games.game[i].status.inning_state
+              if (inning_half == 'Bottom') {
+                inning_half = 'bot'
+              } else if (inning_half == 'Top') {
+                inning_half = 'top'
+              }
+
+              let inning_num = parseInt(cache_data.data.games.game[i].status.inning)
+              if ( Number.isNaN(inning_num) ) {
+                omitted_games.inactive.push(teams)
+                continue
+              }
+              let outs = parseInt(cache_data.data.games.game[i].status.o)
+              if ( Number.isNaN(outs) ) {
+                omitted_games.inactive.push(teams)
+                continue
+              }
+              let runners_on_base = '_ _ _'
+              if ( cache_data.data.games.game[i].runners_on_base ) {
+                if ( cache_data.data.games.game[i].runners_on_base.runner_on_1b ) {
+                  runners_on_base = '1 '
+                } else {
+                  runners_on_base = '_ '
+                }
+                if ( cache_data.data.games.game[i].runners_on_base.runner_on_2b ) {
+                  runners_on_base += '2 '
+                } else {
+                  runners_on_base += '_ '
+                }
+                if ( cache_data.data.games.game[i].runners_on_base.runner_on_3b ) {
+                  runners_on_base += '3'
+                } else {
+                  runners_on_base += '_'
+                }
+              }
+              let balls = parseInt(cache_data.data.games.game[i].status.b)
+              let strikes = parseInt(cache_data.data.games.game[i].status.s)
+              let away_score = parseInt(cache_data.data.games.game[i].linescore.r.away)
+              let home_score = parseInt(cache_data.data.games.game[i].linescore.r.home)
+
+              // Game hasn't started yet
+              if ( (x < 4) && (inning_num == 1) && (inning_half == 'top') && (outs == 0) && (balls == 0) && (strikes == 0) && (away_score == 0) && (runners_on_base == '_ _ _') ) {
+                omitted_games.inactive.push(teams)
+                continue
+              }
+
+              // Game is between innings
+              if ( (inning_half == 'Middle') || (inning_half == 'End') || (outs == 3) ) {
+                if ( outs == 3 ) {
+                  if ( inning_half == 'top' ) {
+                    inning_half = 'Middle'
+                  } else if ( inning_half == 'bot' ) {
+                    inning_half = 'End'
+                  }
+                }
+
+                if ( (inning_half == 'Middle') || (inning_half == 'End') ) {
+                  if (inning_half == 'Middle') {
+                    // check for finished games
+                    if ( (inning_num == 9) && (away_score < home_score) ) {
+                      omitted_games.inactive.push(teams)
+                      continue
+                    }
+                    inning_half = 'bot'
+                  } else if (inning_half == 'End') {
+                    // check for finished games
+                    if ( (inning_num >= 9) && (away_score != home_score) ) {
+                      omitted_games.inactive.push(teams)
+                      continue
+                    }
+                    inning_half = 'top'
+                    inning_num += 1
+                  }
+
+                  outs = 0
+                  runners_on_base = '_ _ _'
+                  balls = 0
+                  strikes = 0
+                }
+
+                if ( x < 3 ) {
+                  this.debuglog(game_changer_title + teams + ' inning break started or in progress')
+                  omitted_games.break.push(teams)
+
+                  // only set break expiry for active games (that already have a stored inning state)
+                  if ( this.temp_cache.gamechanger[id].inning_states && (this.temp_cache.gamechanger[id].inning_states.length > 0) && this.temp_cache.gamechanger[id].inning_states[0][game_pk] ) {
+                    this.setBreakExpiry(id, game_pk)
+                  }
+
+                  continue
+                }
+              }
+
+              let inning_state = inning_half + ',' + inning_num
+              inning_states[game_pk] = inning_state
+
+              // if the inning state has changed, assume a break
+              if ( (x < 3) && this.temp_cache.gamechanger[id].inning_states && (this.temp_cache.gamechanger[id].inning_states.length > 0) && this.temp_cache.gamechanger[id].inning_states[0][game_pk] && (inning_state != this.temp_cache.gamechanger[id].inning_states[0][game_pk]) ) {
+                this.debuglog(game_changer_title + teams + ' inning break detected')
+                omitted_games.break.push(teams)
+                this.setBreakExpiry(id, game_pk)
+                continue
+              }
+
+              // if the pitcher has changed, assume a break
+              let pitcher = null
+              if ( cache_data.data.games.game[i].pitcher && cache_data.data.games.game[i].pitcher.id ) {
+                pitcher = cache_data.data.games.game[i].pitcher.id
+                if ( (x < 3) && this.temp_cache.gamechanger[id].players && (this.temp_cache.gamechanger[id].players.length > 0) && this.temp_cache.gamechanger[id].players[0][game_pk] && (this.temp_cache.gamechanger[id].players[0][game_pk].pitcher != pitcher) ) {
+                  this.debuglog(game_changer_title + teams + ' pitching change break detected')
+                  omitted_games.pitching_change.push(teams)
+                  this.setBreakExpiry(id, game_pk)
+                  continue
+                }
+              }
+
+              let batter = null
+              if ( cache_data.data.games.game[i].batter && cache_data.data.games.game[i].batter.id ) {
+                batter = cache_data.data.games.game[i].batter.id
+              }
+              let new_batter = false
+              if ( ((balls == 0) && (strikes == 0)) || (balls == 4) || (strikes == 3) || (this.temp_cache.gamechanger[id].players && (this.temp_cache.gamechanger[id].players.length > 0) && this.temp_cache.gamechanger[id].players[0][game_pk] && (this.temp_cache.gamechanger[id].players[0][game_pk].batter != batter)) ) {
+                new_batter = true
+              }
+
+              // bump perfect games or no hitters in the 9th inning to the top of the leverage list
+              let leverage_adjust = 0
+              if ( (inning_num == 9) && ((cache_data.data.games.game[i].status.is_perfect_game == 'Y') || (cache_data.data.games.game[i].status.is_no_hitter == 'Y')) ) {
+                let away_hits = parseInt(cache_data.data.games.game[i].linescore.h.away)
+                if ( ((away_hits == 0) && (inning_half == 'top')) || (inning_half == 'bot') ) {
+                  if ( cache_data.data.games.game[i].status.is_perfect_game == 'Y' ) {
+                    this.debuglog(game_changer_title + 'adjusting ' + teams + ' for perfect game')
+                    leverage_adjust = MAX_LEVERAGE * 2
+                  } else{
+                    this.debuglog(game_changer_title + 'adjusting ' + teams + ' for no hitter')
+                    leverage_adjust = MAX_LEVERAGE
+                  }
+                }
+              }
+
+              let run_differential_index = Math.max(-4, Math.min((home_score - away_score), 4)) + 4
+              let inning_num_index = Math.min(inning_num, 9)
+
+              let leverage_index = LI_TABLE[inning_num_index][inning_half][runners_on_base][outs][run_differential_index] + leverage_adjust
+
+              games.push({
+                'leverage_index': leverage_index,
+                'teams': teams,
+                'away_score': away_score,
+                'home_score': home_score,
+                'inning_half': inning_half,
+                'inning_num': inning_num,
+                'outs': outs,
+                'runners_on_base': runners_on_base,
+                'balls': balls,
+                'strikes': strikes,
+                'new_batter': new_batter,
+                'game_pk': game_pk
               })
-            }
-            this.debuglog(game_changer_title + 'live sorted games ' + JSON.stringify(best_games))
-            this.debuglog(game_changer_title + 'players ' + JSON.stringify(players))
 
-            if ( !this.temp_cache.gamechanger.games ) this.temp_cache.gamechanger.games = []
-            this.temp_cache.gamechanger.games.push(best_games)
-            let maxlength = (this.gamechanger_delay + 10) / 10
-            while ( this.temp_cache.gamechanger.games.length > maxlength ) {
-              this.temp_cache.gamechanger.games.shift()
-            }
-            if ( !this.temp_cache.gamechanger.players ) this.temp_cache.gamechanger.players = []
-            this.temp_cache.gamechanger.players.push(players)
-            while ( this.temp_cache.gamechanger.players.length > maxlength ) {
-              this.temp_cache.gamechanger.players.shift()
+              players[game_pk] = {'pitcher': pitcher, 'batter': batter}
             }
 
-            best_games = this.temp_cache.gamechanger.games[0]
-            if ( maxlength > 1 ) {
-              this.debuglog(game_changer_title + 'delayed sorted games ' + JSON.stringify(best_games))
+            if ( this.temp_cache.gamechanger[id].gamePk || (games.length > 0) ) {
+              break
             }
-            if ( (best_games.length == 0) || (this.temp_cache.gamechanger.gamePk && (best_games[0].game_pk == this.temp_cache.gamechanger.gamePk)) ) {
-              this.debuglog(game_changer_title + 'best game has not changed')
-              return
-            } else {
-              // Update state of curr_game
-              let curr_game
-              let curr_game_below_avg = false
-              if ( this.temp_cache.gamechanger.gamePk ) {
-                for (var i=0; i<best_games.length; i++) {
-                  if ( this.temp_cache.gamechanger.gamePk == best_games[i].game_pk ) {
-                    curr_game = best_games[i]
-                    if ( curr_game.leverage_index < 1.0 ) {
-                      curr_game_below_avg = true
-                    }
-                    break
-                  }
-                }
-              }
-              if ( curr_game && (best_games.length > 0) && (curr_game.leverage_index == best_games[0].game_pk) ) {
-                this.debuglog(game_changer_title + 'current game still best or tied for best')
-                return
-              }
-              // Only switch games if:
-              //  curr_game is None (either no curr_game or it's in commercial break)
-              //  The change in leverage is > 1.5 and there's a new batter in curr_game
-              //  game has a better leverage than curr_game and curr_game is below average leverage (1.0) and there's a new batter in curr_game
+          }
+          this.debuglog(game_changer_title + 'omitted games ' + JSON.stringify(omitted_games))
+
+          if ( games.length > 0 ) {
+            //best_games = games.sort(this.GetSortOrderReverse('leverage_index'))
+            // sort games by leverage index (desc), then inning number (desc), then inning half (bottom then top), then finally outs (desc)
+            best_games = games.sort(function (a, b) {
+              return b.leverage_index - a.leverage_index || b.inning_num - a.inning_num || a.inning_half.localeCompare(b.inning_half) || b.outs - a.outs;
+            })
+          }
+          this.debuglog(game_changer_title + 'live sorted games ' + JSON.stringify(best_games))
+          this.debuglog(game_changer_title + 'players ' + JSON.stringify(players))
+          this.debuglog(game_changer_title + 'inning states ' + JSON.stringify(inning_states))
+          this.debuglog(game_changer_title + 'break expiries ' + JSON.stringify(this.temp_cache.gamechanger[id].break_expiries))
+
+          if ( !this.temp_cache.gamechanger[id].games ) this.temp_cache.gamechanger[id].games = []
+          this.temp_cache.gamechanger[id].games.push(best_games)
+          let maxlength = (this.gamechanger_delay + 10) / 10
+          while ( this.temp_cache.gamechanger[id].games.length > maxlength ) {
+            this.temp_cache.gamechanger[id].games.shift()
+          }
+          if ( !this.temp_cache.gamechanger[id].players ) this.temp_cache.gamechanger[id].players = []
+          this.temp_cache.gamechanger[id].players.push(players)
+          while ( this.temp_cache.gamechanger[id].players.length > maxlength ) {
+            this.temp_cache.gamechanger[id].players.shift()
+          }
+          if ( !this.temp_cache.gamechanger[id].inning_states ) this.temp_cache.gamechanger[id].inning_states = []
+          this.temp_cache.gamechanger[id].inning_states.push(inning_states)
+          while ( this.temp_cache.gamechanger[id].inning_states.length > maxlength ) {
+            this.temp_cache.gamechanger[id].inning_states.shift()
+          }
+
+          best_games = this.temp_cache.gamechanger[id].games[0]
+          if ( maxlength > 1 ) {
+            this.debuglog(game_changer_title + 'delayed sorted games ' + JSON.stringify(best_games))
+          }
+          if ( (best_games.length == 0) || (this.temp_cache.gamechanger[id].gamePk && (best_games[0].game_pk == this.temp_cache.gamechanger[id].gamePk)) ) {
+            this.debuglog(game_changer_title + 'best game has not changed')
+            return
+          } else {
+            // Update state of curr_game
+            let curr_game
+            let curr_game_below_avg = false
+            if ( this.temp_cache.gamechanger[id].gamePk ) {
               for (var i=0; i<best_games.length; i++) {
-                let large_leverage_diff = false
-                if ( curr_game && ((best_games[i].leverage_index - curr_game.leverage_index) > 1.5) ) {
-                  large_leverage_diff = true
-                }
-                let game_better = false
-                if ( curr_game && (best_games[i].leverage_index > curr_game.leverage_index) ) {
-                  game_better = true
-                }
-                if ( !curr_game || (curr_game.new_batter && (large_leverage_diff || (curr_game_below_avg && game_better))) ) {
+                if ( this.temp_cache.gamechanger[id].gamePk == best_games[i].game_pk ) {
                   curr_game = best_games[i]
-                  this.log(game_changer_title + 'loading game ' + curr_game.teams)
-                  this.temp_cache.gamechanger.gamePk = curr_game.game_pk
-                  // get stream URL
-                  let favTeamBroadcast
-                  let mediaId
-                  let streamURL
-                  let airings_data = await this.getAiringsData('', curr_game.game_pk)
-                  if ( airings_data.data && airings_data.data.Airings && (airings_data.data.Airings.length > 0) ) {
-                    for (var y = 0; y < airings_data.data.Airings.length; y++) {
-                      if ( (airings_data.data.Airings[y].mediaConfig.type == 'VIDEO') && (airings_data.data.Airings[y].mediaConfig.productType == 'LIVE') && (airings_data.data.Airings[y].mediaConfig.state == 'ON') ) {
-                        // prefer fav team broadcasts
-                        if ( this.credentials.fav_teams.length > 0 ) {
-                          for (var z = 0; z < this.credentials.fav_teams.length; z++) {
-                            if ( airings_data.data.Airings[y].feedSubType == TEAM_IDS[this.credentials.fav_teams[z]] ) {
-                              this.debuglog(game_changer_title + 'found fav team broadcast')
-                              favTeamBroadcast = true
-                              mediaId = airings_data.data.Airings[y].mediaId
-                              break
-                            }
-                          }
-                          if ( favTeamBroadcast ) {
+                  if ( curr_game.leverage_index < 1.0 ) {
+                    curr_game_below_avg = true
+                  }
+                  break
+                }
+              }
+            }
+            if ( curr_game && (best_games.length > 0) && (curr_game.leverage_index == best_games[0].game_pk) ) {
+              this.debuglog(game_changer_title + 'current game still best or tied for best')
+              return
+            }
+            // Only switch games if:
+            //  curr_game is None (either no curr_game or it's in commercial break)
+            //  The change in leverage is > 1.5 and there's a new batter in curr_game
+            //  game has a better leverage than curr_game and curr_game is below average leverage (1.0) and there's a new batter in curr_game
+            for (var i=0; i<best_games.length; i++) {
+              let large_leverage_diff = false
+              if ( curr_game && ((best_games[i].leverage_index - curr_game.leverage_index) > 1.5) ) {
+                large_leverage_diff = true
+              }
+              let game_better = false
+              if ( curr_game && (best_games[i].leverage_index > curr_game.leverage_index) ) {
+                game_better = true
+              }
+              if ( !curr_game || (curr_game.new_batter && (large_leverage_diff || (curr_game_below_avg && game_better))) ) {
+                curr_game = best_games[i]
+                this.log(game_changer_title + 'loading game ' + curr_game.teams)
+                this.temp_cache.gamechanger[id].gamePk = curr_game.game_pk
+                // get stream URL
+                let favTeamBroadcast
+                let mediaId
+                let streamURL
+                let airings_data = await this.getAiringsData('', curr_game.game_pk)
+                if ( airings_data.data && airings_data.data.Airings && (airings_data.data.Airings.length > 0) ) {
+                  for (var y = 0; y < airings_data.data.Airings.length; y++) {
+                    if ( (airings_data.data.Airings[y].mediaConfig.type == 'VIDEO') && (airings_data.data.Airings[y].mediaConfig.productType == 'LIVE') && (airings_data.data.Airings[y].mediaConfig.state == 'ON') ) {
+                      // prefer fav team broadcasts
+                      if ( this.credentials.fav_teams.length > 0 ) {
+                        for (var z = 0; z < this.credentials.fav_teams.length; z++) {
+                          if ( airings_data.data.Airings[y].feedSubType == TEAM_IDS[this.credentials.fav_teams[z]] ) {
+                            this.debuglog(game_changer_title + 'found fav team broadcast')
+                            favTeamBroadcast = true
+                            mediaId = airings_data.data.Airings[y].mediaId
                             break
                           }
                         }
-
-                        // fall back to home or national broadcast
-                        if ( !mediaId || (airings_data.data.Airings[y].feedType == 'Home') || (airings_data.data.Airings[y].feedType == 'National') ) {
-                          this.debuglog(game_changer_title + 'found ' + airings_data.data.Airings[y].feedType + ' broadcast')
-                          mediaId = airings_data.data.Airings[y].mediaId
+                        if ( favTeamBroadcast ) {
+                          break
                         }
                       }
+
+                      // fall back to home or national broadcast
+                      if ( !mediaId || (airings_data.data.Airings[y].feedType == 'Home') || (airings_data.data.Airings[y].feedType == 'National') ) {
+                        this.debuglog(game_changer_title + 'found ' + airings_data.data.Airings[y].feedType + ' broadcast')
+                        mediaId = airings_data.data.Airings[y].mediaId
+                      }
                     }
-                    if ( mediaId ) {
-                      streamURL = await this.getStreamURL(mediaId)
-                    } else {
-                      this.log(game_changer_title + 'failed to find mediaId for ' + curr_game.game_pk)
-                    }
-                    if ( streamURL ) {
-                      // always convert the stream URL to variant form
-                      streamURL = streamURL.slice(0, streamURL.lastIndexOf('/'))
-                      return streamURL
-                    } else {
-                      this.log(game_changer_title + 'failed to find streamURL for ' + mediaId)
-                    }
-                  } else {
-                    this.log(game_changer_title + 'failed to find airings for ' + curr_game.game_pk)
                   }
-                } else if ( large_leverage_diff ) {
-                  this.debuglog(game_changer_title + best_games[i].teams + ' is a better game, but ' + curr_game.teams + ' still has a batter at the plate')
-                } else if ( game_better ) {
-                  this.debuglog(game_changer_title + best_games[i].teams + ' is a better game, but not enough better to switch from ' + curr_game.teams)
+                  if ( mediaId ) {
+                    streamURL = await this.getStreamURL(mediaId)
+                  } else {
+                    this.log(game_changer_title + 'failed to find mediaId for ' + curr_game.game_pk)
+                  }
+                  if ( streamURL ) {
+                    // always convert the stream URL to variant form
+                    streamURL = streamURL.slice(0, streamURL.lastIndexOf('/'))
+                    return streamURL
+                  } else {
+                    this.log(game_changer_title + 'failed to find streamURL for ' + mediaId)
+                  }
+                } else {
+                  this.log(game_changer_title + 'failed to find airings for ' + curr_game.game_pk)
                 }
+              } else if ( large_leverage_diff ) {
+                this.debuglog(game_changer_title + best_games[i].teams + ' is a better game, but ' + curr_game.teams + ' still has a batter at the plate')
+              } else if ( game_better ) {
+                this.debuglog(game_changer_title + best_games[i].teams + ' is a better game, but not enough better to switch from ' + curr_game.teams)
               }
             }
-          } else {
-            this.log(game_changer_title + 'error : no games in date from url ' + reqObj.url)
           }
         } else {
-          this.log(game_changer_title + 'error : invalid json from url ' + reqObj.url)
+          this.log(game_changer_title + 'error : no games in date from url ' + reqObj.url)
         }
+      } else {
+        this.log(game_changer_title + 'error : no data found or cached')
       }
     } catch(e) {
       this.log(game_changer_title + 'getBestGame error : ' + e.message)
