@@ -1,24 +1,88 @@
 # mlbserver
 
-Current version 2022.08.08
+Current version 2022.08.09
 
 Credit to https://github.com/tonycpsu/streamglob and https://github.com/mafintosh/hls-decryptor
 
+## Installation
+
+### node-cli
 ```
 npm install -g mlbserver
 ```
 
-## Usage
+### docker
+```
+docker pull tonywagner/mlbserver
+```
 
-Launch the server
 
+## Launch
+
+### node-cli (follow the prompts on first run, or see below for possible command line options)
 ```
 mlbserver
 ```
+or in application directory:
+```
+node index.js
+```
 
-and follow the prompts. Load the resulting web URL in a browser to start using the server and to see more documentation.
+### docker-compose
+Update the environment variables below and save it as docker-compose.yml:
+```
+version: "3"
+services:
+  mlbserver:
+    image: tonywagner/mlbserver:latest
+    container_name: mlbserver
+    environment:
+      - TZ=America/New York
+      - account_username=your.account.email@example.com
+      - account_password=youraccountpassword
+      - zip_code=0
+      - fav_teams=0
+      #- zip_code=00000
+      #- fav_teams=ARI,ATL
+      #- debug=false
+      #- port=9999
+      #- multiview_port=10000
+      #- multiview_path=
+      #- ffmpeg_path=
+      #- ffmpeg_encoder=
+      #- page_username=
+      #- page_password=
+      #- content_protect=
+      #- gamechanger_delay=0
+    ports:
+      - 9999:9999
+      - 10000:10000
+```
+Then launch it with ```docker-compose up --detach```
 
-Basic command line options:
+### docker-cli
+Update the environment variables in the command below and run it:
+```
+docker run -d \
+  --name=mlbserver \
+  --env TZ="America/New_York" \
+  --env account_username=your.account.email@example.com \
+  --env account_password=youraccountpassword \
+  --env zip_code=0 \
+  --env fav_teams=0 \
+  -p 9999:9999 \
+  -p 10000:10000 \
+  tonywagner/mlbserver
+```
+
+Docker installs may require further configuration to get multiview streaming to work.
+
+
+## Usage
+
+After launching the server or Docker container, you can access it at http://localhost:9999 on the same machine, or substitute your computer's IP address for localhost to access it from a different device. Load that address in a web browser to start using the server and to see more documentation.
+
+Basic command line or Docker environment options:
 
 ```
 --port or -p (primary port to run on; defaults to 9999 if not specified)
@@ -27,9 +91,10 @@ Basic command line options:
 --logout or -l (logs out and clears session)
 --session or -s (clears session)
 --cache or -c (clears cache)
+--env or -e (use environment variables instead of command line arguments; necessary for Docker)
 ```
 
-Advanced command line options:
+Advanced command line or Docker environment options:
 
 ```
 --account_username (email address, default will use stored credentials or prompt user to enter them)

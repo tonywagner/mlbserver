@@ -1471,13 +1471,7 @@ app.get('/', async function(req, res) {
         var abstractGameState = cache_data.dates[0].games[j].status.abstractGameState
         var detailedState = cache_data.dates[0].games[j].status.detailedState
 
-        var scheduledInnings = '9'
-        if ( cache_data.dates[0].games[j].linescore && cache_data.dates[0].games[j].linescore.scheduledInnings ) {
-          scheduledInnings = cache_data.dates[0].games[j].linescore.scheduledInnings
-            if ( (abstractGameState == 'Final') && cache_data.dates[0].games[j].linescore.currentInning && (cache_data.dates[0].games[j].linescore.currentInning < 9) ) {
-              scheduledInnings = cache_data.dates[0].games[j].linescore.currentInning
-            }
-        }
+        var scheduledInnings = await session.get_scheduled_innings(cache_data.dates[0].games[j])
         var relative_inning = (inning_number - (9 - scheduledInnings))
         relative_inning = relative_inning < 0 ? 0 : relative_inning
         //if ( (scores == VALID_SCORES[1]) && (cache_data.dates[0].games[j].gameUtils.isLive || cache_data.dates[0].games[j].gameUtils.isFinal) && !cache_data.dates[0].games[j].gameUtils.isCancelled && !cache_data.dates[0].games[j].gameUtils.isPostponed ) {

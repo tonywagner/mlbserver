@@ -1,0 +1,26 @@
+version: "3"
+services:
+  mlbserver:
+    image: tonywagner/mlbserver:latest
+    container_name: mlbserver
+    environment:
+      - TZ=America/New York
+      - account_username=your.account.email@example.com
+      - account_password=youraccountpassword
+      - zip_code=0
+      - fav_teams=0
+      #- zip_code=00000
+      #- fav_teams=ARI,ATL
+      #- debug=false
+      #- port=9999
+      #- multiview_port=10000
+      #- multiview_path=
+      #- ffmpeg_path=
+      #- ffmpeg_encoder=
+      #- page_username=
+      #- page_password=
+      #- content_protect=
+      #- gamechanger_delay=0
+    ports:
+      - 9999:9999
+      - 10000:10000
