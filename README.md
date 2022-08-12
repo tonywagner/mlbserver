@@ -1,6 +1,6 @@
 # mlbserver
 
-Current version 2022.08.09
+Current version 2022.08.11
 
 Credit to https://github.com/tonycpsu/streamglob and https://github.com/mafintosh/hls-decryptor
 
@@ -38,6 +38,7 @@ services:
     container_name: mlbserver
     environment:
       - TZ=America/New York
+      - data_directory=/mlbserver/data_directory
       - account_username=your.account.email@example.com
       - account_password=youraccountpassword
       - zip_code=0
@@ -57,6 +58,8 @@ services:
     ports:
       - 9999:9999
       - 10000:10000
+    volumes:
+      - /mlbserver/data_directory
 ```
 Then launch it with ```docker-compose up --detach```
 
@@ -64,16 +67,19 @@ Then launch it with ```docker-compose up --detach```
 Update the environment variables in the command below and run it:
 ```
 docker run -d \
-  --name=mlbserver \
+  --name mlbserver \
   --env TZ="America/New_York" \
+  --env data_directory=/mlbserver/data_directory \
   --env account_username=your.account.email@example.com \
   --env account_password=youraccountpassword \
   --env zip_code=0 \
   --env fav_teams=0 \
   -p 9999:9999 \
   -p 10000:10000 \
+  --volume /mlbserver/data_directory \
   tonywagner/mlbserver
 ```
+Subsequent runs can be launched with ```docker start mlbserver```
 
 Docker installs may require further configuration to get multiview streaming to work.
 

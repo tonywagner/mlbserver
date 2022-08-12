@@ -9,16 +9,7 @@ const readlineSync = require('readline-sync')
 const FileCookieStore = require('tough-cookie-filestore')
 const parseString = require('xml2js').parseString
 
-// Define some file paths and names
-const DATA_DIRECTORY = path.join(__dirname, 'data')
-const CACHE_DIRECTORY = path.join(__dirname, 'cache')
 const MULTIVIEW_DIRECTORY_NAME = 'multiview'
-
-const CREDENTIALS_FILE = path.join(__dirname, 'credentials.json')
-const PROTECTION_FILE = path.join(__dirname, 'protection.json')
-const COOKIE_FILE = path.join(DATA_DIRECTORY, 'cookies.json')
-const DATA_FILE = path.join(DATA_DIRECTORY, 'data.json')
-const CACHE_FILE = path.join(CACHE_DIRECTORY, 'cache.json')
 
 // Default user agent to use for API requests
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:87.0) Gecko/20100101 Firefox/87.0'
@@ -824,8 +815,23 @@ class sessionClass {
   constructor(argv = {}) {
     this.debug = argv.debug
 
+    let dirname = __dirname
+    if ( argv.data_directory ) {
+      dirname = argv.data_directory
+    }
+
+    // Define some file paths and names
+    this.DATA_DIRECTORY = path.join(dirname, 'data')
+    this.CACHE_DIRECTORY = path.join(dirname, 'cache')
+
+    this.CREDENTIALS_FILE = path.join(dirname, 'credentials.json')
+    this.PROTECTION_FILE = path.join(dirname, 'protection.json')
+    this.COOKIE_FILE = path.join(this.DATA_DIRECTORY, 'cookies.json')
+    this.DATA_FILE = path.join(this.DATA_DIRECTORY, 'data.json')
+    this.CACHE_FILE = path.join(this.CACHE_DIRECTORY, 'cache.json')
+
     // Read credentials from file, if present
-    this.credentials = this.readFileToJson(CREDENTIALS_FILE) || {}
+    this.credentials = this.readFileToJson(this.CREDENTIALS_FILE) || {}
 
     // Check if account credentials were provided and if they are different from the stored credentials
     if ( argv.account_username && argv.account_password && ((argv.account_username != this.credentials.account_username) || (argv.account_password != this.credentials.account_password)) ) {
@@ -850,7 +856,7 @@ class sessionClass {
     this.protection = {}
     if ( argv.page_username && argv.page_password ) {
       // Read protection data from file, if present
-      this.protection = this.readFileToJson(PROTECTION_FILE) || {}
+      this.protection = this.readFileToJson(this.PROTECTION_FILE) || {}
 
       // Check if content_protect key was provided and if it is different from the stored one
       if ( argv.content_protect && (argv.content_protect != this.protection.content_protect) ) {
@@ -869,39 +875,41 @@ class sessionClass {
     }
 
     // Create storage directory if it doesn't already exist
-    this.createDirectory(DATA_DIRECTORY)
+    this.createDirectory(this.DATA_DIRECTORY)
 
     // Set multiview path
     if ( argv.multiview_path ) {
-      this.multiview_path = path.join(argv.multiview_path, path.basename(__dirname))
+      this.multiview_path = path.join(argv.multiview_path, path.basename(dirname))
       this.createDirectory(this.multiview_path)
       this.multiview_path = path.join(this.multiview_path, MULTIVIEW_DIRECTORY_NAME)
     } else {
-      this.multiview_path = path.join(__dirname, MULTIVIEW_DIRECTORY_NAME)
+      this.multiview_path = path.join(dirname, MULTIVIEW_DIRECTORY_NAME)
     }
     this.createDirectory(this.multiview_path)
 
     // Create cookie storage file if it doesn't already exist
-    this.createFile(COOKIE_FILE)
+    this.createFile(this.COOKIE_FILE)
     // Verify its contents are valid
-    let cookieStr = fs.readFileSync(COOKIE_FILE)
+    let cookieStr = fs.readFileSync(this.COOKIE_FILE)
     if ( (cookieStr != '') && !this.isValidJson(cookieStr) ) {
       this.log('invalid cookie storage file contents, resetting')
-      fs.unlinkSync(COOKIE_FILE)
-      this.createFile(COOKIE_FILE)
+      fs.unlinkSync(this.COOKIE_FILE)
+      this.createFile(this.COOKIE_FILE)
     }
 
     // Set up http requests with the cookie jar
     this.request = require('request-promise')
-    this.jar = this.request.jar(new FileCookieStore(COOKIE_FILE))
+    this.jar = this.request.jar(new FileCookieStore(this.COOKIE_FILE))
     this.request = this.request.defaults({timeout:15000, agent:false, jar: this.request.jar()})
 
     // Load session data and cache from files
-    this.data = this.readFileToJson(DATA_FILE) || {}
-    this.cache = this.readFileToJson(CACHE_FILE) || {}
+    this.data = this.readFileToJson(this.DATA_FILE) || {}
+    this.cache = this.readFileToJson(this.CACHE_FILE) || {}
 
-    // Define empty temporary cache (for skip and gamechanger data)
+    // Define empty temporary cache (for skip, gamechanger, and key data)
     this.temp_cache = {}
+    // Store previous keys, for return without retrieval
+    this.temp_cache.prevKeys = {}
 
     // Default scan_mode and linkType values
     if ( !this.data.scan_mode ) {
@@ -1222,7 +1230,7 @@ class sessionClass {
 
   logout() {
     try {
-      fs.unlinkSync(CREDENTIALS_FILE)
+      fs.unlinkSync(this.CREDENTIALS_FILE)
     } catch(e){
       this.debuglog('credentials cannot be cleared or do not exist yet : ' + e.message)
     }
@@ -1230,8 +1238,8 @@ class sessionClass {
 
   clear_session_data() {
     try {
-      fs.unlinkSync(COOKIE_FILE)
-      fs.unlinkSync(DATA_FILE)
+      fs.unlinkSync(this.COOKIE_FILE)
+      fs.unlinkSync(this.DATA_FILE)
     } catch(e){
       this.debuglog('session cannot be cleared or does not exist yet : ' + e.message)
     }
@@ -1239,7 +1247,7 @@ class sessionClass {
 
   clear_cache() {
     try {
-      fs.unlinkSync(CACHE_FILE)
+      fs.unlinkSync(this.CACHE_FILE)
     } catch(e){
       this.debuglog('cache cannot be cleared or does not exist yet : ' + e.message)
     }
@@ -1268,30 +1276,30 @@ class sessionClass {
   }
 
   save_credentials() {
-    this.writeJsonToFile(JSON.stringify(this.credentials), CREDENTIALS_FILE)
+    this.writeJsonToFile(JSON.stringify(this.credentials), this.CREDENTIALS_FILE)
     this.debuglog('credentials saved to file')
   }
 
   save_protection() {
-    this.writeJsonToFile(JSON.stringify(this.protection), PROTECTION_FILE)
+    this.writeJsonToFile(JSON.stringify(this.protection), this.PROTECTION_FILE)
     this.debuglog('protection data saved to file')
   }
 
   save_session_data() {
-    this.createDirectory(DATA_DIRECTORY)
-    this.writeJsonToFile(JSON.stringify(this.data), DATA_FILE)
+    this.createDirectory(this.DATA_DIRECTORY)
+    this.writeJsonToFile(JSON.stringify(this.data), this.DATA_FILE)
     this.debuglog('session data saved to file')
   }
 
   save_cache_data() {
-    this.createDirectory(CACHE_DIRECTORY)
-    this.writeJsonToFile(JSON.stringify(this.cache), CACHE_FILE)
+    this.createDirectory(this.CACHE_DIRECTORY)
+    this.writeJsonToFile(JSON.stringify(this.cache), this.CACHE_FILE)
     this.debuglog('cache data saved to file')
   }
 
   save_json_cache_file(cache_name, cache_data) {
-    this.createDirectory(CACHE_DIRECTORY)
-    this.writeJsonToFile(JSON.stringify(cache_data), path.join(CACHE_DIRECTORY, cache_name+'.json'))
+    this.createDirectory(this.CACHE_DIRECTORY)
+    this.writeJsonToFile(JSON.stringify(cache_data), path.join(this.CACHE_DIRECTORY, cache_name+'.json'))
     this.debuglog('cache file saved')
   }
 
@@ -1865,7 +1873,7 @@ class sessionClass {
 
         let cache_data
         let cache_name = gameDate
-        let cache_file = path.join(CACHE_DIRECTORY, gameDate+'.json')
+        let cache_file = path.join(this.CACHE_DIRECTORY, gameDate+'.json')
         let currentDate = new Date()
         cache_data = await this.getDayData(gameDate)
 
@@ -1985,7 +1993,7 @@ class sessionClass {
 
       let cache_data
       let cache_name = 'h' + gamePk
-      let cache_file = path.join(CACHE_DIRECTORY, cache_name+'.json')
+      let cache_file = path.join(this.CACHE_DIRECTORY, cache_name+'.json')
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.highlights || !this.cache.highlights[cache_name] || !this.cache.highlights[cache_name].highlightsCacheExpiry || (currentDate > new Date(this.cache.highlights[cache_name].highlightsCacheExpiry)) ) {
         let reqObj = {
@@ -2081,7 +2089,7 @@ class sessionClass {
       } else {
         this.debuglog('getDayData for date ' + dateString)
       }
-      let cache_file = path.join(CACHE_DIRECTORY, cache_name+'.json')
+      let cache_file = path.join(this.CACHE_DIRECTORY, cache_name+'.json')
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.dates || !this.cache.dates[cache_name] || !this.cache.dates[cache_name].dateCacheExpiry || (currentDate > new Date(this.cache.dates[cache_name].dateCacheExpiry)) ) {
         let reqObj = {
@@ -2164,7 +2172,7 @@ class sessionClass {
 
       let cache_data
       let cache_name = 'week'
-      let cache_file = path.join(CACHE_DIRECTORY, cache_name + '.json')
+      let cache_file = path.join(this.CACHE_DIRECTORY, cache_name + '.json')
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.weekCacheExpiry || (currentDate > new Date(this.cache.weekCacheExpiry)) ) {
         let startDate = this.liveDate(utcHours)
@@ -2597,7 +2605,7 @@ class sessionClass {
   // Get image from cache or request
   async getImage(teamId) {
     this.debuglog('getImage ' + teamId)
-    let imagePath = path.join(CACHE_DIRECTORY, teamId + '.svg')
+    let imagePath = path.join(this.CACHE_DIRECTORY, teamId + '.svg')
     if ( fs.existsSync(imagePath) ) {
       this.debuglog('using cached image for ' + teamId)
       return fs.readFileSync(imagePath)
@@ -2641,7 +2649,7 @@ class sessionClass {
       } else {
         this.debuglog('getAiringsData for content ' + contentId)
       }
-      let cache_file = path.join(CACHE_DIRECTORY, cache_name+'.json')
+      let cache_file = path.join(this.CACHE_DIRECTORY, cache_name+'.json')
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.airings || !this.cache.airings[cache_name] || !this.cache.airings[cache_name].airingsCacheExpiry || (currentDate > new Date(this.cache.airings[cache_name].airingsCacheExpiry)) ) {
         let reqObj = {
@@ -2710,7 +2718,7 @@ class sessionClass {
 
       let cache_data
       let cache_name = 'g' + gamePk
-      let cache_file = path.join(CACHE_DIRECTORY, cache_name+'.json')
+      let cache_file = path.join(this.CACHE_DIRECTORY, cache_name+'.json')
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.gameday || !this.cache.gameday[cache_name] || !this.cache.gameday[cache_name].gamedayCacheExpiry || (currentDate > new Date(this.cache.gameday[cache_name].gamedayCacheExpiry)) ) {
         let reqObj = {
@@ -2910,6 +2918,19 @@ class sessionClass {
                     continue
                   } else {
                     let break_end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[action_index].startTime) - broadcast_start_timestamp) / 1000) + EVENT_START_PADDING
+
+                    // attempt to fix erroneous timestamps, like NYY-SEA 2022-08-09, bottom 11
+                    if ( break_end < break_start ) {
+                      this.debuglog('getSkipMarkers adjusting break start')
+                      break_start = break_end - 10
+
+                      let prev_break = skip_markers.length-1
+                      if ( (prev_break > 0) && (break_start < skip_markers[prev_break].break_end) && (skip_markers[prev_break].break_start < (skip_markers[prev_break].break_end - 40)) ) {
+                        this.debuglog('getSkipMarkers adjusting previous break end')
+                        skip_markers[prev_break].break_end = skip_markers[prev_break].break_start + 30
+                      }
+                    }
+
                     // if the break duration should be greater than than our specified minimum
                     // and if skip type is not 1 (inning breaks) or the inning has changed
                     // then we'll add the skip marker
@@ -3089,7 +3110,7 @@ class sessionClass {
 
       let cache_data
       let cache_name = 'events'
-      let cache_file = path.join(CACHE_DIRECTORY, cache_name + '.json')
+      let cache_file = path.join(this.CACHE_DIRECTORY, cache_name + '.json')
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.eventURLCacheExpiry || (currentDate > new Date(this.cache.eventURLCacheExpiry)) ) {
         let reqObj = {
@@ -3380,7 +3401,7 @@ class sessionClass {
     try {
       let cache_data
       let cache_name = 'gamechanger'
-      let cache_file = path.join(CACHE_DIRECTORY, cache_name + '.json')
+      let cache_file = path.join(this.CACHE_DIRECTORY, cache_name + '.json')
       let currentDate = new Date()
       if ( !this.temp_cache.gamechanger.cache_data || !this.temp_cache.gamechangerCacheExpiry || (currentDate > new Date(this.temp_cache.gamechangerCacheExpiry)) ) {
         this.debuglog(game_changer_title + 'fetching new gamechanger data')

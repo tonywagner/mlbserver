@@ -5,6 +5,7 @@ services:
     container_name: mlbserver
     environment:
       - TZ=America/New York
+      - data_directory=/mlbserver/data_directory
       - account_username=your.account.email@example.com
       - account_password=youraccountpassword
       - zip_code=0
@@ -24,3 +25,5 @@ services:
     ports:
       - 9999:9999
       - 10000:10000
+    volumes:
+      - /mlbserver/data_directory

@@ -104,9 +104,10 @@ const GAMECHANGER_RESPONSE_HEADERS = {"statusCode":200,"headers":{"content-type"
 // --account_password (default will use stored credentials or prompt user to enter them)
 // --zip_code (optional, for USA blackout labels, will prompt if not set or stored)
 // --fav_teams (optional, comma-separated list of favorite team abbreviations, will prompt if not set or stored)
+// --data_directory (defaults to app directory, must already exist if set to something else; should match storage volume for Docker)
 // --free (optional, free account, highlights free games)
 // --multiview_port (port for multiview streaming; defaults to 1 more than primary port, or 10000)
-// --multiview_path (where to create the folder for multiview encoded files; defaults to app directory)
+// --multiview_path (where to create the folder for multiview encoded files; defaults to data directory)
 // --ffmpeg_path (path to ffmpeg binary to use for multiview encoding; default downloads a binary using ffmpeg-static)
 // --ffmpeg_encoder (ffmpeg video encoder to use for multiview; default is the software encoder libx264)
 // --ffmpeg_logging (if present, logs all ffmpeg output -- useful for experimenting or troubleshooting)
@@ -125,7 +126,7 @@ var argv = minimist(process.argv, {
     e: 'env'
   },
   boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version', 'free', 'env'],
-  string: ['port', 'account_username', 'account_password', 'multiview_port', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'gamechanger_delay']
+  string: ['port', 'account_username', 'account_password', 'multiview_port', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'gamechanger_delay', 'data_directory']
 })
 
 if (argv.env) argv = process.env
@@ -359,19 +360,15 @@ app.get('/stream.m3u8', async function(req, res) {
   }
 })
 
-// Store previous keys, for return without decoding
-var prevKeys = {}
 var getKey = function(url, headers, cb) {
-  if ( (typeof prevKeys[url] !== 'undefined') && (typeof prevKeys[url].key !== 'undefined') ) {
-    return cb(null, prevKeys[url].key)
+  if ( session.temp_cache.prevKeys[url] ) {
+    return cb(null, session.temp_cache.prevKeys[url])
   }
-
-  if ( typeof prevKeys[url] === 'undefined' ) prevKeys[url] = {}
 
   session.debuglog('key request : ' + url)
   requestRetry(url, headers, function(err, response) {
     if (err) return cb(err)
-    prevKeys[url].key = response.body
+    session.temp_cache.prevKeys[url] = response.body
     cb(null, response.body)
   })
 }
@@ -582,7 +579,13 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
               // if user specified "none" for video track
               if ( resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1] ) {
                 audio_track_matched = true
-                audio_output = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="' + key + '",AUTOSELECT=YES,DEFAULT=YES' + "\n" + '#EXT-X-STREAM-INF:BANDWIDTH=50000,CODECS="mp4a.40.2",AUDIO="aac"' + "\n" + newurl
+                audio_output = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="' + key + '",LANGUAGE="'
+                if ( key == ALTERNATE_AUDIO_TRACKS[1] ) {
+                  audio_output += 'es'
+                } else {
+                  audio_output += 'en'
+                }
+                audio_output += '",AUTOSELECT=YES,DEFAULT=YES' + "\n" + '#EXT-X-STREAM-INF:BANDWIDTH=50000,CODECS="mp4a.40.2",AUDIO="aac"' + "\n" + newurl
               } else {
                 if (audio_output != '') audio_output += "\n"
                 audio_output += '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="' + key + '",AUTOSELECT=YES,DEFAULT='

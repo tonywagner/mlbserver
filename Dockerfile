@@ -5,6 +5,9 @@ RUN apk update && apk add tzdata
 # Create app directory
 WORKDIR /mlbserver
 
+# Add data directory
+VOLUME /mlbserver/data_directory 
+
 # Install app dependencies
 # A wildcard is used to ensure both package.json AND package-lock.json are copied
 # where available (npm@5+)
