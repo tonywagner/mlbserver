@@ -1320,7 +1320,7 @@ class sessionClass {
   }
 
   // Generic http GET request function
-  httpGet(reqObj) {
+  httpGet(reqObj, exit=true) {
     reqObj.jar = this.jar
     return new Promise((resolve, reject) => {
       this.request.get(reqObj)
@@ -1330,7 +1330,11 @@ class sessionClass {
       .catch(function(e) {
         console.log('http get failed : ' + e.message)
         console.log(reqObj)
-        process.exit(1)
+        if ( exit ) {
+          process.exit(1)
+        } else {
+          resolve(false)
+        }
       })
     })
   }
@@ -1556,7 +1560,7 @@ class sessionClass {
         gzip: true
       }
       var response = await this.httpGet(reqObj)
-      if ( this.isValidJson(response) ) {
+      if ( response && this.isValidJson(response) ) {
         this.debuglog('getStreamURL response : ' + response)
         let obj = JSON.parse(response)
         if ( obj.errors && (obj.errors[0] == 'blackout') ) {
@@ -1663,7 +1667,7 @@ class sessionClass {
       gzip: true
     }
     var response = await this.httpGet(reqObj)
-    if ( this.isValidJson(response) ) {
+    if ( response && this.isValidJson(response) ) {
       this.debuglog('getDeviceId response : ' + response)
       let obj = JSON.parse(response)
       this.debuglog('getDeviceId : ' + obj.device.id)
@@ -2006,8 +2010,8 @@ class sessionClass {
           },
           gzip: true
         }
-        var response = await this.httpGet(reqObj)
-        if ( this.isValidJson(response) ) {
+        var response = await this.httpGet(reqObj, false)
+        if ( response && this.isValidJson(response) ) {
           //this.debuglog(response)
           cache_data = JSON.parse(response)
           this.save_json_cache_file(cache_name, cache_data)
@@ -2102,8 +2106,8 @@ class sessionClass {
           },
           gzip: true
         }
-        var response = await this.httpGet(reqObj)
-        if ( this.isValidJson(response) ) {
+        var response = await this.httpGet(reqObj, false)
+        if ( response && this.isValidJson(response) ) {
           //this.debuglog(response)
           cache_data = JSON.parse(response)
           this.save_json_cache_file(cache_name, cache_data)
@@ -2189,8 +2193,8 @@ class sessionClass {
           },
           gzip: true
         }
-        var response = await this.httpGet(reqObj)
-        if ( this.isValidJson(response) ) {
+        var response = await this.httpGet(reqObj, false)
+        if ( response && this.isValidJson(response) ) {
           //this.debuglog(response)
           cache_data = JSON.parse(response)
           this.save_json_cache_file(cache_name, cache_data)
@@ -2622,7 +2626,7 @@ class sessionClass {
           'origin': 'https://www.mlb.com'
         }
       }
-      var response = await this.httpGet(reqObj)
+      var response = await this.httpGet(reqObj, false)
       if ( response ) {
         this.debuglog('getImage response : ' + response)
         fs.writeFileSync(imagePath, response)
@@ -2667,7 +2671,7 @@ class sessionClass {
           gzip: true
         }
         var response = await this.httpGet(reqObj)
-        if ( this.isValidJson(response) ) {
+        if ( response && this.isValidJson(response) ) {
           this.debuglog(response)
           cache_data = JSON.parse(response)
           this.save_json_cache_file(cache_name, cache_data)
@@ -2731,8 +2735,8 @@ class sessionClass {
           },
           gzip: true
         }
-        var response = await this.httpGet(reqObj)
-        if ( this.isValidJson(response) ) {
+        var response = await this.httpGet(reqObj, false)
+        if ( response && this.isValidJson(response) ) {
           this.debuglog(response)
           cache_data = JSON.parse(response)
           this.save_json_cache_file(cache_name, cache_data)
@@ -2998,7 +3002,7 @@ class sessionClass {
           },
           gzip: true
         }
-        var response = await this.httpGet(reqObj)
+        var response = await this.httpGet(reqObj, false)
         if ( response ) {
           // disabled because it's very big!
           //this.debuglog(response)
@@ -3114,7 +3118,8 @@ class sessionClass {
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.eventURLCacheExpiry || (currentDate > new Date(this.cache.eventURLCacheExpiry)) ) {
         let reqObj = {
-          url: 'https://dapi.cms.mlbinfra.com/v2/content/en-us/sel-mlbtv-featured-svod-video-list',
+          //url: 'https://dapi.cms.mlbinfra.com/v2/content/en-us/sel-mlbtv-featured-svod-video-list',
+          url: 'https://dapi.mlbinfra.com/v2/content/en-us/vsmcontents/mlb-tv-welcome-center-big-inning-show',
           headers: {
             'User-Agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
@@ -3124,8 +3129,8 @@ class sessionClass {
           },
           gzip: true
         }
-        var response = await this.httpGet(reqObj)
-        if ( this.isValidJson(response) ) {
+        var response = await this.httpGet(reqObj, false)
+        if ( response && this.isValidJson(response) ) {
           this.debuglog(response)
           cache_data = JSON.parse(response)
           this.save_json_cache_file(cache_name, cache_data)
@@ -3161,19 +3166,26 @@ class sessionClass {
 
       let cache_data = await this.getEventData()
 
+      let eventList
       if ( cache_data && cache_data.items ) {
-        for (var i=0; i<cache_data.items.length; i++) {
-          if ( cache_data.items[i].fields && cache_data.items[i].fields.blurb && cache_data.items[i].fields.url ) {
-            if ( !cache_data.items[i].fields.blurb.startsWith('LIVE') ) {
+        eventList = cache_data.items
+      } else if ( cache_data && cache_data.references && cache_data.references.video ) {
+        eventList = cache_data.references.video
+      }
+
+      if ( eventList ) {
+        for (var i=0; i<eventList.length; i++) {
+          if ( eventList[i].fields && eventList[i].fields.blurb && eventList[i].fields.url ) {
+            if ( !eventList[i].fields.blurb.startsWith('LIVE') ) {
               break
             } else {
-              if ( cache_data.items[i].title ) {
-                if ( (eventName == 'BIGINNING') && cache_data.items[i].title.startsWith('LIVE') && cache_data.items[i].title.includes('Big Inning') ) {
+              if ( eventList[i].title ) {
+                if ( (eventName == 'BIGINNING') && eventList[i].title.startsWith('LIVE') && eventList[i].title.includes('Big Inning') ) {
                   this.debuglog('active big inning url')
-                  return cache_data.items[i].fields.url
-                } else if ( cache_data.items[i].title.toUpperCase().endsWith(' VS. ' + eventName) ) {
+                  return eventList[i].fields.url
+                } else if ( eventList[i].title.toUpperCase().endsWith(' VS. ' + eventName) ) {
                   this.debuglog('active ' + eventName + ' url')
-                  return cache_data.items[i].fields.url
+                  return eventList[i].fields.url
                 }
               }
             }
@@ -3211,7 +3223,7 @@ class sessionClass {
           gzip: true
         }
         var response = await this.httpGet(reqObj)
-        if ( this.isValidJson(response) ) {
+        if ( response && this.isValidJson(response) ) {
           this.debuglog('getEventStreamURL response : ' + response)
           let obj = JSON.parse(response)
           if ( obj.success && (obj.success == true) ) {
@@ -3248,8 +3260,8 @@ class sessionClass {
             'Referer': 'https://www.mlb.com/'
           }
         }
-        var response = await this.httpGet(reqObj)
-        if ( this.isValidJson(response) ) {
+        var response = await this.httpGet(reqObj, false)
+        if ( response && this.isValidJson(response) ) {
           this.debuglog('getBlackoutTeams response : ' + response)
           let obj = JSON.parse(response)
           if ( obj.teams ) {
@@ -3419,8 +3431,8 @@ class sessionClass {
           },
           gzip: true
         }
-        var response = await this.httpGet(reqObj)
-        if ( this.isValidJson(response) ) {
+        var response = await this.httpGet(reqObj, false)
+        if ( response && this.isValidJson(response) ) {
           this.debuglog(game_changer_title + 'valid json response')
           this.debuglog(response)
           this.temp_cache.gamechanger.cache_data = JSON.parse(response)

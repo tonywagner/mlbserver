@@ -368,8 +368,10 @@ var getKey = function(url, headers, cb) {
   session.debuglog('key request : ' + url)
   requestRetry(url, headers, function(err, response) {
     if (err) return cb(err)
-    session.temp_cache.prevKeys[url] = response.body
-    cb(null, response.body)
+    let key = response.body
+    session.debuglog('key returned ' + key)
+    session.temp_cache.prevKeys[url] = key
+    cb(null, key)
   })
 }
 
@@ -771,13 +773,16 @@ app.get('/playlist', async function(req, res) {
           session.debuglog('key line : ' + line)
           var parsed = line.match(/URI="([^"]+)"(?:,IV=(.+))?$/)
           if ( parsed ) {
-            if ( parsed[1].substr(0,4) == 'http' ) key = parsed[1]
-            else key = url.resolve(u, parsed[1])
-            session.debuglog('found key : ' + key)
-            if ( key.startsWith('data:;base64,') ) {
+            if ( parsed[1].startsWith('http') ) {
+              key = parsed[1]
+              session.debuglog('key url : ' + key)
+            } else if ( key.startsWith('data:;base64,') ) {
               let newparsed = key.split(',')
               key = newparsed[1]
-              session.debuglog('found new key : ' + key)
+              session.debuglog('found key data : ' + key)
+            } else {
+              key = url.resolve(u, parsed[1])
+              session.debuglog('resolved key url : ' + key)
             }
             if (parsed[2]) iv = parsed[2].slice(2).toLowerCase()
           }
@@ -786,8 +791,10 @@ app.get('/playlist', async function(req, res) {
 
         if (line[0] === '#') return line
 
-        if ( key ) return '/ts?url='+encodeURIComponent(url.resolve(u, line.trim()))+'&key='+encodeURIComponent(key)+'&iv='+encodeURIComponent(iv) + content_protect + referer_parameter
-        else return '/ts?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter
+        let newline = '/ts?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter
+        if ( key ) newline += '&key='+encodeURIComponent(key) + '&iv='+encodeURIComponent(iv)
+
+        return newline
       })
       .filter(function(line) {
         return line
@@ -852,19 +859,8 @@ app.get('/ts', async function(req, res) {
     if (!req.query.key) return respond(response, res, response.body)
 
     try {
-      //var ku = url.resolve(manifest, req.query.key)
       var ku = req.query.key
-      if ( ku.substr(0,4) != 'http' ) {
-        var iv = Buffer.from(req.query.iv, 'hex')
-        session.debuglog('iv : 0x'+req.query.iv)
-
-        let key = Buffer.from(ku, "base64")
-
-        var dc = crypto.createDecipheriv('aes-128-cbc', key, iv)
-        var buffer = Buffer.concat([dc.update(response.body), dc.final()])
-
-        respond(response, res, buffer)
-      } else {
+      if ( ku.startsWith('http') ) {
         getKey(ku, headers, function(err, key) {
           if (err) return res.error(err)
 
@@ -876,6 +872,16 @@ app.get('/ts', async function(req, res) {
 
           respond(response, res, buffer)
         })
+      } else {
+        var iv = Buffer.from(req.query.iv, 'hex')
+        session.debuglog('iv : 0x'+req.query.iv)
+
+        let key = Buffer.from(ku, "base64")
+
+        var dc = crypto.createDecipheriv('aes-128-cbc', key, iv)
+        var buffer = Buffer.concat([dc.update(response.body), dc.final()])
+
+        respond(response, res, buffer)
       }
     } catch (e) {
       session.log('key decode error : ' + e.message)
@@ -1270,7 +1276,7 @@ app.get('/', async function(req, res) {
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
 
     // Multiview functions
-    body += 'function parsemultiviewresponse(responsetext){if (responsetext == "started"){setTimeout(function(){document.getElementById("startmultiview").innerHTML="Restart";document.getElementById("stopmultiview").innerHTML="Stop"},15000)}else if (responsetext == "stopped"){setTimeout(function(){document.getElementById("stopmultiview").innerHTML="Stopped";document.getElementById("startmultiview").innerHTML="Start"},3000)}else{alert(responsetext)}}function addmultiview(e){for(var i=1;i<=4;i++){var valuefound = false;var oldvalue="";var newvalue=e.value;if(!e.checked){oldvalue=e.value;newvalue=""}if (document.getElementById("multiview" + i).value == oldvalue){document.getElementById("multiview" + i).value=newvalue;valuefound=true;break}}if(e.checked && !valuefound){e.checked=false}}function startmultiview(e){var count=0;var getstr="";for(var i=1;i<=4;i++){if (document.getElementById("multiview"+i).value != ""){count++;getstr+="streams="+encodeURIComponent(document.getElementById("multiview"+i).value)+"&sync="+encodeURIComponent(document.getElementById("sync"+i).value)+"&"}}if((count >= 1) && (count <= 4)){if (document.getElementById("faster").checked){getstr+="faster=true&dvr=true&"}else if (document.getElementById("dvr").checked){getstr+="dvr=true&"}if (document.getElementById("reencode").checked){getstr+="reencode=true&"}if (document.getElementById("audio_url").value != ""){getstr+="audio_url="+encodeURIComponent(document.getElementById("audio_url").value)+"&";if (document.getElementById("audio_url_seek").value != "0"){getstr+="audio_url_seek="+encodeURIComponent(document.getElementById("audio_url_seek").value)}}e.innerHTML="starting...";makeGETRequest("/multiview?"+getstr, parsemultiviewresponse)}else{alert("Multiview requires between 1-4 streams to be selected")}return false}function stopmultiview(e){e.innerHTML="stopping...";makeGETRequest("/multiview", parsemultiviewresponse);return false}' + "\n"
+    body += 'var excludeTeams=[];function parsemultiviewresponse(responsetext){if (responsetext == "started"){setTimeout(function(){document.getElementById("startmultiview").innerHTML="Restart";document.getElementById("stopmultiview").innerHTML="Stop"},15000)}else if (responsetext == "stopped"){setTimeout(function(){document.getElementById("stopmultiview").innerHTML="Stopped";document.getElementById("startmultiview").innerHTML="Start"},3000)}else{alert(responsetext)}}function addmultiview(e, teams=[], excludes=[]){var newvalue=e.value;for(var i=1;i<=4;i++){var valuefound = false;var oldvalue="";if(!e.checked){oldvalue=e.value;newvalue=""}if ((document.getElementById("multiview" + i).value == oldvalue) || ((oldvalue != "") && (document.getElementById("multiview" + i).value.startsWith(oldvalue)))){if ((newvalue != "") && (excludes.length > 0)){newvalue+="&excludeTeams="+excludeTeams.toString()}document.getElementById("multiview" + i).value=newvalue;valuefound=true;break}}if(e.checked && !valuefound){e.checked=false}for(var i=0;i<teams.length;i++){if(e.checked){excludeTeams.push(teams[i])}else{var index=excludeTeams.indexOf(teams[i]);if (index !== -1){excludeTeams.splice(index,1)}}}}function startmultiview(e){var count=0;var getstr="";for(var i=1;i<=4;i++){if (document.getElementById("multiview"+i).value != ""){count++;getstr+="streams="+encodeURIComponent(document.getElementById("multiview"+i).value)+"&sync="+encodeURIComponent(document.getElementById("sync"+i).value)+"&"}}if((count >= 1) && (count <= 4)){if (document.getElementById("faster").checked){getstr+="faster=true&dvr=true&"}else if (document.getElementById("dvr").checked){getstr+="dvr=true&"}if (document.getElementById("reencode").checked){getstr+="reencode=true&"}if (document.getElementById("audio_url").value != ""){getstr+="audio_url="+encodeURIComponent(document.getElementById("audio_url").value)+"&";if (document.getElementById("audio_url_seek").value != "0"){getstr+="audio_url_seek="+encodeURIComponent(document.getElementById("audio_url_seek").value)}}e.innerHTML="starting...";makeGETRequest("/multiview?"+getstr, parsemultiviewresponse)}else{alert("Multiview requires between 1-4 streams to be selected")}return false}function stopmultiview(e){e.innerHTML="stopping...";makeGETRequest("/multiview", parsemultiviewresponse);return false}' + "\n"
 
     // Function to switch URLs to stream URLs, where necessary
     body += 'function stream_substitution(url){return url.replace(/\\/([a-zA-Z]+\.html)/,"/stream.m3u8")}' + "\n"
@@ -1432,15 +1438,14 @@ app.get('/', async function(req, res) {
           body += '<tr><td><span class="tooltip">' + compareStart.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + compareEnd.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to best resolution if not specified.</span></span></td><td>'
           if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
             let streamURL = server + '/gamechanger.m3u8'
-            let multiviewquerystring = streamURL + '?resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
-            multiviewquerystring += content_protect_b
-            if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += '?resolution=' + resolution
-            streamURL += content_protect_b
+            streamURL += content_protect_a
+            let multiviewquerystring = streamURL + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+            if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += '&resolution=' + resolution
             if ( linkType != VALID_LINK_TYPES[1] ) {
               streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b
             }
             body += '<a href="' + streamURL + '">Game Changer</a>'
-            body += '<input type="checkbox" value="' + multiviewquerystring + '" onclick="addmultiview(this)">'
+            body += '<input type="checkbox" value="' + multiviewquerystring + '" onclick="addmultiview(this, [], excludeTeams)">'
           } else {
             body += 'Game Changer'
           }
@@ -1736,7 +1741,7 @@ app.get('/', async function(req, res) {
                           body += stationlink
                         }
                         if ( mediaType == 'MLBTV' ) {
-                          body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+                          body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this, [\'' + awayteam + '\', \'' + hometeam + '\'])">'
                         }
                         if ( resumeStatus ) {
                           body += '('
