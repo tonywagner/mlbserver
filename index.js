@@ -1770,7 +1770,6 @@ app.get('/', async function(req, res) {
                           }
                           body += ')'
                         }
-                        body += ', '
                       }
                     } else {
                       if ( blackouts[gamePk] ) {
@@ -1778,11 +1777,11 @@ app.get('/', async function(req, res) {
                       } else {
                         body += station
                       }
-                      body += ', '
                     }
+                    body += ', '
                     // add YouTube link where available
                     if ( (mediaType == 'MLBTV') && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId ) {
-                      body += '<a' + fav_style + ' href="https://www.youtube.com/watch?v=' + cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId + '" target="_blank">' + station + '</a>'
+                      body += '<a' + fav_style + ' href="https://www.youtube.com/watch?v=' + cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId + '" target="_blank">' + station + '&UpperRightArrow;</a>'
                     }
                   }
                 }

@@ -1951,7 +1951,7 @@ class sessionClass {
                         // process requested team games
                         } else if ( (team.toUpperCase() == home_team) || (team.toUpperCase() == away_team) ) {
 
-                          if ( ((team.toUpperCase() == home_team) && (teamType == 'HOME')) || (broadcast_count == 1) ) {
+                          if ( ((team.toUpperCase() == home_team) && (teamType == 'HOME')) || ((team.toUpperCase() == away_team) && (teamType == 'AWAY')) || (broadcast_count == 1) ) {
                             if ( gameNumber && (gameNumber > 1) ) {
                               this.debuglog('matched team for game number 1')
                               gameNumber--
