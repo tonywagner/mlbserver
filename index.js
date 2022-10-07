@@ -1186,7 +1186,7 @@ app.get('/', async function(req, res) {
     }
     var cache_data = await session.getDayData(gameDate)
     var big_inning
-    if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
+    if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
       big_inning = await session.getBigInningSchedule(gameDate)
     }
 
@@ -1653,8 +1653,8 @@ app.get('/', async function(req, res) {
                 let broadcast_count = await session.count_broadcasts(cache_data.dates[0].games[j].content.media.epg[k].items, mediaType, mediaTitle, language)
 
                 for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
-                  // for video, check that pay TV authentication isn't required
-                  if ( (mediaType == 'MLBTV') && await session.check_pay_tv(cache_data.dates[0].games[j].content.media.epg[k].items[x]) ) {
+                  // for video, check that it's not in-market
+                  if ( (mediaType == 'MLBTV') && await session.check_in_market(cache_data.dates[0].games[j].content.media.epg[k].items[x]) ) {
                     continue
                   }
 
