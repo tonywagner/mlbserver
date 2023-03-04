@@ -12,12 +12,13 @@ const parseString = require('xml2js').parseString
 const MULTIVIEW_DIRECTORY_NAME = 'multiview'
 
 // Default user agent to use for API requests
-const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:87.0) Gecko/20100101 Firefox/87.0'
+const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:109.0) Gecko/20100101 Firefox/110.0'
 
 // Other variables to use in API communications
 const PLATFORM = "macintosh"
 const BAM_SDK_VERSION = '4.3'
 const BAM_TOKEN_URL = 'https://us.edge.bamgrid.com/token'
+const API_KEY = 'bWxidHYmYW5kcm9pZCYxLjAuMA.6LZMbH2r--rbXcgEabaDdIslpo4RyZrlVfWZhsAgXIk'
 
 // Default date handling
 const TODAY_UTC_HOURS = 8 // UTC hours (EST + 4) into tomorrow to still use today's date
@@ -1378,26 +1379,6 @@ class sessionClass {
     })
   }
 
-  async getXApiKey() {
-    this.debuglog('getXApiKey')
-    if ( !this.data.xApiKey || !this.data.xApiKey ) {
-      await this.getApiKeys()
-      if ( this.data.xApiKey ) return this.data.xApiKey
-    } else {
-      return this.data.xApiKey
-    }
-  }
-
-  async getClientApiKey() {
-    this.debuglog('getClientApiKey')
-    if ( !this.data.clientApiKey ) {
-      await this.getApiKeys()
-      if ( this.data.clientApiKey ) return this.data.clientApiKey
-    } else {
-      return this.data.clientApiKey
-    }
-  }
-
   // API call
   async getApiKeys() {
     this.debuglog('getApiKeys')
@@ -1430,40 +1411,6 @@ class sessionClass {
       }
     } else {
       this.log('getApiKeys response failure')
-    }
-  }
-
-  // API call
-  async getOktaClientId() {
-    this.debuglog('getOktaClientId')
-    if ( !this.data.oktaClientId ) {
-      this.debuglog('need to get oktaClientId')
-      let reqObj = {
-        url: 'https://www.mlbstatic.com/mlb.com/vendor/mlb-okta/mlb-okta.js',
-        headers: {
-          'User-agent': USER_AGENT,
-          'Origin': 'https://www.mlb.com',
-          'Accept-Encoding': 'gzip, deflate, br'
-        },
-        gzip: true
-      }
-      var response = await this.httpGet(reqObj)
-      if ( response ) {
-        // disabled because it's very big!
-        //this.debuglog('getOktaClientId response : ' + response)
-        var parsed = response.match('production:{clientId:"([^"]+)",')
-        if ( parsed[1] ) {
-          this.data.oktaClientId = parsed[1]
-          this.save_session_data()
-          return this.data.oktaClientId
-        } else {
-          this.log('getOktaClientId parse failure')
-        }
-      } else {
-        this.log('getOktaClientId response failure')
-      }
-    } else {
-      return this.data.oktaClientId
     }
   }
 
@@ -1586,14 +1533,14 @@ class sessionClass {
       let reqObj = {
         url: BAM_TOKEN_URL,
         headers: {
-          'Authorization': 'Bearer ' + await this.getClientApiKey() || this.halt('missing clientApiKey'),
+          'Authorization': 'Bearer ' + API_KEY,
           'User-agent': USER_AGENT,
           'Accept': 'application/vnd.media-service+json; version=1',
           'x-bamsdk-version': BAM_SDK_VERSION,
           'x-bamsdk-platform': PLATFORM,
           'Origin': 'https://www.mlb.com',
           'Accept-Encoding': 'gzip, deflate, br',
-          'Content-type': 'application/json'
+          'Content-type': 'application/x-www-form-urlencoded'
         },
         form: {
           'grant_type': 'urn:ietf:params:oauth:grant-type:token-exchange',
@@ -1626,17 +1573,14 @@ class sessionClass {
     let reqObj = {
       url: 'https://media-entitlement.mlb.com/api/v3/jwt',
       headers: {
-        'Authorization': 'Bearer ' + await this.getOktaAccessToken() || this.halt('missing OktaAccessToken'),
-        'Origin': 'https://www.mlb.com',
-        'x-api-key': await this.getXApiKey() || this.halt('missing xApiKey'),
-        'Accept-Encoding': 'gzip, deflate, br'
+        'Authorization': 'Bearer ' + await this.getLoginToken() || this.halt('missing loginToken'),
+        'Origin': 'https://www.mlb.com'
       },
       qs: {
         'os': PLATFORM,
         'did': await this.getDeviceId() || this.halt('missing deviceId'),
         'appname': 'mlbtv_web'
-      },
-      gzip: true
+      }
     }
     var response = await this.httpGet(reqObj)
     if ( response ) {
@@ -1683,7 +1627,7 @@ class sessionClass {
     let reqObj = {
       url: BAM_TOKEN_URL,
       headers: {
-        'Authorization': 'Bearer ' + await this.getClientApiKey() || this.halt('missing clientApiKey'),
+        'Authorization': 'Bearer ' + API_KEY,
         'Origin': 'https://www.mlb.com'
       },
       form: {
@@ -1712,7 +1656,7 @@ class sessionClass {
     let reqObj = {
       url: 'https://us.edge.bamgrid.com/devices',
       headers: {
-        'Authorization': 'Bearer ' + await this.getClientApiKey() || this.halt('missing clientApiKey'),
+        'Authorization': 'Bearer ' + API_KEY,
         'Origin': 'https://www.mlb.com'
       },
       json: {
@@ -1732,113 +1676,40 @@ class sessionClass {
     }
   }
 
-  async getOktaAccessToken() {
-    this.debuglog('getOktaAccessToken')
-    let oktaAccessToken = await this.retrieveOktaAccessToken()
-    if ( oktaAccessToken ) return oktaAccessToken
-    else {
-      oktaAccessToken = await this.retrieveOktaAccessToken()
-      if ( oktaAccessToken ) return oktaAccessToken
-    }
-  }
-
   // API call
-  async retrieveOktaAccessToken() {
-    this.debuglog('retrieveOktaAccessToken')
-    if ( !this.data.oktaAccessToken || !this.data.oktaAccessTokenExpiry || (Date.parse(this.data.oktaAccessTokenExpiry) < new Date()) ) {
-      this.debuglog('need to get new oktaAccessToken')
-      let state = this.getRandomString(64)
-      let nonce = this.getRandomString(64)
+  async getLoginToken() {
+    this.debuglog('getLoginToken')
+    if ( !this.data.loginToken || !this.data.loginTokenExpiry || (Date.parse(this.data.loginTokenExpiry) < new Date()) ) {
+      this.debuglog('need to get loginToken')
       let reqObj = {
-        url: 'https://ids.mlb.com/oauth2/aus1m088yK07noBfh356/v1/authorize',
+        url: 'https://ids.mlb.com/oauth2/aus1m088yK07noBfh356/v1/token',
         headers: {
           'user-agent': USER_AGENT,
-          'accept-encoding': 'identity'
+          'content-type': 'application/x-www-form-urlencoded'
         },
-        qs: {
-          'client_id': await this.getOktaClientId() || this.halt('missing oktaClientId'),
-          'redirect_uri': 'https://www.mlb.com/login',
-          'response_type': 'id_token token',
-          'response_mode': 'okta_post_message',
-          'state': state,
-          'nonce': nonce,
-          'prompt': 'none',
-          'sessionToken': await this.getAuthnSessionToken() || this.halt('missing authnSessionToken'),
-          'scope': 'openid email'
-        }
-      }
-      var response = await this.httpGet(reqObj)
-      if ( response ) {
-        var str = response.toString()
-        this.debuglog('retrieveOktaAccessToken response : ' + str)
-        if ( str.match ) {
-          var errorParsed = str.match("data.error = 'login_required'")
-          if ( errorParsed ) {
-            // Need to log in again
-            this.log('Logging in...')
-            delete this.data.authnSessionToken
-            this.save_session_data()
-          } else {
-            var parsed_token = str.match("data.access_token = '([^']+)'")
-            var parsed_expiry = str.match("data.expires_in = '([^']+)'")
-            if ( parsed_token && parsed_token[1] && parsed_expiry && parsed_expiry[1] ) {
-              let oktaAccessToken = parsed_token[1].split('\\x2D').join('-')
-              let oktaAccessTokenExpiry = parsed_expiry[1]
-              this.debuglog('retrieveOktaAccessToken : ' + oktaAccessToken)
-              this.debuglog('retrieveOktaAccessToken expires in : ' + oktaAccessTokenExpiry)
-              this.data.oktaAccessToken = oktaAccessToken
-              this.data.oktaAccessTokenExpiry = new Date(new Date().getTime() + oktaAccessTokenExpiry * 1000)
-              this.save_session_data()
-              return this.data.oktaAccessToken
-            } else {
-              this.log('retrieveOktaAccessToken parse failure')
-            }
-          }
-        } else {
-          this.log('retrieveOktaAccessToken string response failure')
-        }
-      } else {
-        this.log('retrieveOktaAccessToken response failure')
-      }
-    } else {
-      return this.data.oktaAccessToken
-    }
-  }
-
-  // API call
-  async getAuthnSessionToken() {
-    this.debuglog('getAuthnSessionToken')
-    if ( !this.data.authnSessionToken ) {
-      this.debuglog('need to get authnSessionToken')
-      let reqObj = {
-        url: 'https://ids.mlb.com/api/v1/authn',
-        headers: {
-          'user-agent': USER_AGENT,
-          'accept-encoding': 'identity',
-          'content-type': 'application/json'
-        },
-        json: {
+        form: {
           'username': this.credentials.account_username || this.halt('missing account username'),
           'password': this.credentials.account_password || this.halt('missing account password'),
-          'options': {
-            'multiOptionalFactorEnroll': false,
-            'warnBeforePasswordExpired': true
-          }
+          'grant_type': 'password',
+          'scope': 'openid offline_access',
+          'client_id': '0oa3e1nutA1HLzAKG356'
         }
       }
       var response = await this.httpPost(reqObj)
-      if ( response.sessionToken ) {
-        this.debuglog('getAuthnSessionToken response : ' + JSON.stringify(response))
-        this.debuglog('getAuthnSessionToken : ' + response.sessionToken)
-        this.data.authnSessionToken = response.sessionToken
+      if ( this.isValidJson(response) ) {
+        let obj = JSON.parse(response)
+        this.debuglog('getLoginToken : ' + obj.access_token)
+        this.debuglog('getLoginToken expires in : ' + obj.expires_in)
+        this.data.loginToken = obj.access_token
+        this.data.loginTokenExpiry = new Date(new Date().getTime() + obj.expires_in * 1000)
         this.save_session_data()
-        return this.data.authnSessionToken
+        return this.data.loginToken
       } else {
-        this.log('getAuthnSessionToken response failure')
+        this.log('getLoginToken response failure')
       }
     } else {
-      this.debuglog('using cached authnSessionToken')
-      return this.data.authnSessionToken
+      this.debuglog('using cached loginToken')
+      return this.data.loginToken
     }
   }
 
@@ -3217,7 +3088,7 @@ class sessionClass {
           url: playbackURL,
           simple: false,
           headers: {
-            'Authorization': 'Bearer ' + await this.getOktaAccessToken() || this.halt('missing OktaAccessToken'),
+            'Authorization': 'Bearer ' + await this.getLoginToken() || this.halt('missing loginToken'),
             'User-agent': USER_AGENT,
             'Accept': '*/*',
             'Origin': 'https://www.mlb.com',

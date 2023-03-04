@@ -2459,7 +2459,7 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, audio_url,
     // Filters: resampling preserve timestamps and padding allows the multiview stream to continue if one stream ends
     audio_reencoded = []
     for (var i=0; i<audio_present.length; i++) {
-      let audio_input = audio_present[i] + ':m:language:en?'
+      let audio_input = audio_present[i] + ':a:m:language:en?'
       let filter = ''
       // Optionally apply sync adjustments
       if ( sync[audio_present[i]] ) {
