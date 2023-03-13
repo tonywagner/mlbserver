@@ -231,7 +231,7 @@ app.get('/stream.m3u8', async function(req, res) {
       session.log('loading sample stream')
       options.resolution = VALID_RESOLUTIONS[0]
       streamURL = SAMPLE_STREAM_URL
-      options.referer = 'https://hls-js.netlify.app/'
+      options.referer = 'https://hls-js-dev.netlify.app/'
     } else {
       if ( req.query.resolution && (options.resolution == 'best') ) {
         options.resolution = VALID_RESOLUTIONS[1]
@@ -1186,8 +1186,10 @@ app.get('/', async function(req, res) {
     }
     var cache_data = await session.getDayData(gameDate)
     var big_inning
-    if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
-      big_inning = await session.getBigInningSchedule(gameDate)
+    if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
+      // Disabled Big Inning specific schedule scraping
+      //big_inning = await session.getBigInningSchedule(gameDate)
+      big_inning = await session.generateBigInningSchedule(gameDate)
     }
 
     var linkType = VALID_LINK_TYPES[0]
@@ -1305,7 +1307,7 @@ app.get('/', async function(req, res) {
     }
     body += '</p>' + "\n"
 
-    body += '<p><span class="tooltip">Link Type<span class="tooltiptext">Embed will play in your browser (with AirPlay support), Stream will give you a stream URL to open directly in media players like Kodi or VLC, Chromecast is a desktop browser-based casting site, and Advanced will play in your desktop browser with some extra tools and debugging information (Advanced may require you to disable mixed content blocking in your browser).<br><br>NOTE: Chromecast may not be able to resolve local domain names; if so, you can simply access this page using an IP address instead.</span></span>: '
+    body += '<p><span class="tooltip">Link Type<span class="tooltiptext">Embed will play in your browser (with AirPlay support), Stream will give you a stream URL to open directly in media players like Kodi or VLC, Chromecast is a desktop browser-based casting site, and Advanced will play in your desktop browser with some extra tools and debugging information (Advanced may require you to disable insecure / mixed content blocking in your browser).<br><br>NOTE: Chromecast may not be able to resolve local domain names; if so, you can simply access this page (and thus the streams) using an IP address instead.</span></span>: '
     for (var i = 0; i < VALID_LINK_TYPES.length; i++) {
       body += '<button '
       if ( linkType == VALID_LINK_TYPES[i] ) body += 'class="default" '
@@ -1459,10 +1461,12 @@ app.get('/', async function(req, res) {
         let game_started = false
 
         let awayteam = cache_data.dates[0].games[j].teams['away'].team.abbreviation
+        if ( cache_data.dates[0].games[j].teams['away'].team.sport.name != 'Major League Baseball' ) {
+          awayteam = cache_data.dates[0].games[j].teams['away'].team.teamName
+        }
         let hometeam = cache_data.dates[0].games[j].teams['home'].team.abbreviation
-        if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
-          awayteam = cache_data.dates[0].games[j].teams['away'].team.name
-          hometeam = cache_data.dates[0].games[j].teams['home'].team.name
+        if ( cache_data.dates[0].games[j].teams['home'].team.sport.name != 'Major League Baseball' ) {
+          awayteam = cache_data.dates[0].games[j].teams['home'].team.teamName
         }
 
         let teams = awayteam + " @ " + hometeam
@@ -1541,9 +1545,6 @@ app.get('/', async function(req, res) {
         } else if ( detailedState.startsWith('Delayed') ) {
           state += "<br/>" + detailedState
         }
-        if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
-          state += "<br/>" + cache_data.dates[0].games[j].teams['home'].team.league.name
-        }
 
         if ( cache_data.dates[0].games[j].doubleHeader != 'N'  ) {
           state += "<br/>Game " + cache_data.dates[0].games[j].gameNumber
@@ -1608,7 +1609,11 @@ app.get('/', async function(req, res) {
           fav_style = ' style="color:#' + TEAM_COLORS[fav_team][0] + ';background:#' + TEAM_COLORS[fav_team][1] + ';"'
           body += fav_style
         }
-        body += '><td>' + teams + pitchers + state + '</td>'
+        let description = ''
+        if ( cache_data.dates[0].games[j].seriesDescription != 'Regular Season' ) {
+          description += cache_data.dates[0].games[j].seriesDescription + ': '
+        }
+        body += '><td>' + description + teams + pitchers + state + '</td>'
 
         // Check if Winter League game first
         if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
@@ -2127,8 +2132,8 @@ app.get('/embed.html', async function(req, res) {
     content_protect = '?content_protect=' + session.protection.content_protect
   }
 
-  // Adapted from https://hls-js.netlify.app/demo/basic-usage.html
-  var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><title>' + appname + ' player</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{background-color:black;color:lightgrey;font-family:Arial,Helvetica,sans-serif}video{width:100% !important;height:auto !important;max-width:1280px}input[type=number]::-webkit-inner-spin-button{opacity:1}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}</style><script>function goBack(){var prevPage=window.location.href;window.history.go(-1);setTimeout(function(){if(window.location.href==prevPage){window.location.href="/' + content_protect + '"}}, 500)}function toggleAudio(x){var elements=document.getElementsByClassName("audioButton");for(var i=0;i<elements.length;i++){elements[i].className="audioButton"}document.getElementById("audioButton"+x).className+=" default";hls.audioTrack=x}function changeTime(x){video.currentTime+=x}function changeRate(x){let newRate=Math.round((Number(document.getElementById("playback_rate").value)+x)*10)/10;if((newRate<=document.getElementById("playback_rate").max) && (newRate>=document.getElementById("playback_rate").min)){document.getElementById("playback_rate").value=newRate.toFixed(1);video.defaultPlaybackRate=video.playbackRate=document.getElementById("playback_rate").value}}function myKeyPress(e){if(e.key=="ArrowRight"){changeTime(10)}else if(e.key=="ArrowLeft"){changeTime(-10)}else if(e.key=="ArrowUp"){changeRate(0.1)}else if(e.key=="ArrowDown"){changeRate(-0.1)}}</script></head><body onkeydown="myKeyPress(event)"><script src="https://hls-js.netlify.app/dist/hls.js"></script><video id="video"'
+  // Adapted from https://hls-js.netlify.app/demo/basic-usage.html and https://hls-js-dev.netlify.app/demo
+  var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><title>' + appname + ' player</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{background-color:black;color:lightgrey;font-family:Arial,Helvetica,sans-serif}video{width:100% !important;height:auto !important;max-width:1280px}input[type=number]::-webkit-inner-spin-button{opacity:1}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}</style><script>function goBack(){var prevPage=window.location.href;window.history.go(-1);setTimeout(function(){if(window.location.href==prevPage){window.location.href="/' + content_protect + '"}}, 500)}function toggleAudio(x){var elements=document.getElementsByClassName("audioButton");for(var i=0;i<elements.length;i++){elements[i].className="audioButton"}document.getElementById("audioButton"+x).className+=" default";hls.audioTrack=x}function changeTime(x){video.currentTime+=x}function changeRate(x){let newRate=Math.round((Number(document.getElementById("playback_rate").value)+x)*10)/10;if((newRate<=document.getElementById("playback_rate").max) && (newRate>=document.getElementById("playback_rate").min)){document.getElementById("playback_rate").value=newRate.toFixed(1);video.defaultPlaybackRate=video.playbackRate=document.getElementById("playback_rate").value}}function myKeyPress(e){if(e.key=="ArrowRight"){changeTime(10)}else if(e.key=="ArrowLeft"){changeTime(-10)}else if(e.key=="ArrowUp"){changeRate(0.1)}else if(e.key=="ArrowDown"){changeRate(-0.1)}}</script></head><body onkeydown="myKeyPress(event)"><script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script><video id="video"'
   if ( controls == VALID_CONTROLS[0] ) {
     body += ' controls'
   }
@@ -2166,7 +2171,7 @@ app.get('/advanced.html', async function(req, res) {
   }
   session.debuglog('advanced embed src : ' + video_url)
 
-  res.redirect('http://hls-js.netlify.app/demo/?src=' + encodeURIComponent(video_url))
+  res.redirect('http://hls-js-dev.netlify.app/demo/?src=' + encodeURIComponent(video_url))
 })
 
 // Listen for Chromecast request, redirect to chromecast.link player
