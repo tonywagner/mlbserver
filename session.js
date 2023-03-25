@@ -3434,7 +3434,7 @@ class sessionClass {
               }
 
               // Game is not broadcast
-              if ( cache_data.dates[0].games[i].content && cache_data.dates[0].games[i].content.media && cache_data.dates[0].games[i].content.media.epg && (cache_data.dates[0].games[i].content.media.epg.length > 0) && (cache_data.dates[0].games[i].content.media.epg[0].title == 'MLBTV') && cache_data.dates[0].games[i].content.media.epg[0].items && (cache_data.dates[0].games[i].content.media.epg[0].items.length > 0) ) {
+              if ( !cache_data.dates[0].games[i].content || !cache_data.dates[0].games[i].content.media || !cache_data.dates[0].games[i].content.media.epg || (cache_data.dates[0].games[i].content.media.epg.length == 0) || (cache_data.dates[0].games[i].content.media.epg[0].title != 'MLBTV') || !cache_data.dates[0].games[i].content.media.epg[0].items || (cache_data.dates[0].games[i].content.media.epg[0].items.length == 0) ) {
                 omitted_games.no_broadcast.push(teams)
                 continue
               }
