@@ -1187,9 +1187,11 @@ app.get('/', async function(req, res) {
     var cache_data = await session.getDayData(gameDate)
     var big_inning
     if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
-      // Disabled Big Inning specific schedule scraping
-      //big_inning = await session.getBigInningSchedule(gameDate)
-      big_inning = await session.generateBigInningSchedule(gameDate)
+      // Scraped Big Inning schedule
+      big_inning = await session.getBigInningSchedule(gameDate)
+
+      // Generated Big Inning schedule (disabled)
+      //big_inning = await session.generateBigInningSchedule(gameDate)
     }
 
     var linkType = VALID_LINK_TYPES[0]

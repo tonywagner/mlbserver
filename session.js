@@ -2391,10 +2391,10 @@ class sessionClass {
               let title = 'MLB Big Inning'
               let description = 'Live look-ins and big moments from around the league'
 
-              // Disabled Big Inning specific schedule scraping
-              /*if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
+              // Scraped Big Inning schedule
+              if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
                 await this.getBigInningSchedule()
-              }*/
+              }
 
               for (var i = 0; i < cache_data.dates.length; i++) {
                 this.debuglog('getTVData processing Big Inning for date ' + cache_data.dates[i].date)
@@ -2404,12 +2404,14 @@ class sessionClass {
                 //if ( (gameDate >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') ) {
                 if ( (gameDate >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') ) {
                   this.debuglog('getTVData Big Inning active for date ' + cache_data.dates[i].date)
-                  // Disabled Big Inning specific schedule scraping
-                  /*let start = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].start))
-                  let stop = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].end))*/
-                  let big_inning = await this.generateBigInningSchedule(gameDate)
+                  // Scraped Big Inning schedule
+                  let start = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].start))
+                  let stop = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].end))
+
+                  // Generated Big Inning schedule (disabled)
+                  /*let big_inning = await this.generateBigInningSchedule(gameDate)
                   let start = this.convertDateToXMLTV(new Date(big_inning.start))
-                  let stop = this.convertDateToXMLTV(new Date(big_inning.end))
+                  let stop = this.convertDateToXMLTV(new Date(big_inning.end))*/
 
                   programs += await this.generate_xml_program(channelid, start, stop, title, description, logo)
                 }
@@ -2945,11 +2947,18 @@ class sessionClass {
                 // first column is date
                 case 1:
                   // split date into array
-                  parts = col[0].split(' ')
+                  // old date format (January 1, 1970) (disabled)
+                  /*parts = col[0].split(' ')
                   year = parts[2]
                   // get month index, zero-based
                   month = new Date(Date.parse(parts[0] +" 1, 2021")).getMonth()
-                  day = parts[1].substring(0,parts[1].length-3)
+                  day = parts[1].substring(0,parts[1].length-3)*/
+                  // new date format (01/01/70)
+                  parts = col[0].split('/')
+                  year = '20' + parts[2]
+                  // get month index, zero-based
+                  month = parseInt(parts[0]) - 1
+                  day = parts[1]
                   this_datestring = new Date(year, month, day).toISOString().substring(0,10)
                   this.cache.bigInningSchedule[this_datestring] = {}
                   // increment month index (not zero-based)
