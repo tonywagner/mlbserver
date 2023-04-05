@@ -25,6 +25,12 @@ const TODAY_UTC_HOURS = 8 // UTC hours (EST + 4) into tomorrow to still use toda
 
 const TEAM_IDS = {'ARI':'109','ATL':'144','BAL':'110','BOS':'111','CHC':'112','CWS':'145','CIN':'113','CLE':'114','COL':'115','DET':'116','HOU':'117','KC':'118','LAA':'108','LAD':'119','MIA':'146','MIL':'158','MIN':'142','NYM':'121','NYY':'147','OAK':'133','PHI':'143','PIT':'134','STL':'138','SD':'135','SF':'137','SEA':'136','TB':'139','TEX':'140','TOR':'141','WSH':'120'}
 
+// Other country options would be USA, Canada, or other
+const ESPN_SUNDAY_NIGHT_BLACKOUT_COUNTRIES = ["Angola", "Anguilla", "Antigua and Barbuda", "Argentina", "Aruba", "Australia", "Bahamas", "Barbados", "Belize", "Belize", "Benin", "Bermuda", "Bolivia", "Bonaire", "Botswana", "Brazil", "British Virgin Islands", "Burkina Faso", "Burundi", "Cameroon", "Cape Verde", "Cayman Islands", "Central African Republic", "Chad", "Chile", "Colombia", "Comoros", "Cook Islands", "Costa Rica", "Cote d'Ivoire", "Curacao", "Democratic Republic of the Congo", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "El Salvador", "England", "Equatorial Guinea", "Eritrea", "Eswatini", "Ethiopia", "Falkland Islands", "Falkland Islands", "Fiji", "French Guiana", "French Guiana", "French Polynesia", "Gabon", "Ghana", "Grenada", "Guadeloupe", "Guatemala", "Guinea", "Guinea Bissau", "Guyana", "Guyana", "Haiti", "Honduras", "Ireland", "Jamaica", "Kenya", "Kiribati", "Lesotho", "Liberia", "Madagascar", "Malawi", "Mali", "Marshall Islands", "Martinique", "Mayotte", "Mexico", "Micronesia", "Montserrat", "Mozambique", "Namibia", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Northern Ireland", "Palau Islands", "Panama", "Paraguay", "Peru", "Republic of Ireland", "Reunion", "Rwanda", "Saba", "Saint Maarten", "Samoa", "Sao Tome & Principe", "Scotland", "Senegal", "Seychelles", "Sierra Leone", "Solomon Islands", "Somalia", "South Africa", "St. Barthelemy", "St. Eustatius", "St. Kitts and Nevis", "St. Lucia", "St. Martin", "St. Vincent and the Grenadines", "Sudan", "Surinam", "Suriname", "Tahiti", "Tanzania & Zanzibar", "The Gambia", "The Republic of Congo", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Turks and Caicos Islands", "Tuvalu", "Uganda", "Uruguay", "Venezuela", "Wales", "Zambia", "Zimbabwe"]
+
+// First is default level, last should be All (also used as default org)
+const LEVELS = { 'MLB': '1', 'AAA': '11', 'AA': '12', 'A+': '13', 'A': '14', 'All': '1,11,12,13,14' }
+
 // These are the events to ignore, if we're skipping breaks
 const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
 // These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
@@ -920,7 +926,25 @@ class sessionClass {
       this.setLinkType('embed')
     }
 
-    // Check if zip code was provided and if it is different from the stored one
+    // Check if country was provided and if it is different from the stored one
+    if ( argv.country ) {
+      let country_arg = argv.country.toString().toUpperCase()
+      if ( country_arg == 'TRUE' ) {
+        country_arg = ''
+      }
+      if ( (typeof(this.credentials.country) === 'undefined') || (country_arg != this.credentials.country) ) {
+        this.log('updating country and blackout teams')
+        this.credentials.country = country_arg
+        this.updateBlackoutTeams()
+      }
+    } else {
+      // Default to USA if it doesn't exist or is not specified
+      if ( typeof(this.credentials.country) === 'undefined' ) {
+        this.credentials.country = 'USA'
+      }
+    }
+
+    // Check if USA zip code was provided and if it is different from the stored one
     if ( argv.zip_code ) {
       let zip_code_arg = argv.zip_code.toString().toUpperCase()
       if ( zip_code_arg == 'TRUE' ) {
@@ -931,13 +955,16 @@ class sessionClass {
         this.credentials.zip_code = zip_code_arg
         this.updateBlackoutTeams()
       }
-    } else {
-      // Prompt for zip code if it doesn't exist
+    } else if ( this.credentials.country == 'USA' ) {
+      // Prompt for USA zip code if it doesn't exist
       if ( typeof(this.credentials.zip_code) === 'undefined' ) {
         this.debuglog('prompting for zip code')
         this.credentials.zip_code = readlineSync.question('Enter 5-digit zip code (optional, for USA blackout labels): ').toString()
         this.updateBlackoutTeams()
       }
+    } else {
+      this.credentials.zip_code = '0'
+      this.save_credentials()
     }
 
     // Check if fav teams was provided and if they are different from the stored fav teams
@@ -1073,6 +1100,29 @@ class sessionClass {
 
   getUserAgent() {
     return USER_AGENT
+  }
+
+  getLevels() {
+    return LEVELS
+  }
+
+  getTeamIds(team_abbr = false) {
+    if ( team_abbr ) {
+      return TEAM_IDS[team_abbr]
+    } else {
+      return Object.values(TEAM_IDS).toString()
+    }
+  }
+
+  // get parent org nickname
+  getParent(parent) {
+    let long_orgs = [ 'Jays', 'Sox' ]
+    let parent_array = parent.split(' ')
+    parent = parent_array[parent_array.length-1]
+    if ( long_orgs.includes(parent) ) {
+      parent = parent_array[parent_array.length-2] + ' ' + parent
+    }
+    return parent
   }
 
   // the live date is today's date, or if before a specified hour (UTC time), then use yesterday's date
@@ -1951,18 +2001,28 @@ class sessionClass {
   }
 
   // get data for a day, either from cache or an API call
-  async getDayData(dateString, team = false) {
+  async getDayData(dateString, team = false, level_ids = LEVELS.MLB, team_ids = '') {
     try {
       let cache_data
       let cache_name = dateString
+      if ( level_ids != '1' ) {
+        cache_name += '.' + level_ids
+      }
+      if ( team_ids != '' ) {
+        cache_name += '.' + team_ids
+      }
       //let data_url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&sportId=17&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&leagueId=103&leagueId=131&contextTeamId='
-      let data_url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=game(content(media(epg))),probablePitcher,linescore,team,flags,gameInfo'
+      let data_url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=' + level_ids
+      if ( team_ids != '' ) {
+        data_url += '&teamId=' + team_ids
+      }
+      data_url += '&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=broadcasts(all),game(content(media(epg))),probablePitcher,linescore,team,flags,gameInfo'
       if ( team && !team.toUpperCase().startsWith('NATIONAL.') && !team.toUpperCase().startsWith('FREE.') ) {
         this.debuglog('getDayData for team ' + team + ' on date ' + dateString)
         cache_name = team.toUpperCase() + dateString
         data_url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=' + TEAM_IDS[team.toUpperCase()] + '&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=team,game(content(media(epg)))'
       } else {
-        this.debuglog('getDayData for date ' + dateString)
+        this.debuglog('getDayData for level(s) ' + level_ids + ' on date ' + dateString)
       }
       let cache_file = path.join(this.CACHE_DIRECTORY, cache_name+'.json')
       let currentDate = new Date()
@@ -3152,13 +3212,21 @@ class sessionClass {
   }
 
   // Get event stream URL
-  async getEventStreamURL(eventName) {
+  async getEventStreamURL(eventName, gamePk=false) {
+    if ( gamePk ) {
+      eventName = gamePk
+    }
     this.debuglog('getEventStreamURL for ' + eventName)
     if ( this.cache.media && this.cache.media[eventName] && this.cache.media[eventName].streamURL && this.cache.media[eventName].streamURLExpiry && (Date.parse(this.cache.media[eventName].streamURLExpiry) > new Date()) ) {
       this.log('using cached eventStreamURL')
       return this.cache.media[eventName].streamURL
     } else {
-      var playbackURL = await this.getEventURL(eventName)
+      var playbackURL
+      if ( gamePk ) {
+        playbackURL = 'https://dai.tv.milb.com/api/v2/playback-info/games/' + gamePk + '/contents/14862/products/milb-carousel'
+      } else if ( eventName ) {
+        playbackURL = await this.getEventURL(eventName)
+      }
       if ( !playbackURL ) {
         this.debuglog('no active event url')
       } else {
@@ -3204,7 +3272,7 @@ class sessionClass {
     let blackout_teams = []
 
     try {
-      if ( /(^\d{5}$)/.test(this.credentials.zip_code) ) {
+      if ( /(^\d{5}$)/.test(this.credentials.zip_code) && (this.credentials.country == 'USA') ) {
         this.log('getBlackoutTeams for zip code ' + this.credentials.zip_code)
         let reqObj = {
           url: 'https://content.mlb.com/data/blackouts/' + this.credentials.zip_code + '.json',
@@ -3224,6 +3292,8 @@ class sessionClass {
         } else {
           this.log('error : invalid json from url ' + reqObj.url)
         }
+      } else if ( this.credentials.country == 'Canada' ) {
+        blackout_teams = ['TOR']
       }
     } catch(e) {
       this.log('getBlackoutTeams error : ' + e.message)
@@ -3266,7 +3336,7 @@ class sessionClass {
   async get_blackout_games(games, calculate_expiries=false) {
     let blackouts = {}
 
-    let national_blackout = /(^\d{5}$)/.test(this.credentials.zip_code)
+    let usa_blackout = /(^\d{5}$)/.test(this.credentials.zip_code) && (this.credentials.country == 'USA')
 
     let regional_fox_games_exist
     for (var j = 0; j < games.length; j++) {
@@ -3276,7 +3346,8 @@ class sessionClass {
           if ( games[j].content.media.epg[k].title == 'MLBTV' ) {
             for (var x = 0; x < games[j].content.media.epg[k].items.length; x++) {
               if (games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL') {
-                if ( national_blackout && (games[j].content.media.epg[k].items[x].callLetters == 'FOX') && (games[j].seriesDescription == 'Regular Season') ) {
+                // International blackouts according to https://www.mlb.com/live-stream-games/help-center/blackouts-available-games
+                if ( usa_blackout && (games[j].content.media.epg[k].items[x].callLetters == 'FOX') && (games[j].seriesDescription == 'Regular Season') ) {
                   if ( !regional_fox_games_exist ) {
                     regional_fox_games_exist = await this.check_regional_fox_games(games)
                   }
@@ -3284,14 +3355,16 @@ class sessionClass {
                     blackouts[game_pk] = { blackout_type:'National' }
                     break
                   }
-                } else {
-                  if ( (games[j].seriesDescription != 'Spring Training') && (games[j].seriesDescription != 'Regular Season') ) {
-                    blackouts[game_pk] = { blackout_type:'International' }
-                  } else if ( national_blackout ) {
-                    blackouts[game_pk] = { blackout_type:'National' }
-                  }
-                  break
+                // Apple TV+ games are blacked out everywhere
+                } else if ( games[j].content.media.epg[k].items[x].callLetters == 'Apple TV+' ) {
+                  blackouts[game_pk] = { blackout_type:'Full International' }
+                // ESPN Sunday Night games are blacked out in a list of countries
+                } else if ( (games[j].content.media.epg[k].items[x].callLetters == 'ESPN') && (new Date(games[j].gameDate).getDay() == 0) && ESPN_SUNDAY_NIGHT_BLACKOUT_COUNTRIES.includes(this.credentials.country) ) {
+                  blackouts[game_pk] = { blackout_type:'Partial International' }
+                } else if ( usa_blackout ) {
+                  blackouts[game_pk] = { blackout_type:'National' }
                 }
+                break
               }
 
               let awayteam = games[j].teams['away'].team.abbreviation

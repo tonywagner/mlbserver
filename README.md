@@ -1,6 +1,6 @@
 # mlbserver
 
-Current version 2023.03.31
+Current version 2023.04.04
 
 Credit to https://github.com/tonycpsu/streamglob and https://github.com/mafintosh/hls-decryptor
 
@@ -44,6 +44,7 @@ services:
       - zip_code=0
       - fav_teams=0
       #- zip_code=00000
+      #- country=USA
       #- fav_teams=ARI,ATL
       #- debug=false
       #- port=9999
@@ -106,7 +107,8 @@ Advanced command line or Docker environment options:
 --account_username (email address, default will use stored credentials or prompt user to enter them)
 --account_password (default will use stored credentials or prompt user to enter them)
 --zip_code (optional, for USA blackout labels, will prompt if not set or stored)
---fav_teams (optional, comma-separated list of favorite team abbreviations, will prompt if not set or stored)
+--country (optional, for international blackout labels -- see list of accepted names in session.js -- defaults to USA if not set or stored)
+--fav_teams (optional, comma-separated list of favorite team abbreviations from https://github.com/tonywagner/mlbserver/blob/master/session.js#L26 -- will prompt if not set or stored)
 --free (optional, highlights free games)
 --multiview_port (port for multiview streaming; defaults to 1 more than primary port, or 10000)
 --multiview_path (where to create the folder for multiview encoded files; defaults to app directory)

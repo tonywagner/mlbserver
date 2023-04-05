@@ -30,7 +30,7 @@ const VALID_INNING_HALF = [ '', 'top', 'bottom' ]
 const VALID_INNING_NUMBER = [ '', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12' ]
 const VALID_SCORES = [ 'Hide', 'Show' ]
 const VALID_RESOLUTIONS = [ 'adaptive', '720p60', '720p', '540p', '504p', '360p', 'none'  ]
-const DEFAULT_MULTIVIEW_RESOLUTION = '540p'
+const DEFAULT_MULTIVIEW_RESOLUTION = '504p'
 // Corresponding andwidths to display for above resolutions
 const DISPLAY_BANDWIDTHS = [ '', '6600k', '4160k', '2950k', '2120k', '1400k', '' ]
 const VALID_AUDIO_TRACKS = [ 'all', 'English', 'English Radio', 'Radio Española', 'Alternate English', 'Alternate Spanish', 'none' ]
@@ -45,6 +45,8 @@ const VALID_SCAN_MODES = [ 'off', 'on' ]
 const SAMPLE_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
 
 const SECONDS_PER_SEGMENT = 5
+
+const AFFILIATE_TEAM_IDS = { 'ARI': '419,516,2310,5368', 'ATL': '430,432,478,431', 'BAL': '418,568,548,488', 'BOS': '428,414,533,546', 'CHC': '521,451,550,553', 'CIN': '450,459,498,416', 'CLE': '445,402,437,481', 'COL': '259,486,342,538', 'CWS': '247,580,487,494', 'DET': '512,570,582,106', 'HOU': '482,5434,573,3712', 'KC': '1350,3705,541,565', 'LAA': '401,559,460,561', 'LAD': '260,238,456,526', 'MIA': '479,564,554,4124', 'MIL': '249,572,556,5015', 'MIN': '492,509,1960,3898', 'NYM': '453,507,552,505', 'NYY': '1956,587,531,537', 'OAK': '237,499,400,524', 'PHI': '427,522,1410,566', 'PIT': '3390,484,452,477', 'SD': '103,510,584,4904', 'SEA': '403,515,529,574', 'SF': '105,461,476,3410', 'STL': '279,235,440,443', 'TB': '2498,233,234,421', 'TEX': '102,485,540,448', 'TOR': '424,435,463,422', 'WSH': '436,534,547,426' }
 
 // for favorites: text, then background, based on https://teamcolors.jim-nielsen.com/
 const TEAM_COLORS = {'ARI': ['E3D4AD', 'A71930'], 'ATL': ['13274F', 'CE1141'], 'BAL': ['000000', 'DF4601'], 'BOS': ['0D2B56', 'BD3039'], 'CHC': ['CC3433', '0E3386'], 'CWS': ['000000', 'C4CED4'], 'CIN': ['FFFFFF', 'C6011F'], 'CLE': ['002B5C', 'E31937'], 'COL': ['C4CED4', '333366'], 'DET': ['0C2C56', 'FFFFFF'], 'HOU': ['002D62', 'EB6E1F'], 'KC': ['C09A5B', '004687'], 'LAA': ['FFFFFF', 'BA0021'], 'LAD': ['FFFFFF', '005A9C'], 'MIA': ['0077C8', 'FF6600'], 'MIL': ['0A2351', 'B6922E'], 'MIN': ['D31145', '002B5C'], 'NYM': ['002D72', 'FF5910'], 'NYY': ['FFFFFF', '003087'], 'OAK': ['003831', 'EFB21E'], 'PHI': ['284898', 'E81828'], 'PIT': ['000000', 'FDB827'], 'STL': ['FEDB00', 'C41E3A'], 'SD': ['FEC325', '7F411C'], 'SF': ['000000', 'FD5A1E'], 'SEA': ['C4CED4', '005C5C'], 'TB': ['092C5C', '8FBCE6'], 'TEX': ['003278', 'C0111F'], 'TOR': ['FFFFFF', '134A8E'], 'WSH': ['AB0003', '11225B']}
@@ -103,7 +105,8 @@ const GAMECHANGER_RESPONSE_HEADERS = {"statusCode":200,"headers":{"content-type"
 // --account_username (email address, default will use stored credentials or prompt user to enter them)
 // --account_password (default will use stored credentials or prompt user to enter them)
 // --zip_code (optional, for USA blackout labels, will prompt if not set or stored)
-// --fav_teams (optional, comma-separated list of favorite team abbreviations, will prompt if not set or stored)
+// --country (optional, for international blackout labels -- see list of accepted names in session.js -- defaults to USA if not set or stored)
+// --fav_teams (optional, comma-separated list of favorite team abbreviations from https://github.com/tonywagner/mlbserver/blob/master/session.js#L26 -- will prompt if not set or stored)
 // --data_directory (defaults to app directory, must already exist if set to something else; should match storage volume for Docker)
 // --free (optional, free account, highlights free games)
 // --multiview_port (port for multiview streaming; defaults to 1 more than primary port, or 10000)
@@ -126,7 +129,7 @@ var argv = minimist(process.argv, {
     e: 'env'
   },
   boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version', 'free', 'env'],
-  string: ['port', 'account_username', 'account_password', 'multiview_port', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'gamechanger_delay', 'data_directory']
+  string: ['port', 'account_username', 'account_password', 'zip_code', 'country', 'fav_teams', 'multiview_port', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'gamechanger_delay', 'data_directory']
 })
 
 if (argv.env) argv = process.env
@@ -212,6 +215,25 @@ function corsMiddleware (req, res, next) {
 httpAttach(multiview_app, corsMiddleware)
 multiview_app.listen(multiview_port)
 
+// Listen for clear cache requests
+app.get('/clearcache', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  try {
+    session.requestlog('clearcache', req)
+
+    session.log('Clearing cache...')
+    session.clear_cache()
+    session = new sessionClass(argv)
+
+    let server = 'http://' + req.headers.host
+    res.redirect(server)
+  } catch (e) {
+    session.log('clearcache request error : ' + e.message)
+    res.end('clearcache request error, check log')
+  }
+})
+
 // Listen for stream requests
 app.get('/stream.m3u8', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
@@ -226,7 +248,7 @@ app.get('/stream.m3u8', async function(req, res) {
     let options = {}
     let includeBlackouts = 'false'
     let urlArray = req.url.split('?')
-    if ( (urlArray.length == 1) || ((session.data.scan_mode == VALID_SCAN_MODES[1]) && req.query.team) || (!req.query.team && !req.query.src && !req.query.highlight_src && !req.query.event && !req.query.id && !req.query.mediaId && !req.query.contentId) ) {
+    if ( (urlArray.length == 1) || ((session.data.scan_mode == VALID_SCAN_MODES[1]) && req.query.team) || (!req.query.team && !req.query.src && !req.query.highlight_src && !req.query.event && !req.query.gamePk && !req.query.id && !req.query.mediaId && !req.query.contentId) ) {
       // load a sample encrypted HLS stream
       session.log('loading sample stream')
       options.resolution = VALID_RESOLUTIONS[0]
@@ -264,52 +286,57 @@ app.get('/stream.m3u8', async function(req, res) {
       } else {
         if ( req.query.gamePk ) {
           gamePk = req.query.gamePk
-        }
-        if ( req.query.contentId ) {
-          contentId = req.query.contentId
-        }
-        for (var i=0; i<ALTERNATE_AUDIO_TRACKS.length; i++) {
-          if ( req.query[ALTERNATE_AUDIO_TRACKS[i]] ) {
-            options.alternate_audio_tracks[ALTERNATE_AUDIO_TRACKS[i]] = req.query[ALTERNATE_AUDIO_TRACKS[i]]
+          if ( !req.query.mediaId && !req.query.contentId ) {
+            streamURL = await session.getEventStreamURL(false, gamePk)
           }
         }
-        if ( req.query.mediaId ) {
-          mediaId = req.query.mediaId
-        } else if ( req.query.gamePk && req.query.contentId ) {
-          let mediaInfo = await session.getMediaIdFromContentId(gamePk, contentId)
-          if ( mediaInfo ) {
-            mediaId = mediaInfo.mediaId
-            if ( mediaInfo.alternateAudioTracks ) {
-              for (const [key, value] of Object.entries(mediaInfo.alternateAudioTracks)) {
-                options.alternate_audio_tracks[key] = value
-              }
+        if ( !streamURL ) {
+          if ( req.query.contentId ) {
+            contentId = req.query.contentId
+          }
+          for (var i=0; i<ALTERNATE_AUDIO_TRACKS.length; i++) {
+            if ( req.query[ALTERNATE_AUDIO_TRACKS[i]] ) {
+              options.alternate_audio_tracks[ALTERNATE_AUDIO_TRACKS[i]] = req.query[ALTERNATE_AUDIO_TRACKS[i]]
             }
-          } else {
-            session.log('no matching game found ' + req.url)
           }
-        } else if ( req.query.team ) {
-          let mediaType = req.query.mediaType || VALID_MEDIA_TYPES[0]
-          let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), mediaType, req.query.date, req.query.game, includeBlackouts)
-          if ( mediaInfo ) {
-            mediaId = mediaInfo.mediaId
-            contentId = mediaInfo.contentId
-            if ( mediaInfo.alternateAudioTracks ) {
-              for (const [key, value] of Object.entries(mediaInfo.alternateAudioTracks)) {
-                options.alternate_audio_tracks[key] = value
+          if ( req.query.mediaId ) {
+            mediaId = req.query.mediaId
+          } else if ( req.query.gamePk && req.query.contentId ) {
+            let mediaInfo = await session.getMediaIdFromContentId(gamePk, contentId)
+            if ( mediaInfo ) {
+              mediaId = mediaInfo.mediaId
+              if ( mediaInfo.alternateAudioTracks ) {
+                for (const [key, value] of Object.entries(mediaInfo.alternateAudioTracks)) {
+                  options.alternate_audio_tracks[key] = value
+                }
               }
+            } else {
+              session.log('no matching game found ' + req.url)
             }
-          } else {
-            session.log('no matching game found ' + req.url)
+          } else if ( req.query.team ) {
+            let mediaType = req.query.mediaType || VALID_MEDIA_TYPES[0]
+            let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), mediaType, req.query.date, req.query.game, includeBlackouts)
+            if ( mediaInfo ) {
+              mediaId = mediaInfo.mediaId
+              contentId = mediaInfo.contentId
+              if ( mediaInfo.alternateAudioTracks ) {
+                for (const [key, value] of Object.entries(mediaInfo.alternateAudioTracks)) {
+                  options.alternate_audio_tracks[key] = value
+                }
+              }
+            } else {
+              session.log('no matching game found ' + req.url)
+            }
           }
-        }
 
-        if ( !mediaId ) {
-          session.log('failed to get mediaId : ' + req.url)
-          res.end('')
-          return
-        } else {
-          session.debuglog('mediaId : ' + mediaId)
-          streamURL = await session.getStreamURL(mediaId)
+          if ( !mediaId ) {
+            session.log('failed to get mediaId : ' + req.url)
+            res.end('')
+            return
+          } else {
+            session.debuglog('mediaId : ' + mediaId)
+            streamURL = await session.getStreamURL(mediaId)
+          }
         }
       }
     }
@@ -1184,15 +1211,48 @@ app.get('/', async function(req, res) {
         gameDate = yesterday
       }
     }
-    var cache_data = await session.getDayData(gameDate)
-    var big_inning
-    if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
-      // Scraped Big Inning schedule
-      big_inning = await session.getBigInningSchedule(gameDate)
 
-      // Generated Big Inning schedule (disabled)
-      //big_inning = await session.generateBigInningSchedule(gameDate)
+    var levels = session.getLevels()
+    var level_labels = Object.keys(levels)
+    var default_level = level_labels[0]
+    var level = default_level
+    if ( req.query.level ) {
+      level = decodeURIComponent(req.query.level)
     }
+    if ( typeof levels[level] === 'undefined' ) {
+      level = default_level
+    }
+
+    var level_ids = levels[level]
+    var default_org = level_labels[level_labels.length-1]
+    var org = default_org
+    var team_ids = ''
+    if ( req.query.org ) {
+      org = decodeURIComponent(req.query.org)
+      if ( typeof AFFILIATE_TEAM_IDS[org] === 'undefined' ) {
+        org = default_org
+      } else {
+        team_ids += session.getTeamIds(org) + ',' + AFFILIATE_TEAM_IDS[org]
+        level = default_org
+      }
+    } else if ( level_ids == '1' ) {
+      team_ids = session.getTeamIds()
+      for (let i=0; i<session.credentials.fav_teams.length; i++) {
+        if ( level_ids == '1' ) {
+          level_ids = levels['All']
+        }
+        team_ids += ',' + AFFILIATE_TEAM_IDS[session.credentials.fav_teams[i]]
+      }
+    }
+    let cache_name = gameDate
+    if ( level_ids != '1' ) {
+      cache_name += '.' + level_ids
+    }
+    if ( team_ids != '' ) {
+      cache_name += '.' + team_ids
+    }
+
+    var cache_data = await session.getDayData(gameDate, false, level_ids, team_ids)
 
     var linkType = VALID_LINK_TYPES[0]
     if ( req.query.linkType ) {
@@ -1271,10 +1331,10 @@ app.get('/', async function(req, res) {
     body += '</style><script type="text/javascript">' + "\n";
 
     // Define option variables in page
-    body += 'var date="' + gameDate + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var pad="' + pad + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var controls="' + controls + '";var scan_mode="' + scan_mode + '";var content_protect="' + content_protect + '";' + "\n"
+    body += 'var date="' + gameDate + '";var level="' + level + '";var org="' + org + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var pad="' + pad + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var controls="' + controls + '";var scan_mode="' + scan_mode + '";var content_protect="' + content_protect + '";' + "\n"
 
     // Reload function, called after options change
-    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (level != "' + default_level + '"){newurl+="level="+encodeURIComponent(level)+"&"}if (org != "All"){newurl+="org="+encodeURIComponent(org)+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
     // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
@@ -1299,7 +1359,24 @@ app.get('/', async function(req, res) {
       if ( ((VALID_DATES[i] == VALID_DATES[0]) && (gameDate == today)) || ((VALID_DATES[i] == VALID_DATES[1]) && (gameDate == yesterday)) ) body += 'class="default" '
       body += 'onclick="date=\'' + VALID_DATES[i] + '\';reload()">' + VALID_DATES[i] + '</button> '
     }
-    body += '</p>' + "\n" + '<p><span class="tinytext">Updated ' + session.getCacheUpdatedDate(gameDate) + '</span></p>' + "\n"
+    body += '</p>' + "\n" + '<p><span class="tinytext">Updated ' + session.getCacheUpdatedDate(cache_name) + '</span></p>' + "\n"
+
+    body += '<p><span class="tooltip">Level<span class="tooltiptext">Major or minor league level</span></span>: '
+    for (const [key, value] of Object.entries(levels)) {
+      body += '<button '
+      if ( level == key ) body += 'class="default" '
+      body += 'onclick="org=\'' + default_org + '\';level=\'' + key + '\';reload()">' + key + '</button> '
+    }
+
+    body += ' or <span class="tooltip">Org<span class="tooltiptext">Major league parent organization</span></span>: '
+    body += '<select id="org" onchange="level=\'' + default_org + '\';org=this.value;reload()">'
+    body += '<option value="' + default_org + '">' + default_org + '</option>'
+    for (const [key, value] of Object.entries(AFFILIATE_TEAM_IDS)) {
+      body += '<option value="' + key + '"'
+      if ( org == key ) body += ' selected'
+      body += '>' + key + '</option> '
+    }
+    body += '</select></p>' + "\n"
 
     body += '<p><span class="tooltip">Media Type<span class="tooltiptext">Video is TV broadcasts, Audio is English radio, and Spanish is Spanish radio (not available for all games).</span></span>: '
     for (var i = 0; i < VALID_MEDIA_TYPES.length; i++) {
@@ -1393,7 +1470,7 @@ app.get('/', async function(req, res) {
 
     let blackouts = {}
 
-    if ( mediaType == 'MLBTV' ) {
+    if ( (mediaType == 'MLBTV') && level_ids.startsWith('1,') ) {
       if ( (gameDate >= today) && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
         blackouts = await session.get_blackout_games(cache_data.dates[0].games, true)
       }
@@ -1401,6 +1478,14 @@ app.get('/', async function(req, res) {
       let currentDate = new Date()
 
       // Big Inning
+      var big_inning
+      if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
+        // Scraped Big Inning schedule
+        big_inning = await session.getBigInningSchedule(gameDate)
+
+        // Generated Big Inning schedule (disabled)
+        //big_inning = await session.generateBigInningSchedule(gameDate)
+      }
       if ( big_inning && big_inning.start ) {
         body += '<tr><td>' + new Date(big_inning.start).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + new Date(big_inning.end).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '</td><td>'
         let compareStart = new Date(big_inning.start)
@@ -1464,11 +1549,11 @@ app.get('/', async function(req, res) {
 
         let awayteam = cache_data.dates[0].games[j].teams['away'].team.abbreviation
         if ( cache_data.dates[0].games[j].teams['away'].team.sport.name != 'Major League Baseball' ) {
-          awayteam = cache_data.dates[0].games[j].teams['away'].team.teamName
+          awayteam = cache_data.dates[0].games[j].teams['away'].team.shortName + ' (' + session.getParent(cache_data.dates[0].games[j].teams['away'].team.parentOrgName) + ')'
         }
         let hometeam = cache_data.dates[0].games[j].teams['home'].team.abbreviation
         if ( cache_data.dates[0].games[j].teams['home'].team.sport.name != 'Major League Baseball' ) {
-          awayteam = cache_data.dates[0].games[j].teams['home'].team.teamName
+          hometeam = cache_data.dates[0].games[j].teams['home'].team.shortName + ' (' + session.getParent(cache_data.dates[0].games[j].teams['home'].team.parentOrgName) + ')'
         }
 
         let teams = awayteam + " @ " + hometeam
@@ -1587,13 +1672,23 @@ app.get('/', async function(req, res) {
         if ( (cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName) || (cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName) ) {
           pitchers = "<br/>"
           if ( cache_data.dates[0].games[j].teams['away'].probablePitcher && cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName ) {
-            pitchers += getLastName(cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName) + '</a>'
+            if ( cache_data.dates[0].games[j].teams['away'].team.sport.name != 'Major League Baseball' ) {
+              pitchers += cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName
+            } else {
+              pitchers += getLastName(cache_data.dates[0].games[j].teams['away'].probablePitcher.fullName)
+            }
+            pitchers += '</a>'
           } else {
             pitchers += 'TBD'
           }
           pitchers += ' vs '
           if ( cache_data.dates[0].games[j].teams['home'].probablePitcher && cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName ) {
-            pitchers += getLastName(cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName) + '</a>'
+            if ( cache_data.dates[0].games[j].teams['home'].team.sport.name != 'Major League Baseball' ) {
+              pitchers += cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName
+            } else {
+              pitchers += getLastName(cache_data.dates[0].games[j].teams['home'].probablePitcher.fullName)
+            }
+            pitchers += '</a>'
           } else {
             pitchers += 'TBD'
           }
@@ -1617,32 +1712,51 @@ app.get('/', async function(req, res) {
         }
         body += '><td>' + description + teams + pitchers + state + '</td>'
 
-        // Check if Winter League game first
-        if ( cache_data.dates[0].games[j].teams['home'].team.sport.name == 'Winter Leagues' ) {
+        // Check if Winter League / MiLB game first
+        if ( cache_data.dates[0].games[j].teams['home'].team.sport.id != '1' ) {
           body += "<td>"
           if ( cache_data.dates[0].games[j].broadcasts ) {
             for (var k = 0; k < cache_data.dates[0].games[j].broadcasts.length; k++) {
-              if ( (mediaType == 'MLBTV') && (cache_data.dates[0].games[j].broadcasts[k].name == 'MLB.TV') ) {
+              if ( mediaType == 'MLBTV' ) {
                 // Check if game should be live
-                let currentTime = new Date()
-                let startTime = new Date(cache_data.dates[0].games[j].gameDate)
-                startTime.setMinutes(startTime.getMinutes()-30)
-                let endTime = new Date(cache_data.dates[0].games[j].gameDate)
-                endTime.setHours(endTime.getHours()+4)
-                if ( (currentTime >= startTime) && (currentTime < endTime) ) {
-                  let querystring
-                  querystring = '?event=' + cache_data.dates[0].games[j].teams['home'].team.clubName.toLowerCase()
-                  let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
-                  if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
-                  if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + encodeURIComponent(audio_track)
-                  querystring += content_protect_b
-                  multiviewquerystring += content_protect_b
-                  body += '<a href="' + thislink + querystring + '">' + cache_data.dates[0].games[j].broadcasts[k].name + '</a>'
-                  body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
-                } else {
-                  body += cache_data.dates[0].games[j].broadcasts[k].name
+                if ( (cache_data.dates[0].games[j].status.detailedState != 'Postponed') && (cache_data.dates[0].games[j].status.detailedState != 'Cancelled') ) {
+                  // Check if game should be live
+                  let currentTime = new Date()
+                  let startTime = new Date(cache_data.dates[0].games[j].gameDate)
+                  startTime.setMinutes(startTime.getMinutes()-30)
+                  if ( (currentTime >= startTime) ) {
+                    let gamePk = cache_data.dates[0].games[j].gamePk
+                    let querystring
+                    querystring = '?gamePk=' + gamePk
+                    let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+                    if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+                    if ( linkType == VALID_LINK_TYPES[0] ) {
+                      if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+                      if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+                    }
+                    if ( resumeStatus == false ) {
+                      if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
+                      if ( inning_number != VALID_INNING_NUMBER[0] ) querystring += '&inning_number=' + relative_inning
+                      if ( skip != VALID_SKIP[0] ) querystring += '&skip=' + skip
+                      //if ( skip_adjust != DEFAULT_SKIP_ADJUST ) querystring += '&skip_adjust=' + skip_adjust
+                    }
+                    if ( pad != VALID_PAD[0] ) querystring += '&pad=' + pad
+                    if ( linkType == VALID_LINK_TYPES[1] ) {
+                      let endTime = new Date(cache_data.dates[0].games[j].gameDate)
+                      endTime.setHours(endTime.getHours()+4)
+                      if ( currentTime < endTime ) {
+                        if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+                      }
+                    }
+                    querystring += content_protect_b
+                    multiviewquerystring += content_protect_b
+                    body += '<a href="' + thislink + querystring + '">' + cache_data.dates[0].games[j].broadcasts[k].name + '</a>'
+                    body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+                  } else {
+                    body += cache_data.dates[0].games[j].broadcasts[k].name
+                  }
+                  break
                 }
-                break
               }
             }
           }
@@ -2013,7 +2127,7 @@ app.get('/', async function(req, res) {
     body += '<p><span class="tooltip">Bookmarklets for MLB.com<span class="tooltiptext">If you watch at MLB.com, drag these bookmarklets to your bookmarks toolbar and use them to hide parts of the interface.</span></span>: <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}})();">Boxscore</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Scoreboard</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Linescore</a> | <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">All</a></p>' + "\n"
 
     // Print version
-    body += '<p class="tinytext">Version ' + version + '</p>' + "\n"
+    body += '<p class="tinytext">Version ' + version + ' (<a href="/clearcache">clear cache</a>)</p>' + "\n"
 
     // Datepicker functions
     body += '<script>var datePicker=document.getElementById("gameDate");function changeDate(e){date=datePicker.value;reload()}function removeDate(e){datePicker.removeEventListener("change",changeDate,false);datePicker.addEventListener("blur",changeDate,false);if(e.keyCode===13){date=datePicker.value;reload()}}datePicker.addEventListener("change",changeDate,false);datePicker.addEventListener("keypress",removeDate,false)</script>' + "\n"
