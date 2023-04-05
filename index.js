@@ -1340,7 +1340,7 @@ app.get('/', async function(req, res) {
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
 
     // Multiview functions
-    body += 'var excludeTeams=[];function parsemultiviewresponse(responsetext){if (responsetext == "started"){setTimeout(function(){document.getElementById("startmultiview").innerHTML="Restart";document.getElementById("stopmultiview").innerHTML="Stop"},15000)}else if (responsetext == "stopped"){setTimeout(function(){document.getElementById("stopmultiview").innerHTML="Stopped";document.getElementById("startmultiview").innerHTML="Start"},3000)}else{alert(responsetext)}}function addmultiview(e, teams=[], excludes=[]){var newvalue=e.value;for(var i=1;i<=4;i++){var valuefound = false;var oldvalue="";if(!e.checked){oldvalue=e.value;newvalue=""}if ((document.getElementById("multiview" + i).value == oldvalue) || ((oldvalue != "") && (document.getElementById("multiview" + i).value.startsWith(oldvalue)))){if ((newvalue != "") && (excludes.length > 0)){newvalue+="&excludeTeams="+excludeTeams.toString()}document.getElementById("multiview" + i).value=newvalue;valuefound=true;break}}if(e.checked && !valuefound){e.checked=false}for(var i=0;i<teams.length;i++){if(e.checked){excludeTeams.push(teams[i])}else{var index=excludeTeams.indexOf(teams[i]);if (index !== -1){excludeTeams.splice(index,1)}}}}function startmultiview(e){var count=0;var getstr="";for(var i=1;i<=4;i++){if (document.getElementById("multiview"+i).value != ""){count++;getstr+="streams="+encodeURIComponent(document.getElementById("multiview"+i).value)+"&sync="+encodeURIComponent(document.getElementById("sync"+i).value)+"&"}}if((count >= 1) && (count <= 4)){if (document.getElementById("faster").checked){getstr+="faster=true&dvr=true&"}else if (document.getElementById("dvr").checked){getstr+="dvr=true&"}if (document.getElementById("reencode").checked){getstr+="reencode=true&"}if (document.getElementById("audio_url").value != ""){getstr+="audio_url="+encodeURIComponent(document.getElementById("audio_url").value)+"&";if (document.getElementById("audio_url_seek").value != "0"){getstr+="audio_url_seek="+encodeURIComponent(document.getElementById("audio_url_seek").value)}}e.innerHTML="starting...";makeGETRequest("/multiview?"+getstr, parsemultiviewresponse)}else{alert("Multiview requires between 1-4 streams to be selected")}return false}function stopmultiview(e){e.innerHTML="stopping...";makeGETRequest("/multiview", parsemultiviewresponse);return false}' + "\n"
+    body += 'var excludeTeams=[];function parsemultiviewresponse(responsetext){if (responsetext == "started"){setTimeout(function(){document.getElementById("startmultiview").innerHTML="Restart";document.getElementById("stopmultiview").innerHTML="Stop"},15000)}else if (responsetext == "stopped"){setTimeout(function(){document.getElementById("stopmultiview").innerHTML="Stopped";document.getElementById("startmultiview").innerHTML="Start"},3000)}else{alert(responsetext)}}function addmultiview(e, teams=[], excludes=[]){var newvalue=e.value;for(var i=1;i<=4;i++){var valuefound = false;var oldvalue="";if(!e.checked){oldvalue=e.value;newvalue=""}if ((document.getElementById("multiview" + i).value == oldvalue) || ((oldvalue != "") && (document.getElementById("multiview" + i).value.startsWith(oldvalue)))){if ((newvalue != "") && (excludes.length > 0)){newvalue+="&excludeTeams="+excludeTeams.toString()}document.getElementById("multiview" + i).value=newvalue;valuefound=true;break}}if(e.checked && !valuefound){e.checked=false}for(var i=0;i<teams.length;i++){if(e.checked){excludeTeams.push(teams[i])}else{var index=excludeTeams.indexOf(teams[i]);if (index !== -1){excludeTeams.splice(index,1)}}}}function startmultiview(e){var count=0;var getstr="";for(var i=1;i<=4;i++){if (document.getElementById("multiview"+i).value != ""){count++;getstr+="streams="+encodeURIComponent(document.getElementById("multiview"+i).value)+"&sync="+encodeURIComponent(document.getElementById("sync"+i).value)+"&"}}if((count >= 1) && (count <= 4)){if (document.getElementById("faster").checked){getstr+="faster=true&dvr=true&"}else if (document.getElementById("dvr").checked){getstr+="dvr=true&"}if (document.getElementById("reencode").checked){getstr+="reencode=true&"}if (document.getElementById("park_audio").checked){getstr+="park_audio=true&"}if (document.getElementById("audio_url").value != ""){getstr+="audio_url="+encodeURIComponent(document.getElementById("audio_url").value)+"&";if (document.getElementById("audio_url_seek").value != "0"){getstr+="audio_url_seek="+encodeURIComponent(document.getElementById("audio_url_seek").value)}}e.innerHTML="starting...";makeGETRequest("/multiview?"+getstr, parsemultiviewresponse)}else{alert("Multiview requires between 1-4 streams to be selected")}return false}function stopmultiview(e){e.innerHTML="stopping...";makeGETRequest("/multiview", parsemultiviewresponse);return false}' + "\n"
 
     // Function to switch URLs to stream URLs, where necessary
     body += 'function stream_substitution(url){return url.replace(/\\/([a-zA-Z]+\.html)/,"/stream.m3u8")}' + "\n"
@@ -1993,6 +1993,7 @@ app.get('/', async function(req, res) {
         body += '<input type="checkbox" id="dvr"/> <span class="tooltip">DVR: allow pausing/seeking multiview<span class="tooltiptext">If this is enabled, it will use more disk space but you will be able to pause and seek in the multiview stream. Not necessary if you are strictly watching live.</span></span><br/>' + "\n"
         body += '<input type="checkbox" id="faster" onchange="if (this.checked){document.getElementById(\'dvr\').checked=true}"/> <span class="tooltip">Encode faster than real-time<span class="tooltiptext">Implies DVR. Not necessary for live streams (which are only delivered in real-time), but if you want to seek ahead in archive streams using multiview, you may want to enable this. WARNING: ffmpeg may approach 100% CPU usage if you use this while combining multiple archive video streams in multiview.</span></span><br/>' + "\n"
         body += '<input type="checkbox" id="reencode"/> <span class="tooltip">Re-encode all audio<span class="tooltiptext">Uses more CPU. Generally only necessary if you need the multiview stream to continue after one of the individual streams has ended. (Any streams with sync adjustments above will automatically be re-encoded, regardless of this setting.)</span></span><br/>' + "\n"
+        body += '<input type="checkbox" id="park_audio"/> <span class="tooltip">Park audio: filter out announcers<span class="tooltiptext">Implies re-encoding all audio. If this is enabled, an extra audio filter is applied to remove the announcer voices.</span></span><br/>' + "\n"
         body += '<hr><span class="tooltip">Alternate audio URL and sync<span class="tooltiptext">Optional: you can also include a separate audio-only URL as an additional alternate audio track. Archive games will likely require a very large negative sync value, as the radio broadcasts may not be trimmed like the video archives.</span></span>:<br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)"></textarea><input id="audio_url_seek" type="number" value="0" style="vertical-align:top;font-size:.8em;width:4em"/>'
         body += '<hr>Watch: <a href="/embed.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Embed</a> | <a href="' + multiview_server + multiview_url_path + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Advanced</a><br/><span class="tinytext">Download: <a href="/kodi.strm?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Kodi STRM file</a> (<a href="/kodi.strm?version=18&src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Leia/18</a>)</span>'
         body += '</td></tr></table><br/>' + "\n"
@@ -2472,6 +2473,11 @@ app.get('/multiview', async function(req, res) {
       if ( req.query.reencode ) {
         reencode = req.query.reencode
       }
+      let park_audio = false
+      if ( req.query.park_audio ) {
+        reencode = true
+        park_audio = req.query.park_audio
+      }
       let audio_url = false
       if ( req.query.audio_url && (req.query.audio_url != '') ) {
         audio_url = req.query.audio_url
@@ -2482,7 +2488,7 @@ app.get('/multiview', async function(req, res) {
       }
       // Wait to restart it
       setTimeout(function() {
-        res.end(start_multiview_stream(req.query.streams, sync, dvr, faster, reencode, audio_url, audio_url_seek))
+        res.end(start_multiview_stream(req.query.streams, sync, dvr, faster, reencode, park_audio, audio_url, audio_url_seek))
       }, 5000)
     } else {
       res.end('stopped')
@@ -2493,7 +2499,7 @@ app.get('/multiview', async function(req, res) {
   }
 })
 
-function start_multiview_stream(streams, sync, dvr, faster, reencode, audio_url, audio_url_seek) {
+function start_multiview_stream(streams, sync, dvr, faster, reencode, park_audio, audio_url, audio_url_seek) {
   try {
     ffmpeg_command = ffmpeg({ timeout: 432000 })
 
@@ -2580,7 +2586,8 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, audio_url,
     // Filters: resampling preserve timestamps and padding allows the multiview stream to continue if one stream ends
     audio_reencoded = []
     for (var i=0; i<audio_present.length; i++) {
-      let audio_input = audio_present[i] + ':a:m:language:en?'
+      //let audio_input = audio_present[i] + ':a:m:language:en?'
+      let audio_input = audio_present[i] + ':a:0'
       let filter = ''
       // Optionally apply sync adjustments
       if ( sync[audio_present[i]] ) {
@@ -2591,6 +2598,10 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, audio_url,
           session.log('trimming audio for stream ' + (audio_present[i]+1) + ' by ' + sync[audio_present[i]] + ' seconds')
           filter = 'atrim=start=' + (sync[audio_present[i]] * -1) + 's,'
         }
+      }
+      // Optionally filter to park audio
+      if ( park_audio ) {
+        filter = 'pan=stereo|c0=c0|c1=-1*c1,'
       }
       if ( reencode || (filter != '') ) {
         audio_reencoded.push(audio_present[i])
@@ -2659,6 +2670,9 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, audio_url,
         audio_encoder = 'copy'
       }
       ffmpeg_command.addOutputOption('-c:a:' + i, audio_encoder)
+      if ( park_audio ) {
+        ffmpeg_command.addOutputOption('-ac:a:' + i, '1')
+      }
     }
     // Drop subtitles/captions
     // End after 6 hours in case we forget to stop it manually
