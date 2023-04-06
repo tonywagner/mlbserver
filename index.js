@@ -1472,7 +1472,7 @@ app.get('/', async function(req, res) {
 
     let blackouts = {}
 
-    if ( (mediaType == 'MLBTV') && level_ids.startsWith('1,') ) {
+    if ( (mediaType == 'MLBTV') && ((level_ids == '1') || level_ids.startsWith('1,')) ) {
       if ( (gameDate >= today) && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
         blackouts = await session.get_blackout_games(cache_data.dates[0].games, true)
       }
