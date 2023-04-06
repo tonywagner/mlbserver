@@ -1238,10 +1238,12 @@ app.get('/', async function(req, res) {
     } else if ( level_ids == '1' ) {
       team_ids = session.getTeamIds()
       for (let i=0; i<session.credentials.fav_teams.length; i++) {
-        if ( level_ids == '1' ) {
-          level_ids = levels['All']
+        if ( session.credentials.fav_teams[i] != '' ) {
+          if ( level_ids == '1' ) {
+            level_ids = levels['All']
+          }
+          team_ids += ',' + AFFILIATE_TEAM_IDS[session.credentials.fav_teams[i]]
         }
-        team_ids += ',' + AFFILIATE_TEAM_IDS[session.credentials.fav_teams[i]]
       }
     }
     let cache_name = gameDate
