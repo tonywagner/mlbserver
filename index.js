@@ -37,7 +37,7 @@ const VALID_AUDIO_TRACKS = [ 'all', 'English', 'English Radio', 'Radio Española
 const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spanish', 'Alt.', 'Alt. Spanish', 'none' ]
 const ALTERNATE_AUDIO_TRACKS = [ VALID_AUDIO_TRACKS[4], VALID_AUDIO_TRACKS[5] ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
-const VALID_SKIP = [ 'off', 'breaks', 'idle time', 'pitches' ]
+const VALID_SKIP = [ 'off', 'breaks', 'idle time', 'pitches', 'commercials' ]
 const VALID_PAD = [ 'off', 'on' ]
 const VALID_FORCE_VOD = [ 'off', 'on' ]
 const VALID_SCAN_MODES = [ 'off', 'on' ]
@@ -248,7 +248,7 @@ app.get('/stream.m3u8', async function(req, res) {
     let options = {}
     let includeBlackouts = 'false'
     let urlArray = req.url.split('?')
-    if ( (urlArray.length == 1) || ((session.data.scan_mode == VALID_SCAN_MODES[1]) && req.query.team) || (!req.query.team && !req.query.src && !req.query.highlight_src && !req.query.event && !req.query.gamePk && !req.query.id && !req.query.mediaId && !req.query.contentId) ) {
+    if ( (urlArray.length == 1) || ((session.data.scan_mode == VALID_SCAN_MODES[1]) && req.query.team) || (!req.query.team && !req.query.src && !req.query.highlight_src && !req.query.eventURL && !req.query.event && !req.query.gamePk && !req.query.id && !req.query.mediaId && !req.query.contentId) ) {
       // load a sample encrypted HLS stream
       session.log('loading sample stream')
       options.resolution = VALID_RESOLUTIONS[0]
@@ -366,7 +366,17 @@ app.get('/stream.m3u8', async function(req, res) {
           options.contentId = contentId
 
           let skip_type = VALID_SKIP.indexOf(options.skip)
-          await session.getSkipMarkers(contentId, skip_type, options.inning_number, options.inning_half)
+          // for commercial skip, just use the gdfp playlists and skip the ad inserts
+          if ( skip_type == 4 ) {
+            let new_streamURL = streamURL.replace('master_desktop_complete', 'master_desktop_complete_gdfp')
+            if ( new_streamURL == streamURL ) {
+              new_streamURL = streamURL.replace('master_desktop', 'master_desktop_gdfp')
+            }
+            session.debuglog('skipping commercials using gdfp playlist ' + new_streamURL)
+            streamURL = new_streamURL
+          } else {
+            await session.getSkipMarkers(contentId, skip_type, options.inning_number, options.inning_half)
+          }
         }
       }
 
@@ -660,6 +670,16 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           return
         }
 
+        // Pass through any remaining caption tracks
+        if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="') ) {
+          var parsed = line.match(',URI="([^"]+)"')
+          if ( parsed[1] ) {
+            newurl = '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
+            return '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="' + newurl + '"'
+          }
+          return
+        }
+
         if (line[0] === '#') {
           return line
         }
@@ -755,7 +775,22 @@ app.get('/playlist', async function(req, res) {
         content_protect = '&content_protect=' + session.protection.content_protect
       }
 
-      if ( (contentId) && ((inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0])) && (typeof session.temp_cache[contentId] !== 'undefined') && (typeof session.temp_cache[contentId].skip_markers !== 'undefined') ) {
+      // if skipping commercials, filter the playlist to remove ad insertion domains
+      if ( skip == 'commercials' ) {
+        session.debuglog('filtering commercial breaks')
+        let new_body = []
+        for (var i=0; i<body.length; i++) {
+          if ( body[i].includes('dai.google.com') ) {
+            new_body.pop()
+            if ( new_body[new_body.length-1] != '#EXT-X-DISCONTINUITY' ) {
+              new_body.push('#EXT-X-DISCONTINUITY')
+            }
+          } else {
+            new_body.push(body[i])
+          }
+        }
+        body = new_body
+      } else if ( (contentId) && ((inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0])) && (typeof session.temp_cache[contentId] !== 'undefined') && (typeof session.temp_cache[contentId].skip_markers !== 'undefined') ) {
         session.debuglog('pulling skip markers from temporary cache')
         skip_markers = session.temp_cache[contentId].skip_markers
       } else {
@@ -1473,6 +1508,20 @@ app.get('/', async function(req, res) {
     let blackouts = {}
 
     if ( (mediaType == 'MLBTV') && ((level_ids == '1') || level_ids.startsWith('1,')) ) {
+      // Recap Rundown beginning in 2023
+      if ( (gameDate <= yesterday) && (gameDate >= '2023-03-31') && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
+        body += '<tr><td><span class="tooltip">VOD<span class="tooltiptext">Recap Rundown plays all of a day\'s recaps in order.</span></span></td><td>'
+        let dateArray = gameDate.split('-')
+        let querystring = '?event=recaprundown' + parseInt(dateArray[1]).toString() + '-' + parseInt(dateArray[2]).toString() + '-' + dateArray[0].substring(2,4)
+        if ( linkType == VALID_LINK_TYPES[0] ) {
+          if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+        }
+        if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+        querystring += content_protect_b
+        body += '<a href="' + thislink + querystring + '">Recap Rundown</a>'
+        body += '</td></tr>' + "\n"
+      }
+
       if ( (gameDate >= today) && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
         blackouts = await session.get_blackout_games(cache_data.dates[0].games, true)
       }
@@ -1489,7 +1538,7 @@ app.get('/', async function(req, res) {
         //big_inning = await session.generateBigInningSchedule(gameDate)
       }
       if ( big_inning && big_inning.start ) {
-        body += '<tr><td>' + new Date(big_inning.start).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + new Date(big_inning.end).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '</td><td>'
+        body += '<tr><td><span class="tooltip">' + new Date(big_inning.start).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + new Date(big_inning.end).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span></td><td>'
         let compareStart = new Date(big_inning.start)
         compareStart.setMinutes(compareStart.getMinutes()-10)
         let compareEnd = new Date(big_inning.end)
@@ -1516,7 +1565,7 @@ app.get('/', async function(req, res) {
       }
 
       // Game Changer
-      if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) ) {
+      if ( (gameDate >= today) && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) ) {
         let gameIndexes = await session.get_first_and_last_games(cache_data.dates[0].games, blackouts)
         if ( (typeof gameIndexes.firstGameIndex !== 'undefined') && (typeof gameIndexes.lastGameIndex !== 'undefined') && (gameIndexes.firstGameIndex !== gameIndexes.lastGameIndex) ) {
           let compareStart = new Date(cache_data.dates[0].games[gameIndexes.firstGameIndex].gameDate)
@@ -1715,49 +1764,55 @@ app.get('/', async function(req, res) {
         body += '><td>' + description + teams + pitchers + state + '</td>'
 
         // Check if Winter League / MiLB game first
-        if ( cache_data.dates[0].games[j].teams['home'].team.sport.id != '1' ) {
+        if ( (cache_data.dates[0].games[j].teams['home'].team.sport.id != '1') && (mediaType == 'MLBTV') ) {
           body += "<td>"
           if ( cache_data.dates[0].games[j].broadcasts ) {
+            let broadcastName = 'N/A'
             for (var k = 0; k < cache_data.dates[0].games[j].broadcasts.length; k++) {
-              if ( mediaType == 'MLBTV' ) {
+              if ( cache_data.dates[0].games[j].broadcasts[k].name != 'Audio' ) {
+                broadcastName = mediaType
+                break
+              }
+            }
+            if ( broadcastName == 'N/A' ) {
+              body += broadcastName
+            } else {
+              // Check if game should be live
+              if ( (cache_data.dates[0].games[j].status.detailedState != 'Postponed') && (cache_data.dates[0].games[j].status.detailedState != 'Cancelled') ) {
                 // Check if game should be live
-                if ( (cache_data.dates[0].games[j].status.detailedState != 'Postponed') && (cache_data.dates[0].games[j].status.detailedState != 'Cancelled') ) {
-                  // Check if game should be live
-                  let currentTime = new Date()
-                  let startTime = new Date(cache_data.dates[0].games[j].gameDate)
-                  startTime.setMinutes(startTime.getMinutes()-30)
-                  if ( (currentTime >= startTime) ) {
-                    let gamePk = cache_data.dates[0].games[j].gamePk
-                    let querystring
-                    querystring = '?gamePk=' + gamePk
-                    let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
-                    if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
-                    if ( linkType == VALID_LINK_TYPES[0] ) {
-                      if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
-                      if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
-                    }
-                    if ( resumeStatus == false ) {
-                      if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
-                      if ( inning_number != VALID_INNING_NUMBER[0] ) querystring += '&inning_number=' + relative_inning
-                      if ( skip != VALID_SKIP[0] ) querystring += '&skip=' + skip
-                      //if ( skip_adjust != DEFAULT_SKIP_ADJUST ) querystring += '&skip_adjust=' + skip_adjust
-                    }
-                    if ( pad != VALID_PAD[0] ) querystring += '&pad=' + pad
-                    if ( linkType == VALID_LINK_TYPES[1] ) {
-                      let endTime = new Date(cache_data.dates[0].games[j].gameDate)
-                      endTime.setHours(endTime.getHours()+4)
-                      if ( currentTime < endTime ) {
-                        if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
-                      }
-                    }
-                    querystring += content_protect_b
-                    multiviewquerystring += content_protect_b
-                    body += '<a href="' + thislink + querystring + '">' + cache_data.dates[0].games[j].broadcasts[k].name + '</a>'
-                    body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
-                  } else {
-                    body += cache_data.dates[0].games[j].broadcasts[k].name
+                let currentTime = new Date()
+                let startTime = new Date(cache_data.dates[0].games[j].gameDate)
+                startTime.setMinutes(startTime.getMinutes()-30)
+                if ( (currentTime >= startTime) ) {
+                  let gamePk = cache_data.dates[0].games[j].gamePk
+                  let querystring
+                  querystring = '?gamePk=' + gamePk
+                  let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+                  if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+                  if ( linkType == VALID_LINK_TYPES[0] ) {
+                    if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+                    if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
                   }
-                  break
+                  if ( resumeStatus == false ) {
+                    if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
+                    if ( inning_number != VALID_INNING_NUMBER[0] ) querystring += '&inning_number=' + relative_inning
+                    if ( skip != VALID_SKIP[0] ) querystring += '&skip=' + skip
+                    //if ( skip_adjust != DEFAULT_SKIP_ADJUST ) querystring += '&skip_adjust=' + skip_adjust
+                  }
+                  if ( pad != VALID_PAD[0] ) querystring += '&pad=' + pad
+                  if ( linkType == VALID_LINK_TYPES[1] ) {
+                    let endTime = new Date(cache_data.dates[0].games[j].gameDate)
+                    endTime.setHours(endTime.getHours()+4)
+                    if ( currentTime < endTime ) {
+                      if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+                    }
+                  }
+                  querystring += content_protect_b
+                  multiviewquerystring += content_protect_b
+                  body += '<a href="' + thislink + querystring + '">' + broadcastName + '</a>'
+                  body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+                } else {
+                  body += broadcastName
                 }
               }
             }
@@ -1963,7 +2018,7 @@ app.get('/', async function(req, res) {
         }
         body += '</p>' + "\n"
 
-        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove breaks, idle time, or non-action pitches from the stream (useful to make your own "condensed games").<br/><br/>NOTE: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream.</span></span>: '
+        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove all breaks, idle time, non-action pitches, or only commercial breaks from the stream (useful to make your own "condensed games").<br/><br/>NOTE: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream. Also, commercial break skipping will ignore inning start options (it will always start from the beginning).</span></span>: '
         for (var i = 0; i < VALID_SKIP.length; i++) {
           body += '<button '
           if ( skip == VALID_SKIP[i] ) body += 'class="default" '

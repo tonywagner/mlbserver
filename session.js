@@ -1225,6 +1225,17 @@ class sessionClass {
     }
   }
 
+  setRecapRundownCacheExpiry(dateString, expiryDate) {
+    if ( !this.cache.recapRundown ) {
+      this.cache.recapRundown = {}
+    }
+    if ( !this.cache.recapRundown[dateString] ) {
+      this.cache.recapRundown[dateString] = {}
+    }
+    this.cache.recapRundown[dateString].recapRundownCacheExpiry = expiryDate
+    this.save_cache_data()
+  }
+
   cacheMediaId(contentId, mediaId, alternateAudioTracks) {
     this.createContentCache(contentId)
     this.cache.content[contentId].mediaId = mediaId
@@ -3211,6 +3222,79 @@ class sessionClass {
     }
   }
 
+  // Get Recap Rundown data
+  async getRecapRundownData(dateString) {
+    try {
+      this.debuglog('getRecapRundownData for ' + dateString)
+
+      let cache_data
+      let cache_name = 'recaprundown' + dateString
+      let cache_file = path.join(this.CACHE_DIRECTORY, cache_name + '.json')
+      let currentDate = new Date()
+      if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.recapRundown || !this.cache.recapRundown[dateString] || !this.cache.recapRundown[dateString].recapRundownCacheExpiry || (currentDate > new Date(this.cache.recapRundown[dateString].recapRundownCacheExpiry)) ) {
+        let reqObj = {
+          url: 'https://dapi.mlbinfra.com/v2/content/en-us/videos/mlb-tv-recap-rundown-' + dateString,
+          headers: {
+            'Authorization': 'Bearer ' + await this.getLoginToken() || this.halt('missing loginToken'),
+            'User-Agent': USER_AGENT,
+            'Origin': 'https://www.mlb.com',
+            'Referer': 'https://www.mlb.com',
+            'Content-Type': 'application/json',
+            'Accept-Encoding': 'gzip, deflate, br'
+          },
+          gzip: true
+        }
+        var response = await this.httpGet(reqObj, false)
+        if ( response && this.isValidJson(response) ) {
+          this.debuglog(response)
+          cache_data = JSON.parse(response)
+          this.save_json_cache_file(cache_name, cache_data)
+
+          // Default cache period is 5 minutes from now
+          let fiveMinutesFromNow = new Date()
+          fiveMinutesFromNow.setMinutes(fiveMinutesFromNow.getMinutes()+5)
+          let cacheExpiry = fiveMinutesFromNow
+
+          // finally save the setting
+          this.setRecapRundownCacheExpiry(dateString, cacheExpiry)
+          this.save_cache_data()
+        } else {
+          this.log('error : invalid json from url ' + reqObj.url)
+          return
+        }
+      } else {
+        this.debuglog('using cached Recap Rundown data')
+        cache_data = this.readFileToJson(cache_file)
+      }
+      if (cache_data) {
+        return cache_data
+      }
+    } catch(e) {
+      this.log('getRecapRundownData error : ' + e.message)
+    }
+  }
+
+  // Get Recap Rundown URL, used to determine the stream URL if available
+  async getRecapRundownURL(dateString) {
+    try {
+      this.debuglog('getRecapRundownURL for ' + dateString)
+
+      let cache_data = await this.getRecapRundownData(dateString)
+
+      if ( cache_data && cache_data.fields && cache_data.fields.playbackScenarios && cache_data.fields.playbackScenarios && (cache_data.fields.playbackScenarios.length > 0) ) {
+        this.debuglog('getRecapRundownURL found ' + cache_data.fields.playbackScenarios.length + ' playbackScenarios')
+        for (var i=0; i<cache_data.fields.playbackScenarios.length; i++) {
+          if ( cache_data.fields.playbackScenarios[i].playback && (cache_data.fields.playbackScenarios[i].playback == 'hlsCloud') && cache_data.fields.playbackScenarios[i].location ) {
+            this.debuglog('found Recap Rundown url at ' + cache_data.fields.playbackScenarios[i].location)
+            return cache_data.fields.playbackScenarios[i].location
+          }
+        }
+      }
+    } catch(e) {
+      this.log('getRecapRundownURL error : ' + e.message)
+    }
+  }
+
   // Get event stream URL
   async getEventStreamURL(eventName, gamePk=false) {
     if ( gamePk ) {
@@ -3225,7 +3309,13 @@ class sessionClass {
       if ( gamePk ) {
         playbackURL = 'https://dai.tv.milb.com/api/v2/playback-info/games/' + gamePk + '/contents/14862/products/milb-carousel'
       } else if ( eventName ) {
-        playbackURL = await this.getEventURL(eventName)
+        if ( eventName.startsWith('RECAPRUNDOWN') ) {
+          let dateString = eventName.substring(12)
+          this.debuglog('getEventStreamURL RecapRundown for ' + dateString)
+          playbackURL = await this.getRecapRundownURL(dateString)
+        } else {
+          playbackURL = await this.getEventURL(eventName)
+        }
       }
       if ( !playbackURL ) {
         this.debuglog('no active event url')
