@@ -1669,10 +1669,12 @@ app.get('/', async function(req, res) {
             } else if ( abstractGameState == 'Final' ) {
               state = "<br/>" + detailedState
             }
-            if ( cache_data.dates[0].games[j].flags.perfectGame == true ) {
-              state += "<br/>Perfect Game"
-            } else if ( cache_data.dates[0].games[j].flags.noHitter == true ) {
-              state += "<br/>No-Hitter"
+            if ( cache_data.dates[0].games[j].flags ) {
+              if ( cache_data.dates[0].games[j].flags.perfectGame == true ) {
+                state += "<br/>Perfect Game"
+              } else if ( cache_data.dates[0].games[j].flags.noHitter == true ) {
+                state += "<br/>No-Hitter"
+              }
             }
           }
           teams = awayteam + " " + awayscore + " @ " + hometeam + " " + homescore
