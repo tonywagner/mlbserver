@@ -46,8 +46,6 @@ const SAMPLE_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
 
 const SECONDS_PER_SEGMENT = 5
 
-const AFFILIATE_TEAM_IDS = { 'ARI': '419,516,2310,5368', 'ATL': '430,432,478,431', 'BAL': '418,568,548,488', 'BOS': '428,414,533,546', 'CHC': '521,451,550,553', 'CIN': '450,459,498,416', 'CLE': '445,402,437,481', 'COL': '259,486,342,538', 'CWS': '247,580,487,494', 'DET': '512,570,582,106', 'HOU': '482,5434,573,3712', 'KC': '1350,3705,541,565', 'LAA': '401,559,460,561', 'LAD': '260,238,456,526', 'MIA': '479,564,554,4124', 'MIL': '249,572,556,5015', 'MIN': '492,509,1960,3898', 'NYM': '453,507,552,505', 'NYY': '1956,587,531,537', 'OAK': '237,499,400,524', 'PHI': '427,522,1410,566', 'PIT': '3390,484,452,477', 'SD': '103,510,584,4904', 'SEA': '403,515,529,574', 'SF': '105,461,476,3410', 'STL': '279,235,440,443', 'TB': '2498,233,234,421', 'TEX': '102,485,540,448', 'TOR': '424,435,463,422', 'WSH': '436,534,547,426' }
-
 // for favorites: text, then background, based on https://teamcolors.jim-nielsen.com/
 const TEAM_COLORS = {'ARI': ['E3D4AD', 'A71930'], 'ATL': ['13274F', 'CE1141'], 'BAL': ['000000', 'DF4601'], 'BOS': ['0D2B56', 'BD3039'], 'CHC': ['CC3433', '0E3386'], 'CWS': ['000000', 'C4CED4'], 'CIN': ['FFFFFF', 'C6011F'], 'CLE': ['002B5C', 'E31937'], 'COL': ['C4CED4', '333366'], 'DET': ['0C2C56', 'FFFFFF'], 'HOU': ['002D62', 'EB6E1F'], 'KC': ['C09A5B', '004687'], 'LAA': ['FFFFFF', 'BA0021'], 'LAD': ['FFFFFF', '005A9C'], 'MIA': ['0077C8', 'FF6600'], 'MIL': ['0A2351', 'B6922E'], 'MIN': ['D31145', '002B5C'], 'NYM': ['002D72', 'FF5910'], 'NYY': ['FFFFFF', '003087'], 'OAK': ['003831', 'EFB21E'], 'PHI': ['284898', 'E81828'], 'PIT': ['000000', 'FDB827'], 'STL': ['FEDB00', 'C41E3A'], 'SD': ['FEC325', '7F411C'], 'SF': ['000000', 'FD5A1E'], 'SEA': ['C4CED4', '005C5C'], 'TB': ['092C5C', '8FBCE6'], 'TEX': ['003278', 'C0111F'], 'TOR': ['FFFFFF', '134A8E'], 'WSH': ['AB0003', '11225B']}
 
@@ -317,11 +315,16 @@ app.get('/stream.m3u8', async function(req, res) {
             let mediaType = req.query.mediaType || VALID_MEDIA_TYPES[0]
             let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), mediaType, req.query.date, req.query.game, includeBlackouts)
             if ( mediaInfo ) {
-              mediaId = mediaInfo.mediaId
-              contentId = mediaInfo.contentId
-              if ( mediaInfo.alternateAudioTracks ) {
-                for (const [key, value] of Object.entries(mediaInfo.alternateAudioTracks)) {
-                  options.alternate_audio_tracks[key] = value
+
+              if ( mediaInfo.gamePk ) {
+                streamURL = await session.getEventStreamURL(false, mediaInfo.gamePk)
+              } else {
+                mediaId = mediaInfo.mediaId
+                contentId = mediaInfo.contentId
+                if ( mediaInfo.alternateAudioTracks ) {
+                  for (const [key, value] of Object.entries(mediaInfo.alternateAudioTracks)) {
+                    options.alternate_audio_tracks[key] = value
+                  }
                 }
               }
             } else {
@@ -329,13 +332,15 @@ app.get('/stream.m3u8', async function(req, res) {
             }
           }
 
-          if ( !mediaId ) {
-            session.log('failed to get mediaId : ' + req.url)
-            res.end('')
-            return
-          } else {
-            session.debuglog('mediaId : ' + mediaId)
-            streamURL = await session.getStreamURL(mediaId)
+          if ( !streamURL ) {
+            if ( !mediaId ) {
+              session.log('failed to get mediaId : ' + req.url)
+              res.end('')
+              return
+            } else {
+              session.debuglog('mediaId : ' + mediaId)
+              streamURL = await session.getStreamURL(mediaId)
+            }
           }
         }
       }
@@ -1264,20 +1269,18 @@ app.get('/', async function(req, res) {
     var team_ids = ''
     if ( req.query.org ) {
       org = decodeURIComponent(req.query.org)
-      if ( typeof AFFILIATE_TEAM_IDS[org] === 'undefined' ) {
+      if ( typeof session.getAffiliateTeamIds(org) === 'undefined' ) {
         org = default_org
       } else {
-        team_ids += session.getTeamIds(org) + ',' + AFFILIATE_TEAM_IDS[org]
+        team_ids += session.getTeamIds(org) + ',' + session.getAffiliateTeamIds(org)
         level = default_org
       }
-    } else if ( level_ids == '1' ) {
+    } else if ( level_ids == levels['MLB'] ) {
       team_ids = session.getTeamIds()
       for (let i=0; i<session.credentials.fav_teams.length; i++) {
         if ( session.credentials.fav_teams[i] != '' ) {
-          if ( level_ids == '1' ) {
-            level_ids = levels['All']
-          }
-          team_ids += ',' + AFFILIATE_TEAM_IDS[session.credentials.fav_teams[i]]
+          level_ids = levels['All']
+          team_ids += ',' + session.getAffiliateTeamIds(session.credentials.fav_teams[i])
         }
       }
     }
@@ -1408,10 +1411,11 @@ app.get('/', async function(req, res) {
     body += ' or <span class="tooltip">Org<span class="tooltiptext">Major league parent organization</span></span>: '
     body += '<select id="org" onchange="level=\'' + default_org + '\';org=this.value;reload()">'
     body += '<option value="' + default_org + '">' + default_org + '</option>'
-    for (const [key, value] of Object.entries(AFFILIATE_TEAM_IDS)) {
-      body += '<option value="' + key + '"'
-      if ( org == key ) body += ' selected'
-      body += '>' + key + '</option> '
+    var orgs = session.getOrgs()
+    for (var i = 0; i < orgs.length; i++) {
+      body += '<option value="' + orgs[i] + '"'
+      if ( org == orgs[i] ) body += ' selected'
+      body += '>' + orgs[i] + '</option> '
     }
     body += '</select></p>' + "\n"
 
@@ -1599,15 +1603,30 @@ app.get('/', async function(req, res) {
         let game_started = false
 
         let awayteam = cache_data.dates[0].games[j].teams['away'].team.abbreviation
+        let awayteam_abbr
         if ( cache_data.dates[0].games[j].teams['away'].team.sport.name != 'Major League Baseball' ) {
           awayteam = cache_data.dates[0].games[j].teams['away'].team.shortName + ' (' + session.getParent(cache_data.dates[0].games[j].teams['away'].team.parentOrgName) + ')'
+          awayteam_abbr = cache_data.dates[0].games[j].teams['away'].team.abbreviation
         }
         let hometeam = cache_data.dates[0].games[j].teams['home'].team.abbreviation
+        let hometeam_abbr
         if ( cache_data.dates[0].games[j].teams['home'].team.sport.name != 'Major League Baseball' ) {
           hometeam = cache_data.dates[0].games[j].teams['home'].team.shortName + ' (' + session.getParent(cache_data.dates[0].games[j].teams['home'].team.parentOrgName) + ')'
+          hometeam_abbr = cache_data.dates[0].games[j].teams['home'].team.abbreviation
         }
 
-        let teams = awayteam + " @ " + hometeam
+        let teams = ""
+        if ( awayteam_abbr ) {
+          teams += '<span class="tooltip">' + awayteam + '<span class="tooltiptext">Team Abbreviation: ' + awayteam_abbr + '</span></span>'
+        } else {
+          teams += awayteam
+        }
+        teams += " @ "
+        if ( hometeam_abbr ) {
+          teams += '<span class="tooltip">' + hometeam + '<span class="tooltiptext">Team Abbreviation: ' + hometeam_abbr+ '</span></span>'
+        } else {
+          teams += hometeam
+        }
         let pitchers = ""
         let state = "<br/>"
 
@@ -2088,13 +2107,13 @@ app.get('/', async function(req, res) {
       resolution = 'best'
     }
 
-    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live broadcasts. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live MLB broadcasts. If favorite team(s) have been provided, it will also include affiliate games for those organizations. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     let include_teams = 'ari,national'
     if ( session.credentials.fav_teams.length > 0 ) {
       include_teams = session.credentials.fav_teams.toString()
     }
-    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team (by abbreviation, in a comma-separated list if more than 1) will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. It will also include affiliate games for those organizations. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include blackouts<span class="tooltiptext">An optional parameter added to the URL will include channels/games subject to blackout (although you may not be able to play those games).</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
@@ -2103,7 +2122,7 @@ app.get('/', async function(req, res) {
       exclude_teams = session.credentials.blackout_teams.toString()
       exclude_teams += ',national'
     }
-    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from, even if you have not provided a zip code. Excluding a team (by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from, even if you have not provided a zip code. Excluding a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
@@ -2120,6 +2139,10 @@ app.get('/', async function(req, res) {
     if ( argv.free ) {
       body += '<p><span class="tooltip">Free games only<span class="tooltiptext">Only includes games marked as free. Blackouts still apply. If a zip code has been provided, channels/games subject to blackout will be omitted by default.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=free' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">guide.xml</a></p>' + "\n"
     }
+
+    body += '<p><span class="tooltip">Include affiliates by org<span class="tooltiptext">Including an organization (by MLB team abbreviation, in a comma-separated list if more than 1) will include all of its affiliate broadcasts, or if that affiliate is not broadcasting the game, it will include the opponent\'s broadcast if available. If this option is not specified, but favorite team(s) have been provided, affiliate games for those organizations will be included anyway.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeOrgs=ari,atl' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeOrgs=ari,atl' + content_protect_b + '">guide.xml</a></p>' + "\n"
+
+    body += '<p><span class="tooltip">Include by level<span class="tooltiptext">Including a level (AAA, AA, A+, or A, in a comma-separated list if more than 1) will include all of its broadcasts, and exclude all other levels.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeLevels=aaa,aa' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeLevels=aaa,aa' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '</td></tr></table><br/>' + "\n"
 
@@ -2419,7 +2442,17 @@ app.get('/channels.m3u', async function(req, res) {
     includeBlackouts = req.query.includeBlackouts
   }
 
-  var body = await session.getTVData('channels', mediaType, includeTeams, excludeTeams, server, includeBlackouts, resolution, pipe, startingChannelNumber)
+  let includeLevels = []
+  if ( req.query.includeLevels ) {
+    includeLevels = decodeURIComponent(req.query.includeLevels.toUpperCase()).split(',')
+  }
+
+  let includeOrgs = []
+  if ( req.query.includeOrgs ) {
+    includeOrgs = req.query.includeOrgs.toUpperCase().split(',')
+  }
+
+  var body = await session.getTVData('channels', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, resolution, pipe, startingChannelNumber)
 
   res.writeHead(200, {'Content-Type': 'audio/x-mpegurl'})
   res.end(body)
@@ -2450,9 +2483,19 @@ app.get('/guide.xml', async function(req, res) {
     includeBlackouts = req.query.includeBlackouts
   }
 
+  let includeLevels = []
+  if ( req.query.includeLevels ) {
+    includeLevels = decodeURIComponent(req.query.includeLevels.toUpperCase()).split(',')
+  }
+
+  let includeOrgs = []
+  if ( req.query.includeOrgs ) {
+    includeOrgs = req.query.includeOrgs.toUpperCase().split(',')
+  }
+
   let server = 'http://' + req.headers.host
 
-  var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, server, includeBlackouts)
+  var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts)
 
   res.end(body)
 })
