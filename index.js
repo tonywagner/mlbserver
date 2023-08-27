@@ -313,7 +313,8 @@ app.get('/stream.m3u8', async function(req, res) {
             }
           } else if ( req.query.team ) {
             let mediaType = req.query.mediaType || VALID_MEDIA_TYPES[0]
-            let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), mediaType, req.query.date, req.query.game, includeBlackouts)
+            let level = req.query.level || 'MLB'
+            let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), decodeURIComponent(level), mediaType, req.query.date, req.query.game, includeBlackouts)
             if ( mediaInfo ) {
 
               if ( mediaInfo.gamePk ) {
@@ -1285,7 +1286,7 @@ app.get('/', async function(req, res) {
       }
     }
     let cache_name = gameDate
-    if ( level_ids != '1' ) {
+    if ( level_ids != levels['MLB'] ) {
       cache_name += '.' + level_ids
     }
     if ( team_ids != '' ) {
@@ -1511,9 +1512,9 @@ app.get('/', async function(req, res) {
 
     let blackouts = {}
 
-    if ( (mediaType == 'MLBTV') && ((level_ids == '1') || level_ids.startsWith('1,')) ) {
-      // Recap Rundown beginning in 2023
-      if ( (gameDate <= yesterday) && (gameDate >= '2023-03-31') && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
+    if ( (mediaType == 'MLBTV') && ((level_ids == levels['MLB']) || level_ids.startsWith(levels['MLB'] + ',')) ) {
+      // Recap Rundown beginning in 2023, disabled because it stopped working
+      /*if ( (gameDate <= yesterday) && (gameDate >= '2023-03-31') && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
         body += '<tr><td><span class="tooltip">VOD<span class="tooltiptext">Recap Rundown plays all of a day\'s recaps in order.</span></span></td><td>'
         let dateArray = gameDate.split('-')
         let querystring = '?event=recaprundown' + parseInt(dateArray[1]).toString() + '-' + parseInt(dateArray[2]).toString() + '-' + dateArray[0].substring(2,4)
@@ -1524,7 +1525,7 @@ app.get('/', async function(req, res) {
         querystring += content_protect_b
         body += '<a href="' + thislink + querystring + '">Recap Rundown</a>'
         body += '</td></tr>' + "\n"
-      }
+      }*/
 
       if ( (gameDate >= today) && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
         blackouts = await session.get_blackout_games(cache_data.dates[0].games, true)
@@ -1607,23 +1608,25 @@ app.get('/', async function(req, res) {
         if ( cache_data.dates[0].games[j].teams['away'].team.sport.name != 'Major League Baseball' ) {
           awayteam = cache_data.dates[0].games[j].teams['away'].team.shortName + ' (' + session.getParent(cache_data.dates[0].games[j].teams['away'].team.parentOrgName) + ')'
           awayteam_abbr = cache_data.dates[0].games[j].teams['away'].team.abbreviation
+          awayteam_level = session.getLevelNameFromSportId(cache_data.dates[0].games[j].teams['away'].team.sport.id)
         }
         let hometeam = cache_data.dates[0].games[j].teams['home'].team.abbreviation
         let hometeam_abbr
         if ( cache_data.dates[0].games[j].teams['home'].team.sport.name != 'Major League Baseball' ) {
           hometeam = cache_data.dates[0].games[j].teams['home'].team.shortName + ' (' + session.getParent(cache_data.dates[0].games[j].teams['home'].team.parentOrgName) + ')'
           hometeam_abbr = cache_data.dates[0].games[j].teams['home'].team.abbreviation
+          hometeam_level = session.getLevelNameFromSportId(cache_data.dates[0].games[j].teams['home'].team.sport.id)
         }
 
         let teams = ""
         if ( awayteam_abbr ) {
-          teams += '<span class="tooltip">' + awayteam + '<span class="tooltiptext">Team Abbreviation: ' + awayteam_abbr + '</span></span>'
+          teams += '<span class="tooltip">' + awayteam + '<span class="tooltiptext">Team Abbreviation: ' + awayteam_abbr + ', level ' + awayteam_level + '</span></span>'
         } else {
           teams += awayteam
         }
         teams += " @ "
         if ( hometeam_abbr ) {
-          teams += '<span class="tooltip">' + hometeam + '<span class="tooltiptext">Team Abbreviation: ' + hometeam_abbr+ '</span></span>'
+          teams += '<span class="tooltip">' + hometeam + '<span class="tooltiptext">Team Abbreviation: ' + hometeam_abbr + ', level ' + hometeam_level + '</span></span>'
         } else {
           teams += hometeam
         }
@@ -1787,7 +1790,7 @@ app.get('/', async function(req, res) {
         body += '><td>' + description + teams + pitchers + state + '</td>'
 
         // Check if Winter League / MiLB game first
-        if ( (cache_data.dates[0].games[j].teams['home'].team.sport.id != '1') && (mediaType == 'MLBTV') ) {
+        if ( (cache_data.dates[0].games[j].teams['home'].team.sport.id != levels['MLB']) && (mediaType == 'MLBTV') ) {
           body += "<td>"
           if ( cache_data.dates[0].games[j].broadcasts ) {
             let broadcastName = 'N/A'
@@ -2158,6 +2161,7 @@ app.get('/', async function(req, res) {
 
     let examples = [
       ['Team live video', '?team=' + example_team + '&resolution=best'],
+      ['MiLB team live video', '?team=COL&level=AAA&resolution=best'],
       ['Team live radio', '?team=' + example_team + '&mediaType=Audio'],
       ['Catch-up/condensed', '?team=' + example_team + '&resolution=best&skip=pitches&date=today'],
       ['Condensed yesterday', '?team=' + example_team + '&resolution=best&skip=pitches&date=yesterday'],

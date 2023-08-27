@@ -31,7 +31,7 @@ const AFFILIATE_TEAM_IDS = { 'ARI': '419,516,2310,5368', 'ATL': '430,432,478,431
 const ESPN_SUNDAY_NIGHT_BLACKOUT_COUNTRIES = ["Angola", "Anguilla", "Antigua and Barbuda", "Argentina", "Aruba", "Australia", "Bahamas", "Barbados", "Belize", "Belize", "Benin", "Bermuda", "Bolivia", "Bonaire", "Botswana", "Brazil", "British Virgin Islands", "Burkina Faso", "Burundi", "Cameroon", "Cape Verde", "Cayman Islands", "Central African Republic", "Chad", "Chile", "Colombia", "Comoros", "Cook Islands", "Costa Rica", "Cote d'Ivoire", "Curacao", "Democratic Republic of the Congo", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "El Salvador", "England", "Equatorial Guinea", "Eritrea", "Eswatini", "Ethiopia", "Falkland Islands", "Falkland Islands", "Fiji", "French Guiana", "French Guiana", "French Polynesia", "Gabon", "Ghana", "Grenada", "Guadeloupe", "Guatemala", "Guinea", "Guinea Bissau", "Guyana", "Guyana", "Haiti", "Honduras", "Ireland", "Jamaica", "Kenya", "Kiribati", "Lesotho", "Liberia", "Madagascar", "Malawi", "Mali", "Marshall Islands", "Martinique", "Mayotte", "Mexico", "Micronesia", "Montserrat", "Mozambique", "Namibia", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Northern Ireland", "Palau Islands", "Panama", "Paraguay", "Peru", "Republic of Ireland", "Reunion", "Rwanda", "Saba", "Saint Maarten", "Samoa", "Sao Tome & Principe", "Scotland", "Senegal", "Seychelles", "Sierra Leone", "Solomon Islands", "Somalia", "South Africa", "St. Barthelemy", "St. Eustatius", "St. Kitts and Nevis", "St. Lucia", "St. Martin", "St. Vincent and the Grenadines", "Sudan", "Surinam", "Suriname", "Tahiti", "Tanzania & Zanzibar", "The Gambia", "The Republic of Congo", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Turks and Caicos Islands", "Tuvalu", "Uganda", "Uruguay", "Venezuela", "Wales", "Zambia", "Zimbabwe"]
 
 // First is default level, last should be All (also used as default org)
-const LEVELS = { 'MLB': '1,51', 'AAA': '11', 'AA': '12', 'A+': '13', 'A': '14', 'All': '1,11,12,13,14,51' }
+const LEVELS = { 'MLB': '1', 'AAA': '11', 'AA': '12', 'A+': '13', 'A': '14', 'All': '1,11,12,13,14' }
 
 // These are the events to ignore, if we're skipping breaks
 const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
@@ -1108,6 +1108,16 @@ class sessionClass {
     return LEVELS
   }
 
+  getLevelNameFromSportId(sportId) {
+    let sportIds = Object.values(LEVELS)
+    for (var i=0; i<sportIds.length; i++) {
+      if ( sportId == sportIds[i] ) {
+        let levelNames = Object.keys(LEVELS)
+        return levelNames[i]
+      }
+    }
+  }
+
   getTeamIds(team_abbr = false) {
     if ( team_abbr ) {
       return TEAM_IDS[team_abbr]
@@ -1800,7 +1810,7 @@ class sessionClass {
   }
 
   // get mediaId for a live channel request
-  async getMediaId(team, mediaType, mediaDate, gameNumber, includeBlackouts) {
+  async getMediaId(team, level, mediaType, mediaDate, gameNumber, includeBlackouts) {
     try {
       this.debuglog('getMediaId')
 
@@ -1852,14 +1862,16 @@ class sessionClass {
             if ( typeof cache_data.dates[0].games[j] !== 'undefined' ) {
               let home_team = cache_data.dates[0].games[j].teams['home'].team.abbreviation
               let away_team = cache_data.dates[0].games[j].teams['away'].team.abbreviation
+              let home_level = cache_data.dates[0].games[j].teams['home'].team.sport.id
+              let away_level = cache_data.dates[0].games[j].teams['away'].team.sport.id
               this.debuglog('checking game ' + cache_data.dates[0].games[j].teams['home'].team.abbreviation + '@' + cache_data.dates[0].games[j].teams['away'].team.abbreviation)
 
               // check that that game involves the requested team, or if it's a national or free game and we've requested that
-              if ( (team.toUpperCase() == home_team) || (team.toUpperCase() == away_team) || ((team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training')))) || (team.toUpperCase().startsWith('FREE.') && cache_data.dates[0].games[j].content.media.freeGame) ) {
+              if ( ((team.toUpperCase() == home_team) && (LEVELS[level.toUpperCase()] == home_level)) || ((team.toUpperCase() == away_team) && (LEVELS[level.toUpperCase()] == away_level)) || ((team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training')))) || (team.toUpperCase().startsWith('FREE.') && cache_data.dates[0].games[j].content.media.freeGame) ) {
                 this.debuglog('matched team for ' + cache_data.dates[0].games[j].teams['home'].team.abbreviation + '@' + cache_data.dates[0].games[j].teams['away'].team.abbreviation)
 
                 // Check if Winter League / MiLB game first
-                if ( (cache_data.dates[0].games[j].teams['home'].team.sport.id != '1') && (mediaType == 'MLBTV') ) {
+                if ( (cache_data.dates[0].games[j].teams['home'].team.sport.id != LEVELS['MLB']) && (mediaType == 'MLBTV') ) {
                   if ( cache_data.dates[0].games[j].broadcasts ) {
                     let broadcastName = 'N/A'
                     for (var k = 0; k < cache_data.dates[0].games[j].broadcasts.length; k++) {
@@ -2075,7 +2087,7 @@ class sessionClass {
     try {
       let cache_data
       let cache_name = dateString
-      if ( level_ids != '1' ) {
+      if ( level_ids != LEVELS['MLB'] ) {
         cache_name += '.' + level_ids
       }
       if ( team_ids != '' ) {
@@ -2322,7 +2334,7 @@ class sessionClass {
             for (var j = 0; j < cache_data.dates[i].games.length; j++) {
               this.debuglog('getTVData processing game ' + j + ' for date ' + cache_data.dates[i].date)
               // Check if Winter League / MiLB game first
-              if ( (cache_data.dates[i].games[j].teams['home'].team.sport.id != '1') && (mediaType == 'MLBTV') ) {
+              if ( (cache_data.dates[i].games[j].teams['home'].team.sport.id != LEVELS['MLB']) && (mediaType == 'MLBTV') ) {
                 if ( cache_data.dates[i].games[j].broadcasts ) {
                   let broadcastName = 'N/A'
                   for (var k = 0; k < cache_data.dates[i].games[j].broadcasts.length; k++) {
@@ -2346,6 +2358,8 @@ class sessionClass {
                       let logo = server + '/image.svg?teamId=' + team_id
                       let streamMediaType = 'Video'
                       let stream = server + '/stream.m3u8?team=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
+                      let sportId = cache_data.dates[i].games[j].teams['home'].team.sport.id
+                      stream += '&level=' + this.getLevelNameFromSportId(sportId)
                       stream += '&resolution=' + resolution
                       if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
                       if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
@@ -3544,13 +3558,16 @@ class sessionClass {
         for (var k = 0; k < games[j].content.media.epg.length; k++) {
           if ( games[j].content.media.epg[k].title == 'MLBTV' ) {
             for (var x = 0; x < games[j].content.media.epg[k].items.length; x++) {
+              this.debuglog('check_regional_fox_games checking ' + games[j].content.media.epg[k].items[x].callLetters)
               if ( games[j].content.media.epg[k].items[x].callLetters == 'FOX' ) {
+                this.debuglog('check_regional_fox_games found FOX game')
                 if ( fox_start_time && (games[j].gameDate == fox_start_time) ) {
-                  this.debuglog('check_regional_fox_games found')
+                  this.debuglog('check_regional_fox_games determined regional game')
                   regional_fox_games_exist = 'true'
                   break
                 } else {
                   fox_start_time = games[j].gameDate
+                  break
                 }
               }
             }
@@ -3564,6 +3581,7 @@ class sessionClass {
 
   // get all blackout games for a date
   async get_blackout_games(games, calculate_expiries=false) {
+    this.debuglog('get_blackout_games')
     let blackouts = {}
 
     let usa_blackout = /(^\d{5}$)/.test(this.credentials.zip_code) && (this.credentials.country == 'USA')
@@ -3574,14 +3592,18 @@ class sessionClass {
       if ( games[j].content && games[j].content.media && games[j].content.media.epg ) {
         for (var k = 0; k < games[j].content.media.epg.length; k++) {
           if ( games[j].content.media.epg[k].title == 'MLBTV' ) {
+            this.debuglog('get_blackout_games checking ' + game_pk)
             for (var x = 0; x < games[j].content.media.epg[k].items.length; x++) {
-              if (games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL') {
+              this.debuglog('get_blackout_games checking feed ' + games[j].content.media.epg[k].items[x].mediaFeedType + ' ' + games[j].content.media.epg[k].items[x].callLetters)
+              if ( (games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL') || (await this.check_pay_tv(games[j].content.media.epg[k].items[x])) ) {
+                this.debuglog('get_blackout_games checking national game')
                 // International blackouts according to https://www.mlb.com/live-stream-games/help-center/blackouts-available-games
-                if ( usa_blackout && (games[j].content.media.epg[k].items[x].callLetters == 'FOX') && (games[j].seriesDescription == 'Regular Season') ) {
-                  if ( !regional_fox_games_exist ) {
+                if ( usa_blackout && (games[j].content.media.epg[k].items[x].callLetters == 'FOX') ) {
+                  if ( !regional_fox_games_exist && (games[j].seriesDescription == 'Regular Season') ) {
                     regional_fox_games_exist = await this.check_regional_fox_games(games)
                   }
-                  if ( regional_fox_games_exist == 'false' ) {
+                  if ( !regional_fox_games_exist || (regional_fox_games_exist == 'false') ) {
+                    this.debuglog('get_blackout_games found non-regional FOX game')
                     blackouts[game_pk] = { blackout_type:'National' }
                     break
                   }
@@ -4163,7 +4185,7 @@ class sessionClass {
 
   async check_pay_tv(item) {
     try {
-      if ( item.foxAuthRequired || item.tbsAuthRequired || item.espnAuthRequired || item.fs1AuthRequired || item.mlbnAuthRequired ) {
+      if ( item.foxAuthRequired || item.tbsAuthRequired || item.espnAuthRequired || item.espn2AuthRequired || item.fs1AuthRequired || item.mlbnAuthRequired || item.abcAuthRequired ) {
         return true
       }
     } catch (e) {
