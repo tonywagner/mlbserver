@@ -12,7 +12,7 @@
     "hls-server": "^1.5.0",
     "http": "0.0.1-security",
     "http-attach": "^1.0.0",
-    "minimist": "^1.2.5",
+    "minimist": "^1.2.8",
     "readline-sync": "^1.4.10",
     "request": "^2.88.2",
     "request-promise": "^4.2.6",
