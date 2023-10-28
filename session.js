@@ -1866,12 +1866,12 @@ class sessionClass {
               let away_level = cache_data.dates[0].games[j].teams['away'].team.sport.id
               this.debuglog('checking game ' + cache_data.dates[0].games[j].teams['home'].team.abbreviation + '@' + cache_data.dates[0].games[j].teams['away'].team.abbreviation)
 
-              // check that that game involves the requested team, or if it's a national or free game and we've requested that
-              if ( ((team.toUpperCase() == home_team) && (LEVELS[level.toUpperCase()] == home_level)) || ((team.toUpperCase() == away_team) && (LEVELS[level.toUpperCase()] == away_level)) || ((team.toUpperCase().indexOf('NATIONAL.') == 0) && ((cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'NATIONAL') || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training')))) || (team.toUpperCase().startsWith('FREE.') && cache_data.dates[0].games[j].content.media.freeGame) ) {
-                this.debuglog('matched team for ' + cache_data.dates[0].games[j].teams['home'].team.abbreviation + '@' + cache_data.dates[0].games[j].teams['away'].team.abbreviation)
+              // check that that game involves the requested team, or if we've requested a national or free game
+              if ( ((team.toUpperCase() == home_team) && (LEVELS[level.toUpperCase()] == home_level)) || ((team.toUpperCase() == away_team) && (LEVELS[level.toUpperCase()] == away_level)) || (team.toUpperCase().indexOf('NATIONAL.') == 0) || ((team.toUpperCase().startsWith('FREE.') && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.freeGame)) ) {
 
                 // Check if Winter League / MiLB game first
                 if ( (cache_data.dates[0].games[j].teams['home'].team.sport.id != LEVELS['MLB']) && (mediaType == 'MLBTV') ) {
+                  this.debuglog('matched non-MLB team for ' + cache_data.dates[0].games[j].teams['home'].team.abbreviation + '@' + cache_data.dates[0].games[j].teams['away'].team.abbreviation)
                   if ( cache_data.dates[0].games[j].broadcasts ) {
                     let broadcastName = 'N/A'
                     for (var k = 0; k < cache_data.dates[0].games[j].broadcasts.length; k++) {
@@ -1898,7 +1898,6 @@ class sessionClass {
 
                 // MLB games
                 if ( cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.epg ) {
-
                   // check blackout status, if necessary
                   if ( (mediaType == 'MLBTV') && (includeBlackouts == 'false') && blackouts[gamePk] ) {
                     if ( !blackouts[gamePk].blackoutExpiry || (currentDate < blackouts[gamePk].blackoutExpiry) ) {
@@ -2326,7 +2325,8 @@ class sessionClass {
             let dateIndex = {MLBTV:i,Free:i,Audio:i}
             let gameCounter = {MLBTV:0,Free:0,Audio:0}
 
-            let blackouts = await this.get_blackout_games(cache_data.dates[i].games)
+            let blackouts = {}
+            if ( includeBlackouts == 'false' ) blackouts = await this.get_blackout_games(cache_data.dates[i].games)
             let gameIndexes = await this.get_first_and_last_games(cache_data.dates[i].games, blackouts)
             // store gameIndexes for gamechanger/multiview reference later
             gameIndexes_obj[cache_data.dates[i].date] = gameIndexes
@@ -3595,7 +3595,7 @@ class sessionClass {
             this.debuglog('get_blackout_games checking ' + game_pk)
             for (var x = 0; x < games[j].content.media.epg[k].items.length; x++) {
               this.debuglog('get_blackout_games checking feed ' + games[j].content.media.epg[k].items[x].mediaFeedType + ' ' + games[j].content.media.epg[k].items[x].callLetters)
-              if ( (games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL') || (await this.check_pay_tv(games[j].content.media.epg[k].items[x])) ) {
+              if ( (games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL') || (await this.check_pay_tv(games[j].content.media.epg[k].items[x])) || games[j].content.media.epg[k].items[x].callLetters.endsWith('-INT') ) {
                 this.debuglog('get_blackout_games checking national game')
                 // International blackouts according to https://www.mlb.com/live-stream-games/help-center/blackouts-available-games
                 if ( usa_blackout && (games[j].content.media.epg[k].items[x].callLetters == 'FOX') ) {
@@ -3613,6 +3613,9 @@ class sessionClass {
                 // ESPN Sunday Night games are blacked out in a list of countries
                 } else if ( (games[j].content.media.epg[k].items[x].callLetters == 'ESPN') && (new Date(games[j].gameDate).getDay() == 0) && ESPN_SUNDAY_NIGHT_BLACKOUT_COUNTRIES.includes(this.credentials.country) ) {
                   blackouts[game_pk] = { blackout_type:'Partial International' }
+                // games with an "-INT" variant are postseason games, blacked out in USA and Canada
+                } else if ( games[j].content.media.epg[k].items[x].callLetters.endsWith('-INT') && (usa_blackout || (this.credentials.country == 'Canada')) ) {
+                  blackouts[game_pk] = { blackout_type:'National' }
                 } else if ( usa_blackout ) {
                   blackouts[game_pk] = { blackout_type:'National' }
                 }

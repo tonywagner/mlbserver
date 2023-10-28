@@ -1512,6 +1512,8 @@ app.get('/', async function(req, res) {
 
     let blackouts = {}
 
+    let currentDate = new Date()
+
     if ( (mediaType == 'MLBTV') && ((level_ids == levels['MLB']) || level_ids.startsWith(levels['MLB'] + ',')) ) {
       // Recap Rundown beginning in 2023, disabled because it stopped working
       /*if ( (gameDate <= yesterday) && (gameDate >= '2023-03-31') && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
@@ -1530,8 +1532,6 @@ app.get('/', async function(req, res) {
       if ( (gameDate >= today) && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
         blackouts = await session.get_blackout_games(cache_data.dates[0].games, true)
       }
-
-      let currentDate = new Date()
 
       // Big Inning
       var big_inning
@@ -1601,6 +1601,8 @@ app.get('/', async function(req, res) {
 
     if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games ) {
       for (var j = 0; j < cache_data.dates[0].games.length; j++) {
+        let gamePk = cache_data.dates[0].games[j].gamePk.toString()
+
         let game_started = false
 
         let awayteam = cache_data.dates[0].games[j].teams['away'].team.abbreviation
@@ -1810,7 +1812,6 @@ app.get('/', async function(req, res) {
                 let startTime = new Date(cache_data.dates[0].games[j].gameDate)
                 startTime.setMinutes(startTime.getMinutes()-30)
                 if ( (currentTime >= startTime) ) {
-                  let gamePk = cache_data.dates[0].games[j].gamePk
                   let querystring
                   querystring = '?gamePk=' + gamePk
                   let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
@@ -1878,7 +1879,6 @@ app.get('/', async function(req, res) {
                       let station = cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters
 
                       // display blackout tooltip, if necessary
-                      let gamePk = cache_data.dates[0].games[j].gamePk.toString()
                       if ( blackouts[gamePk] ) {
                         body += '<span class="tooltip"><span class="blackout">' + teamabbr + '</span><span class="tooltiptext">' + blackouts[gamePk].blackout_type + ' video blackout until approx. 2.5 hours after the game'
                         if ( blackouts[gamePk].blackoutExpiry ) {
