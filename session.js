@@ -2333,8 +2333,8 @@ class sessionClass {
 
             for (var j = 0; j < cache_data.dates[i].games.length; j++) {
               this.debuglog('getTVData processing game ' + j + ' for date ' + cache_data.dates[i].date)
-              // Check if Winter League / MiLB game first
-              if ( (cache_data.dates[i].games[j].teams['home'].team.sport.id != LEVELS['MLB']) && (mediaType == 'MLBTV') ) {
+              // Check if non-MLB (Winter League / MiLB) game first
+              if ( (cache_data.dates[i].games[j].teams['home'].team.sport.id != LEVELS['MLB']) && (cache_data.dates[i].games[j].teams['away'].team.sport.id != LEVELS['MLB']) && (mediaType == 'MLBTV') ) {
                 if ( cache_data.dates[i].games[j].broadcasts ) {
                   let broadcastName = 'N/A'
                   for (var k = 0; k < cache_data.dates[i].games[j].broadcasts.length; k++) {
@@ -2614,18 +2614,17 @@ class sessionClass {
               let title = 'MLB Big Inning'
               let description = 'Live look-ins and big moments from around the league'
 
-              // Scraped Big Inning schedule
-              if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
-                await this.getBigInningSchedule()
-              }
-
               for (var i = 0; i < cache_data.dates.length; i++) {
+                // Scraped Big Inning schedule
+                if ( (cache_data.dates[i].date >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') ) {
+                  await this.getBigInningSchedule()
+                }
                 this.debuglog('getTVData processing Big Inning for date ' + cache_data.dates[i].date)
                 let gameDate = cache_data.dates[i].date
                 // Disabled Big Inning specific schedule scraping
                 //if ( this.cache.bigInningSchedule && this.cache.bigInningSchedule[gameDate] && this.cache.bigInningSchedule[gameDate].start ) {
                 //if ( (gameDate >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') ) {
-                if ( (gameDate >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') ) {
+                if ( (gameDate >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') && this.cache.bigInningSchedule[gameDate] ) {
                   this.debuglog('getTVData Big Inning active for date ' + cache_data.dates[i].date)
                   // Scraped Big Inning schedule
                   let start = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].start))
@@ -3134,7 +3133,8 @@ class sessionClass {
       if ( !this.cache || !this.cache.bigInningScheduleCacheExpiry || (currentDate > new Date(this.cache.bigInningScheduleCacheExpiry)) ) {
         if ( !this.cache.bigInningSchedule ) this.cache.bigInningSchedule = {}
         let reqObj = {
-          url: 'https://www.mlb.com/live-stream-games/big-inning',
+          //url: 'https://www.mlb.com/live-stream-games/big-inning',
+          url: 'https://www.mlb.com/live-stream-games/help-center/subscription-access-big-inning',
           headers: {
             'User-Agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
