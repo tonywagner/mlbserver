@@ -12,7 +12,7 @@ const parseString = require('xml2js').parseString
 const MULTIVIEW_DIRECTORY_NAME = 'multiview'
 
 // Default user agent to use for API requests
-const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:109.0) Gecko/20100101 Firefox/110.0'
+const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 
 // Other variables to use in API communications
 const PLATFORM = "macintosh"
@@ -25,7 +25,7 @@ const TODAY_UTC_HOURS = 8 // UTC hours (EST + 4) into tomorrow to still use toda
 
 const TEAM_IDS = {'ARI':'109','ATL':'144','BAL':'110','BOS':'111','CHC':'112','CWS':'145','CIN':'113','CLE':'114','COL':'115','DET':'116','HOU':'117','KC':'118','LAA':'108','LAD':'119','MIA':'146','MIL':'158','MIN':'142','NYM':'121','NYY':'147','OAK':'133','PHI':'143','PIT':'134','STL':'138','SD':'135','SF':'137','SEA':'136','TB':'139','TEX':'140','TOR':'141','WSH':'120'}
 
-const AFFILIATE_TEAM_IDS = { 'ARI': '419,516,2310,5368', 'ATL': '430,432,478,431', 'BAL': '418,568,548,488', 'BOS': '428,414,533,546', 'CHC': '521,451,550,553', 'CIN': '450,459,498,416', 'CLE': '445,402,437,481', 'COL': '259,486,342,538', 'CWS': '247,580,487,494', 'DET': '512,570,582,106', 'HOU': '482,5434,573,3712', 'KC': '1350,3705,541,565', 'LAA': '401,559,460,561', 'LAD': '260,238,456,526', 'MIA': '479,564,554,4124', 'MIL': '249,572,556,5015', 'MIN': '492,509,1960,3898', 'NYM': '453,507,552,505', 'NYY': '1956,587,531,537', 'OAK': '237,499,400,524', 'PHI': '427,522,1410,566', 'PIT': '3390,484,452,477', 'SD': '103,510,584,4904', 'SEA': '403,515,529,574', 'SF': '105,461,476,3410', 'STL': '279,235,440,443', 'TB': '2498,233,234,421', 'TEX': '102,485,540,448', 'TOR': '424,435,463,422', 'WSH': '436,534,547,426' }
+const AFFILIATE_TEAM_IDS = { 'ARI': '419,516,2310,5368', 'ATL': '430,431,432,478', 'BAL': '418,488,548,568', 'BOS': '414,428,533,546', 'CHC': '451,521,550,553', 'CIN': '416,450,459,498', 'CLE': '402,437,445,481', 'COL': '259,342,486,538', 'CWS': '247,487,494,580', 'DET': '106,512,570,582', 'HOU': '482,573,3712,5434', 'KC': '541,565,1350,3705', 'LAA': '401,460,559,561', 'LAD': '238,260,456,526', 'MIA': '479,554,564,4124', 'MIL': '249,556,572,5015', 'MIN': '492,509,1960,3898', 'NYM': '453,505,507,552', 'NYY': '531,537,587,1956', 'OAK': '237,400,499,524', 'PHI': '427,522,566,1410', 'PIT': '452,477,484,3390', 'SD': '103,510,584,4904', 'SEA': '403,515,529,574', 'SF': '105,461,476,3410', 'STL': '235,279,440,443', 'TB': '233,234,421,2498', 'TEX': '102,448,485,540', 'TOR': '422,424,435,463', 'WSH': '426,436,534,547' }
 
 // Other country options would be USA, Canada, or other
 const ESPN_SUNDAY_NIGHT_BLACKOUT_COUNTRIES = ["Angola", "Anguilla", "Antigua and Barbuda", "Argentina", "Aruba", "Australia", "Bahamas", "Barbados", "Belize", "Belize", "Benin", "Bermuda", "Bolivia", "Bonaire", "Botswana", "Brazil", "British Virgin Islands", "Burkina Faso", "Burundi", "Cameroon", "Cape Verde", "Cayman Islands", "Central African Republic", "Chad", "Chile", "Colombia", "Comoros", "Cook Islands", "Costa Rica", "Cote d'Ivoire", "Curacao", "Democratic Republic of the Congo", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "El Salvador", "England", "Equatorial Guinea", "Eritrea", "Eswatini", "Ethiopia", "Falkland Islands", "Falkland Islands", "Fiji", "French Guiana", "French Guiana", "French Polynesia", "Gabon", "Ghana", "Grenada", "Guadeloupe", "Guatemala", "Guinea", "Guinea Bissau", "Guyana", "Guyana", "Haiti", "Honduras", "Ireland", "Jamaica", "Kenya", "Kiribati", "Lesotho", "Liberia", "Madagascar", "Malawi", "Mali", "Marshall Islands", "Martinique", "Mayotte", "Mexico", "Micronesia", "Montserrat", "Mozambique", "Namibia", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Northern Ireland", "Palau Islands", "Panama", "Paraguay", "Peru", "Republic of Ireland", "Reunion", "Rwanda", "Saba", "Saint Maarten", "Samoa", "Sao Tome & Principe", "Scotland", "Senegal", "Seychelles", "Sierra Leone", "Solomon Islands", "Somalia", "South Africa", "St. Barthelemy", "St. Eustatius", "St. Kitts and Nevis", "St. Lucia", "St. Martin", "St. Vincent and the Grenadines", "Sudan", "Surinam", "Suriname", "Tahiti", "Tanzania & Zanzibar", "The Gambia", "The Republic of Congo", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Turks and Caicos Islands", "Tuvalu", "Uganda", "Uruguay", "Venezuela", "Wales", "Zambia", "Zimbabwe"]
@@ -3136,10 +3136,22 @@ class sessionClass {
           //url: 'https://www.mlb.com/live-stream-games/big-inning',
           url: 'https://www.mlb.com/live-stream-games/help-center/subscription-access-big-inning',
           headers: {
-            'User-Agent': USER_AGENT,
-            'Origin': 'https://www.mlb.com',
-            'Referer': 'https://www.mlb.com',
-            'Accept-Encoding': 'gzip, deflate, br'
+            'authority': 'www.mlb.com',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'accept-language': 'en-US,en;q=0.9',
+            'cache-control': 'no-cache',
+            'dnt': '1',
+            'pragma': 'no-cache',
+            'sec-ch-ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"macOS"',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'none',
+            'sec-fetch-user': '?1',
+            'sec-gpc': '1',
+            'upgrade-insecure-requests': '1',
+            'user-agent': USER_AGENT
           },
           gzip: true
         }
@@ -3178,8 +3190,10 @@ class sessionClass {
                   day = parts[1].substring(0,parts[1].length-3)*/
                   // new date format (01/01/70)
                   parts = col[0].split('/')
-                  //year = '20' + parts[2]
                   year = parts[2]
+                  if ( year.length == 2 ) {
+                    year = '20' + parts[2]
+                  }
                   // get month index, zero-based
                   month = parseInt(parts[0]) - 1
                   day = parts[1]
