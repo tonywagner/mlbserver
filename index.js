@@ -47,7 +47,7 @@ const SAMPLE_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
 const SECONDS_PER_SEGMENT = 5
 
 // for favorites: text, then background, based on https://teamcolors.jim-nielsen.com/
-const TEAM_COLORS = {'ARI': ['E3D4AD', 'A71930'], 'ATL': ['13274F', 'CE1141'], 'BAL': ['000000', 'DF4601'], 'BOS': ['0D2B56', 'BD3039'], 'CHC': ['CC3433', '0E3386'], 'CWS': ['000000', 'C4CED4'], 'CIN': ['FFFFFF', 'C6011F'], 'CLE': ['002B5C', 'E31937'], 'COL': ['C4CED4', '333366'], 'DET': ['0C2C56', 'FFFFFF'], 'HOU': ['002D62', 'EB6E1F'], 'KC': ['C09A5B', '004687'], 'LAA': ['FFFFFF', 'BA0021'], 'LAD': ['FFFFFF', '005A9C'], 'MIA': ['0077C8', 'FF6600'], 'MIL': ['0A2351', 'B6922E'], 'MIN': ['D31145', '002B5C'], 'NYM': ['002D72', 'FF5910'], 'NYY': ['FFFFFF', '003087'], 'OAK': ['003831', 'EFB21E'], 'PHI': ['284898', 'E81828'], 'PIT': ['000000', 'FDB827'], 'STL': ['FEDB00', 'C41E3A'], 'SD': ['FEC325', '7F411C'], 'SF': ['000000', 'FD5A1E'], 'SEA': ['C4CED4', '005C5C'], 'TB': ['092C5C', '8FBCE6'], 'TEX': ['003278', 'C0111F'], 'TOR': ['FFFFFF', '134A8E'], 'WSH': ['AB0003', '11225B']}
+const TEAM_COLORS = { 'ATL': ['13274F', 'CE1141'], 'AZ': ['E3D4AD', 'A71930'], 'BAL': ['000000', 'DF4601'], 'BOS': ['0D2B56', 'BD3039'], 'CHC': ['CC3433', '0E3386'], 'CWS': ['000000', 'C4CED4'], 'CIN': ['FFFFFF', 'C6011F'], 'CLE': ['002B5C', 'E31937'], 'COL': ['C4CED4', '333366'], 'DET': ['0C2C56', 'FFFFFF'], 'HOU': ['002D62', 'EB6E1F'], 'KC': ['C09A5B', '004687'], 'LAA': ['FFFFFF', 'BA0021'], 'LAD': ['FFFFFF', '005A9C'], 'MIA': ['0077C8', 'FF6600'], 'MIL': ['0A2351', 'B6922E'], 'MIN': ['D31145', '002B5C'], 'NYM': ['002D72', 'FF5910'], 'NYY': ['FFFFFF', '003087'], 'OAK': ['003831', 'EFB21E'], 'PHI': ['284898', 'E81828'], 'PIT': ['000000', 'FDB827'], 'STL': ['FEDB00', 'C41E3A'], 'SD': ['FEC325', '7F411C'], 'SF': ['000000', 'FD5A1E'], 'SEA': ['C4CED4', '005C5C'], 'TB': ['092C5C', '8FBCE6'], 'TEX': ['003278', 'C0111F'], 'TOR': ['FFFFFF', '134A8E'], 'WSH': ['AB0003', '11225B'] }
 
 // Gamechanger resolutions
 const GAMECHANGER_RESOLUTIONS = {
@@ -2112,7 +2112,7 @@ app.get('/', async function(req, res) {
 
     body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live MLB broadcasts. If favorite team(s) have been provided, it will also include affiliate games for those organizations. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a></p>' + "\n"
 
-    let include_teams = 'ari,national'
+    let include_teams = 'atl,national'
     if ( session.credentials.fav_teams.length > 0 ) {
       include_teams = session.credentials.fav_teams.toString()
     }
@@ -2120,7 +2120,7 @@ app.get('/', async function(req, res) {
 
     body += '<p><span class="tooltip">Include blackouts<span class="tooltiptext">An optional parameter added to the URL will include channels/games subject to blackout (although you may not be able to play those games).</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
-    let exclude_teams = 'ari,national'
+    let exclude_teams = 'atl,national'
     if ( session.credentials.blackout_teams.length > 0 ) {
       exclude_teams = session.credentials.blackout_teams.toString()
       exclude_teams += ',national'
@@ -2143,7 +2143,7 @@ app.get('/', async function(req, res) {
       body += '<p><span class="tooltip">Free games only<span class="tooltiptext">Only includes games marked as free. Blackouts still apply. If a zip code has been provided, channels/games subject to blackout will be omitted by default.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=free' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">guide.xml</a></p>' + "\n"
     }
 
-    body += '<p><span class="tooltip">Include affiliates by org<span class="tooltiptext">Including an organization (by MLB team abbreviation, in a comma-separated list if more than 1) will include all of its affiliate broadcasts, or if that affiliate is not broadcasting the game, it will include the opponent\'s broadcast if available. If this option is not specified, but favorite team(s) have been provided, affiliate games for those organizations will be included anyway.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeOrgs=ari,atl' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeOrgs=ari,atl' + content_protect_b + '">guide.xml</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include affiliates by org<span class="tooltiptext">Including an organization (by MLB team abbreviation, in a comma-separated list if more than 1) will include all of its affiliate broadcasts, or if that affiliate is not broadcasting the game, it will include the opponent\'s broadcast if available. If this option is not specified, but favorite team(s) have been provided, affiliate games for those organizations will be included anyway.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeOrgs=atl,az' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeOrgs=atl,az' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include by level<span class="tooltiptext">Including a level (AAA, AA, A+, or A, in a comma-separated list if more than 1) will include all of its broadcasts, and exclude all other levels.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeLevels=aaa,aa' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeLevels=aaa,aa' + content_protect_b + '">guide.xml</a></p>' + "\n"
 
@@ -2154,7 +2154,7 @@ app.get('/', async function(req, res) {
     body += '<p>' + "\n"
     let example_types = [ ['embed.html', 'Embed'], ['stream.m3u8', 'Stream'], ['chromecast.html', 'Chromecast'], ['kodi.strm', 'Kodi'] ]
 
-    let example_team = 'ari'
+    let example_team = 'atl'
     if ( session.credentials.fav_teams.length > 0 ) {
       example_team = session.credentials.fav_teams[0]
     }
@@ -2199,7 +2199,7 @@ app.get('/', async function(req, res) {
     let gamechanger_streamURL = server + '/gamechanger.m3u8?resolution=best' + content_protect_b
     let gamechanger_types = ['in', 'ex']
     for (var i=0; i<gamechanger_types.length; i++) {
-      let example_streamURL = gamechanger_streamURL + '&' + gamechanger_types[i] + 'cludeTeams=ARI,ATL'
+      let example_streamURL = gamechanger_streamURL + '&' + gamechanger_types[i] + 'cludeTeams=ATL,AZ'
       body += '&bull; ' + gamechanger_types[i] + 'clude: <a href="/embed.html?src=' + encodeURIComponent(example_streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b + '">Embed</a> | <a href="' + example_streamURL + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Advanced</a> | <a href="/kodi.strm?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Kodi</a><br/>' + "\n"
     }
 
