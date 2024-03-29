@@ -2356,10 +2356,11 @@ class sessionClass {
                       }
                       let channelid = mediaType + '.' + team
                       let logo = server + '/image.svg?teamId=' + team_id
+                      if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
                       let streamMediaType = 'Video'
                       let stream = server + '/stream.m3u8?team=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
                       let sportId = cache_data.dates[i].games[j].teams['home'].team.sport.id
-                      stream += '&level=' + this.getLevelNameFromSportId(sportId)
+                      stream += '&level=' + encodeURIComponent(this.getLevelNameFromSportId(sportId))
                       stream += '&resolution=' + resolution
                       if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
                       if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
@@ -2491,7 +2492,7 @@ class sessionClass {
                             let icon
                             if ( cache_data.dates[i].games[j].seriesDescription == 'All-Star Game' ) {
                               icon = server + '/image.svg?teamId=' + cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedSubType
-                              if ( this.protection.content_protect ) icon += '&content_protect=' + this.protection.content_protect
+                              if ( this.protection.content_protect ) icon += '&amp;content_protect=' + this.protection.content_protect
                             } else {
                               icon = 'https://img.mlbstatic.com/mlb-photos/image/upload/ar_167:215,c_crop/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':fill:spot.png,w_1.0,h_1,x_0.5,y_0,fl_no_overflow,e_distort:100p:0:200p:0:200p:100p:0:100p/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['away'].team.id + ':logo:spot:current,w_0.38,x_-0.25,y_-0.16/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':logo:spot:current,w_0.38,x_0.25,y_0.16/w_750/team/' + cache_data.dates[i].games[j].teams['away'].team.id + '/fill/spot.png'
                             }
@@ -2520,11 +2521,11 @@ class sessionClass {
                             let logo = server
                             if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
                               logo += '/image.svg?teamId=MLB'
-                              if ( this.protection.content_protect ) logo += '&content_protect=' + this.protection.content_protect
+                              if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
                               nationalChannels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
                             } else {
                               logo += '/image.svg?teamId=' + cache_data.dates[i].games[j].content.media.epg[k].items[x].mediaFeedSubType
-                              if ( this.protection.content_protect ) logo += '&content_protect=' + this.protection.content_protect
+                              if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
                               channels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
                             }
 
@@ -2605,7 +2606,7 @@ class sessionClass {
               this.debuglog('getTVData processing Big Inning')
               let logo = 'https://img.mlbstatic.com/mlb-images/image/private/ar_16:9,g_auto,q_auto:good,w_372,c_fill,f_jpg/mlb/uwr8vepua4t1fe8uwyki'
               let channelid = mediaType + '.BIGINNING'
-              if ( this.protection.content_protect ) logo += '&content_protect=' + this.protection.content_protect
+              if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
               let stream = server + '/stream.m3u8?event=biginning&mediaType=Video&resolution=' + resolution
               if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
               if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
@@ -2651,7 +2652,7 @@ class sessionClass {
               this.debuglog('getTVData processing Game Changer')
               let channelid = mediaType + '.GAMECHANGER'
               let logo = server + '/image.svg?teamId=MLB'
-              if ( this.protection.content_protect ) logo += '&content_protect=' + this.protection.content_protect
+              if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
               let stream = server + '/gamechanger.m3u8?resolution=' + resolution
               if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
               channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
@@ -2688,7 +2689,7 @@ class sessionClass {
               this.debuglog('getTVData processing Multiview')
               let channelid = mediaType + '.MULTIVIEW'
               let logo = server + '/image.svg?teamId=MLB'
-              if ( this.protection.content_protect ) logo += '&content_protect=' + this.protection.content_protect
+              if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
               let stream = server.replace(':' + this.data.port, ':' + this.data.multiviewPort) + this.data.multiviewStreamURLPath
               if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
               channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
