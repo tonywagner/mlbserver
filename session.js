@@ -1170,6 +1170,7 @@ class sessionClass {
     if ( offset > 0 ) {
       newDate += "-"
     } else {
+      offset = Number(String(offset).substring(1,offset.length));
       newDate += "+"
     }
     newDate += String((offset / 60)).padStart(2, '0') + "00"
