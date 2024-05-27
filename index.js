@@ -680,7 +680,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="') ) {
           var parsed = line.match(',URI="([^"]+)"')
           if ( parsed[1] ) {
-            newurl = '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
+            newurl = '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim())) + content_protect + referer_parameter
             return '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="' + newurl + '"'
           }
           return
@@ -859,7 +859,12 @@ app.get('/playlist', async function(req, res) {
 
         if (line[0] === '#') return line
 
-        let newline = '/ts?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter
+        let newline = '/ts'
+        if ( line.includes('.vtt') ) {
+          newline = '/vtt'
+        }
+
+        newline += '?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter
         if ( key ) newline += '&key='+encodeURIComponent(key) + '&iv='+encodeURIComponent(iv)
 
         return newline
@@ -955,6 +960,49 @@ app.get('/ts', async function(req, res) {
       session.log('key decode error : ' + e.message)
       return respond(response, res, '')
     }
+  })
+})
+
+
+// Listen for WebVTT subtitle requests
+app.get('/vtt', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  session.requestlog('vtt', req, true)
+
+  delete req.headers.host
+
+  var u = req.query.url
+  session.debuglog('vtt url : ' + u)
+
+  var referer = false
+  if ( req.query.referer ) {
+    referer = decodeURIComponent(req.query.referer)
+    session.debuglog('found vtt referer : ' + referer)
+  }
+
+  var req = function () {
+    var headers = {}
+    if ( referer ) {
+      headers.referer = referer
+      headers.origin = getOriginFromURL(referer)
+    }
+
+    requestRetry(u, headers, function(err, response) {
+      if (err) return res.error(err)
+
+      var body = response.body
+
+      session.debuglog(body)
+      respond(response, res, Buffer.from(body))
+    })
+  }
+
+  return req()
+
+  requestRetry(u, headers, function(err, res) {
+    if (err) return res.error(err)
+    req()
   })
 })
 
@@ -2340,7 +2388,7 @@ app.get('/embed.html', async function(req, res) {
   }
 
   // Adapted from https://hls-js.netlify.app/demo/basic-usage.html and https://hls-js-dev.netlify.app/demo
-  var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><title>' + appname + ' player</title><link rel="icon" href="favicon.svg"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{background-color:black;color:lightgrey;font-family:Arial,Helvetica,sans-serif}video{width:100% !important;height:auto !important;max-width:1280px}input[type=number]::-webkit-inner-spin-button{opacity:1}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}</style><script>function goBack(){var prevPage=window.location.href;window.history.go(-1);setTimeout(function(){if(window.location.href==prevPage){window.location.href="/' + content_protect + '"}}, 500)}function toggleAudio(x){var elements=document.getElementsByClassName("audioButton");for(var i=0;i<elements.length;i++){elements[i].className="audioButton"}document.getElementById("audioButton"+x).className+=" default";hls.audioTrack=x}function changeTime(x){video.currentTime+=x}function changeRate(x){let newRate=Math.round((Number(document.getElementById("playback_rate").value)+x)*10)/10;if((newRate<=document.getElementById("playback_rate").max) && (newRate>=document.getElementById("playback_rate").min)){document.getElementById("playback_rate").value=newRate.toFixed(1);video.defaultPlaybackRate=video.playbackRate=document.getElementById("playback_rate").value}}function myKeyPress(e){if(e.key=="ArrowRight"){changeTime(10)}else if(e.key=="ArrowLeft"){changeTime(-10)}else if(e.key=="ArrowUp"){changeRate(0.1)}else if(e.key=="ArrowDown"){changeRate(-0.1)}}</script></head><body onkeydown="myKeyPress(event)"><script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script><video id="video"'
+  var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><title>' + appname + ' player</title><link rel="icon" href="favicon.svg' + content_protect + '"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{background-color:black;color:lightgrey;font-family:Arial,Helvetica,sans-serif}video{width:100% !important;height:auto !important;max-width:1280px}input[type=number]::-webkit-inner-spin-button{opacity:1}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}</style><script>function goBack(){var prevPage=window.location.href;window.history.go(-1);setTimeout(function(){if(window.location.href==prevPage){window.location.href="/' + content_protect + '"}}, 500)}function toggleAudio(x){var elements=document.getElementsByClassName("audioButton");for(var i=0;i<elements.length;i++){elements[i].className="audioButton"}document.getElementById("audioButton"+x).className+=" default";hls.audioTrack=x}function changeTime(x){video.currentTime+=x}function changeRate(x){let newRate=Math.round((Number(document.getElementById("playback_rate").value)+x)*10)/10;if((newRate<=document.getElementById("playback_rate").max) && (newRate>=document.getElementById("playback_rate").min)){document.getElementById("playback_rate").value=newRate.toFixed(1);video.defaultPlaybackRate=video.playbackRate=document.getElementById("playback_rate").value}}function myKeyPress(e){if(e.key=="ArrowRight"){changeTime(10)}else if(e.key=="ArrowLeft"){changeTime(-10)}else if(e.key=="ArrowUp"){changeRate(0.1)}else if(e.key=="ArrowDown"){changeRate(-0.1)}}</script></head><body onkeydown="myKeyPress(event)"><script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script><video id="video"'
   if ( controls == VALID_CONTROLS[0] ) {
     body += ' controls'
   }
