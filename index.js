@@ -127,7 +127,7 @@ var argv = minimist(process.argv, {
     e: 'env'
   },
   boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version', 'free', 'env'],
-  string: ['port', 'account_username', 'account_password', 'zip_code', 'country', 'fav_teams', 'multiview_port', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'gamechanger_delay', 'data_directory']
+  string: ['account_username', 'account_password', 'zip_code', 'country', 'fav_teams', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'data_directory']
 })
 
 if (argv.env) argv = process.env
