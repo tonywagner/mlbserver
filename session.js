@@ -2357,18 +2357,19 @@ class sessionClass {
                   } else {
                     for (var k = 0; k < cache_data.dates[i].games[j].broadcasts.length; k++) {
                       let team = cache_data.dates[i].games[j].teams['home'].team.abbreviation
-                      let team_id = cache_data.dates[i].games[j].teams['home'].team.id
-                      let opponent_team_id = cache_data.dates[i].games[j].teams['away'].team.id
-                      if ( team_ids.includes(opponent_team_id) && !team_ids.includes(team_id) ) {
+                      let team_id = cache_data.dates[i].games[j].teams['home'].team.id.toString()
+                      let opponent_team_id = cache_data.dates[i].games[j].teams['away'].team.id.toString()
+                      if ( team_ids.split(',').includes(opponent_team_id) && !team_ids.split(',').includes(team_id) ) {
                         team_id = opponent_team_id
                         team = cache_data.dates[i].games[j].teams['away'].team.abbreviation
                       }
-                      let channelid = mediaType + '.' + team
-                      let logo = server + '/image.svg?teamId=' + team_id
+                      let sportId = cache_data.dates[i].games[j].teams['home'].team.sport.id
+                      let channelid = mediaType + '.' + sportId + '.' + team
+                      //let logo = server + '/image.svg?teamId=' + team_id
+                      let logo = 'https://img.mlbstatic.com/mlb-photos/image/upload/ar_167:215,c_crop/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':fill:spot.png,w_1.0,h_1,x_0.5,y_0,fl_no_overflow,e_distort:100p:0:200p:0:200p:100p:0:100p/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['away'].team.id + ':logo:spot:current,w_0.38,x_-0.25,y_-0.16/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':logo:spot:current,w_0.38,x_0.25,y_0.16/w_750/team/' + cache_data.dates[i].games[j].teams['away'].team.id + '/fill/spot.png'
                       if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
                       let streamMediaType = 'Video'
                       let stream = server + '/stream.m3u8?team=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
-                      let sportId = cache_data.dates[i].games[j].teams['home'].team.sport.id
                       stream += '&level=' + encodeURIComponent(this.getLevelNameFromSportId(sportId))
                       stream += '&resolution=' + resolution
                       if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
@@ -4348,7 +4349,12 @@ class sessionClass {
     '      <title lang="en">' + title + '</title>' + "\n" +
     '      <desc lang="en">' + description.trim() + '</desc>' + "\n" +
     '      <category lang="en">Sports</category>' + "\n" +
+    '      <category lang="en">Baseball</category>' + "\n" +
+    '      <category lang="en">Sports event</category>' + "\n" +
     '      <icon src="' + icon + '"></icon>' + "\n" +
+    '      <new/>' + "\n" +
+    '      <live/>' + "\n" +
+    '      <sport>Baseball</sport>' + "\n" +
     '    </programme>'
   }
 
