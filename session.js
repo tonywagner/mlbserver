@@ -3381,10 +3381,8 @@ class sessionClass {
             'User-Agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
             'Referer': 'https://www.mlb.com',
-            'Content-Type': 'application/json',
-            'Accept-Encoding': 'gzip, deflate, br'
-          },
-          gzip: true
+            'Content-Type': 'application/json'
+          }
         }
         var response = await this.httpGet(reqObj, false)
         if ( response && this.isValidJson(response) ) {
