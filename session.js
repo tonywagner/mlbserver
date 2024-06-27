@@ -3375,8 +3375,8 @@ class sessionClass {
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.eventURLCacheExpiry || (currentDate > new Date(this.cache.eventURLCacheExpiry)) ) {
         let reqObj = {
-          //url: 'https://dapi.cms.mlbinfra.com/v2/content/en-us/sel-mlbtv-featured-svod-video-list',
-          url: 'https://dapi.mlbinfra.com/v2/content/en-us/vsmcontents/mlb-tv-welcome-center-big-inning-show',
+          url: 'https://dapi.cms.mlbinfra.com/v2/content/en-us/sel-mlbtv-featured-svod-video-list',
+          //url: 'https://dapi.mlbinfra.com/v2/content/en-us/vsmcontents/mlb-tv-welcome-center-big-inning-show',
           headers: {
             'User-Agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
