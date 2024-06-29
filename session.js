@@ -37,9 +37,9 @@ const LEVELS = { 'MLB': '1', 'AAA': '11', 'AA': '12', 'A+': '13', 'A': '14', 'Al
 const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
 // These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
 const ACTION_TYPES = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Error', 'Out', 'Balk', 'Defensive Indiff', 'Other Advance']
-const EVENT_START_PADDING = 0
+const EVENT_START_PADDING = 8
 const PITCH_END_PADDING = 7
-const ACTION_END_PADDING = 10
+const ACTION_END_PADDING = 18
 const MINIMUM_BREAK_DURATION = 5
 
 const LI_TABLE = {
