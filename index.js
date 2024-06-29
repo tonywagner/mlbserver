@@ -355,16 +355,23 @@ app.get('/stream.m3u8', async function(req, res) {
       }
 
       // resolve any alternate audio mediaIds into playlist URLs, if necessary
-      if ( options.alternate_audio_tracks ) {
-        for (const [key, value] of Object.entries(options.alternate_audio_tracks)) {
-          if ( (options.audio_track == VALID_AUDIO_TRACKS[0]) || (options.audio_track == key) ) {
-            let audioStreamURL = await session.getStreamURL(value)
-            let audioPlaylistURL = audioStreamURL.replace(/\/(master_radio_complete|master_radio)/g,'/48K/48_complete')
-            options.alternate_audio_tracks[key] = audioPlaylistURL
-          } else {
+      try {
+        if ( options.alternate_audio_tracks ) {
+          for (const [key, value] of Object.entries(options.alternate_audio_tracks)) {
+            if ( (options.audio_track == VALID_AUDIO_TRACKS[0]) || (options.audio_track == key) ) {
+              session.debuglog('stream request attempting to add alternate audio from ' + value)
+              let audioStreamURL = await session.getStreamURL(value)
+              if ( audioStreamURL ) {
+                let audioPlaylistURL = audioStreamURL.replace(/\/(master_radio_complete|master_radio)/g,'/48K/48_complete')
+                options.alternate_audio_tracks[key] = audioPlaylistURL
+                continue
+              }
+            }
             delete options.alternate_audio_tracks[key]
           }
         }
+      } catch (e) {
+        session.debuglog('stream request alternate audio error : ' + e.message)
       }
 
       if ( (options.inning_half != VALID_INNING_HALF[0]) || (options.inning_number != VALID_INNING_NUMBER[0]) || (options.skip != VALID_SKIP[0]) ) {

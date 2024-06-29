@@ -1607,9 +1607,12 @@ class sessionClass {
       if ( response && this.isValidJson(response) ) {
         this.debuglog('getStreamURL response : ' + response)
         let obj = JSON.parse(response)
-        if ( obj.errors && (obj.errors[0] == 'blackout') ) {
-          this.log('blackout error')
-          this.markBlackoutError(mediaId)
+        if ( obj.errors ) {
+          this.log('getStreamURL error: ' + obj.errors[0])
+          if ( obj.errors[0] == 'blackout' ) {
+            this.markBlackoutError(mediaId)
+          }
+          return false
         } else {
           let streamURL = obj.stream.complete
           this.debuglog('getStreamURL : ' + streamURL)
