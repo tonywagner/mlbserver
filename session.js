@@ -1897,7 +1897,6 @@ class sessionClass {
                       }
                     }
                   }
-                  break
                 }
 
                 // MLB games
