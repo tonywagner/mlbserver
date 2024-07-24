@@ -27,7 +27,7 @@ const VALID_LINK_TYPES = [ 'Embed', 'Stream', 'Chromecast', 'Advanced' ]
 const VALID_START_FROM = [ 'Beginning', 'Live' ]
 const VALID_CONTROLS = [ 'Show', 'Hide' ]
 const VALID_INNING_HALF = [ '', 'top', 'bottom' ]
-const VALID_INNING_NUMBER = [ '', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12' ]
+const VALID_INNING_NUMBER = [ '', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12' ]
 const VALID_SCORES = [ 'Hide', 'Show' ]
 const VALID_RESOLUTIONS = [ 'adaptive', '720p60', '720p', '540p', '504p', '360p', 'none'  ]
 const DEFAULT_MULTIVIEW_RESOLUTION = '504p'
@@ -35,7 +35,6 @@ const DEFAULT_MULTIVIEW_RESOLUTION = '504p'
 const DISPLAY_BANDWIDTHS = [ '', '6600k', '4160k', '2950k', '2120k', '1400k', '' ]
 const VALID_AUDIO_TRACKS = [ 'all', 'English', 'English Radio', 'Radio Española', 'Alternate English', 'Alternate Spanish', 'none' ]
 const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spanish', 'Alt.', 'Alt. Spanish', 'none' ]
-const ALTERNATE_AUDIO_TRACKS = [ VALID_AUDIO_TRACKS[4], VALID_AUDIO_TRACKS[5] ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
 const VALID_SKIP = [ 'off', 'breaks', 'idle time', 'pitches', 'commercials' ]
 const VALID_PAD = [ 'off', 'on' ]
@@ -241,12 +240,12 @@ app.get('/stream.m3u8', async function(req, res) {
 
     let mediaId
     let gamePk
-    let contentId
     let streamURL
+    let streamURLToken
     let options = {}
     let includeBlackouts = 'false'
     let urlArray = req.url.split('?')
-    if ( (urlArray.length == 1) || ((session.data.scan_mode == VALID_SCAN_MODES[1]) && req.query.team) || (!req.query.team && !req.query.src && !req.query.highlight_src && !req.query.eventURL && !req.query.event && !req.query.gamePk && !req.query.id && !req.query.mediaId && !req.query.contentId) ) {
+    if ( (urlArray.length == 1) || ((session.data.scan_mode == VALID_SCAN_MODES[1]) && req.query.team) || (!req.query.team && !req.query.src && !req.query.highlight_src && !req.query.eventURL && !req.query.event && !req.query.gamePk && !req.query.id && !req.query.mediaId) ) {
       // load a sample encrypted HLS stream
       session.log('loading sample stream')
       options.resolution = VALID_RESOLUTIONS[0]
@@ -259,7 +258,6 @@ app.get('/stream.m3u8', async function(req, res) {
         options.resolution = session.returnValidItem(req.query.resolution, VALID_RESOLUTIONS)
       }
       options.audio_track = session.returnValidItem(req.query.audio_track, VALID_AUDIO_TRACKS)
-      options.alternate_audio_tracks = {}
       options.force_vod = req.query.force_vod || VALID_FORCE_VOD[0]
 
       options.inning_half = req.query.inning_half || VALID_INNING_HALF[0]
@@ -284,49 +282,23 @@ app.get('/stream.m3u8', async function(req, res) {
       } else {
         if ( req.query.gamePk ) {
           gamePk = req.query.gamePk
-          if ( !req.query.mediaId && !req.query.contentId ) {
+          if ( !req.query.mediaId ) {
             streamURL = await session.getEventStreamURL(false, gamePk)
           }
         }
         if ( !streamURL ) {
-          if ( req.query.contentId ) {
-            contentId = req.query.contentId
-          }
-          for (var i=0; i<ALTERNATE_AUDIO_TRACKS.length; i++) {
-            if ( req.query[ALTERNATE_AUDIO_TRACKS[i]] ) {
-              options.alternate_audio_tracks[ALTERNATE_AUDIO_TRACKS[i]] = req.query[ALTERNATE_AUDIO_TRACKS[i]]
-            }
-          }
           if ( req.query.mediaId ) {
             mediaId = req.query.mediaId
-          } else if ( req.query.gamePk && req.query.contentId ) {
-            let mediaInfo = await session.getMediaIdFromContentId(gamePk, contentId)
-            if ( mediaInfo ) {
-              mediaId = mediaInfo.mediaId
-              if ( mediaInfo.alternateAudioTracks ) {
-                for (const [key, value] of Object.entries(mediaInfo.alternateAudioTracks)) {
-                  options.alternate_audio_tracks[key] = value
-                }
-              }
-            } else {
-              session.log('no matching game found ' + req.url)
-            }
           } else if ( req.query.team ) {
             let mediaType = req.query.mediaType || VALID_MEDIA_TYPES[0]
             let level = req.query.level || 'MLB'
             let mediaInfo = await session.getMediaId(decodeURIComponent(req.query.team), decodeURIComponent(level), mediaType, req.query.date, req.query.game, includeBlackouts)
             if ( mediaInfo ) {
-
-              if ( mediaInfo.gamePk ) {
+              if ( (level != 'MLB') && mediaInfo.gamePk ) {
                 streamURL = await session.getEventStreamURL(false, mediaInfo.gamePk)
               } else {
                 mediaId = mediaInfo.mediaId
-                contentId = mediaInfo.contentId
-                if ( mediaInfo.alternateAudioTracks ) {
-                  for (const [key, value] of Object.entries(mediaInfo.alternateAudioTracks)) {
-                    options.alternate_audio_tracks[key] = value
-                  }
-                }
+                gamePk = mediaInfo.gamePk
               }
             } else {
               session.log('no matching game found ' + req.url)
@@ -340,7 +312,11 @@ app.get('/stream.m3u8', async function(req, res) {
               return
             } else {
               session.debuglog('mediaId : ' + mediaId)
-              streamURL = await session.getStreamURL(mediaId)
+              let streamInfo = await session.getStreamURL(mediaId)
+              streamURL = streamInfo.streamURL
+              streamURLToken = streamInfo.streamURLToken
+              session.debuglog('streamURL : ' + streamURL)
+              session.debuglog('streamURLToken : ' + streamURLToken)
             }
           }
         }
@@ -350,45 +326,22 @@ app.get('/stream.m3u8', async function(req, res) {
     if (streamURL) {
       session.debuglog('using streamURL : ' + streamURL)
 
+      if ( streamURLToken ) {
+        options.streamURLToken = streamURLToken
+      }
+
       if ( streamURL.includes('master_radio') ) {
         options.resolution = VALID_RESOLUTIONS[0]
       }
 
-      // resolve any alternate audio mediaIds into playlist URLs, if necessary
-      try {
-        if ( options.alternate_audio_tracks ) {
-          for (const [key, value] of Object.entries(options.alternate_audio_tracks)) {
-            if ( (options.audio_track == VALID_AUDIO_TRACKS[0]) || (options.audio_track == key) ) {
-              session.debuglog('stream request attempting to add alternate audio from ' + value)
-              let audioStreamURL = await session.getStreamURL(value)
-              if ( audioStreamURL ) {
-                let audioPlaylistURL = audioStreamURL.replace(/\/(master_radio_complete|master_radio)/g,'/48K/48_complete')
-                options.alternate_audio_tracks[key] = audioPlaylistURL
-                continue
-              }
-            }
-            delete options.alternate_audio_tracks[key]
-          }
-        }
-      } catch (e) {
-        session.debuglog('stream request alternate audio error : ' + e.message)
-      }
-
       if ( (options.inning_half != VALID_INNING_HALF[0]) || (options.inning_number != VALID_INNING_NUMBER[0]) || (options.skip != VALID_SKIP[0]) ) {
-        if ( contentId ) {
-          options.contentId = contentId
+        if ( gamePk ) {
+          options.gamePk = gamePk
 
           let skip_type = VALID_SKIP.indexOf(options.skip)
-          // for commercial skip, just use the gdfp playlists and skip the ad inserts
-          if ( skip_type == 4 ) {
-            let new_streamURL = streamURL.replace('master_desktop_complete', 'master_desktop_complete_gdfp')
-            if ( new_streamURL == streamURL ) {
-              new_streamURL = streamURL.replace('master_desktop', 'master_desktop_gdfp')
-            }
-            session.debuglog('skipping commercials using gdfp playlist ' + new_streamURL)
-            streamURL = new_streamURL
-          } else {
-            await session.getSkipMarkers(contentId, skip_type, options.inning_number, options.inning_half)
+          // for skip other than commercial skip, look up markers
+          if ( skip_type != 4 ) {
+            await session.getSkipMarkers(gamePk, skip_type, options.inning_number, options.inning_half, streamURL, streamURLToken)
           }
         }
       }
@@ -477,6 +430,11 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
       session.debuglog('found stream referer  : ' + referer)
       referer_parameter = '&referer=' + encodeURIComponent(options.referer)
     }
+    var token_parameter = ''
+    if ( options.streamURLToken ) {
+      headers['x-cdn-token'] = options.streamURLToken
+      token_parameter = '&streamURLToken=' + encodeURIComponent(options.streamURLToken)
+    }
     requestRetry(streamURL, headers, function(err, response) {
       if (err) return res.error(err)
 
@@ -492,14 +450,13 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
       let resolution = options.resolution || VALID_RESOLUTIONS[0]
       let audio_track = options.audio_track || VALID_AUDIO_TRACKS[0]
-      let alternate_audio_tracks = options.alternate_audio_tracks || {}
       let force_vod = options.force_vod || VALID_FORCE_VOD[0]
 
       let inning_half = options.inning_half || VALID_INNING_HALF[0]
       let inning_number = options.inning_number || VALID_INNING_NUMBER[0]
       let skip = options.skip || VALID_SKIP[0]
       let pad = options.pad || VALID_PAD[0]
-      let contentId = options.contentId || false
+      let gamePk = options.gamePk || false
 
       if ( (inning_number > 0) && (inning_half == VALID_INNING_HALF[0]) ) {
         inning_half = VALID_INNING_HALF[1]
@@ -540,7 +497,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           return line
         } else if ( segment_found ) {
           segment_found = false
-          return '/ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect + referer_parameter
+          return '/ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect + referer_parameter + token_parameter
         }
 
         // Omit keyframe tracks
@@ -550,6 +507,11 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
         // Omit captions track when TV audio is excluded or no video is specified
         if ( line.startsWith('#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,') && ((audio_track != VALID_AUDIO_TRACKS[0]) || (audio_track != VALID_AUDIO_TRACKS[1]) || (resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1])) ) {
+          return
+        }
+
+        // Omit subtitles when skipping
+        if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES') && (skip != 'none') ) {
           return
         }
 
@@ -597,8 +559,8 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
                   if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
                   if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
                   if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
-                  if ( contentId ) newurl += '&contentId=' + contentId
-                  newurl += content_protect + referer_parameter
+                  if ( gamePk ) newurl += '&gamePk=' + gamePk
+                  newurl += content_protect + referer_parameter + token_parameter
 
                   // if user specified "none" for video track
                   if ( resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1] ) {
@@ -611,48 +573,6 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
                 }
               }
             }
-          }
-
-          // process any alternate radio streams we've passed in
-          if ( !audio_track_matched ) {
-            for (const [key, value] of Object.entries(alternate_audio_tracks)) {
-              if ( audio_track_matched ) break
-
-              session.debuglog('processing ' + key + ' stream ' + value)
-              newurl = '/playlist?url='+encodeURIComponent(value)
-              if ( force_vod != VALID_FORCE_VOD[0] ) newurl += '&force_vod=on'
-              if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
-              if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
-              if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
-              if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
-              if ( contentId ) newurl += '&contentId=' + contentId
-              newurl += content_protect + referer_parameter
-
-              // if user specified "none" for video track
-              if ( resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1] ) {
-                audio_track_matched = true
-                audio_output = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="' + key + '",LANGUAGE="'
-                if ( key == ALTERNATE_AUDIO_TRACKS[1] ) {
-                  audio_output += 'es'
-                } else {
-                  audio_output += 'en'
-                }
-                audio_output += '",AUTOSELECT=YES,DEFAULT=YES' + "\n" + '#EXT-X-STREAM-INF:BANDWIDTH=50000,CODECS="mp4a.40.2",AUDIO="aac"' + "\n" + newurl
-              } else {
-                if (audio_output != '') audio_output += "\n"
-                audio_output += '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="' + key + '",AUTOSELECT=YES,DEFAULT='
-                if ( audio_track == key ) {
-                  audio_track_matched = true
-                  audio_output += 'YES'
-                } else {
-                  audio_output += 'NO'
-                }
-                audio_output += ',URI="' + newurl + '"'
-              }
-            }
-
-            // clear after processing
-            alternate_audio_tracks = {}
           }
 
           if ( audio_output != '' ) return audio_output
@@ -687,7 +607,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="') ) {
           var parsed = line.match(',URI="([^"]+)"')
           if ( parsed[1] ) {
-            newurl = '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim())) + content_protect + referer_parameter
+            newurl = '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim())) + content_protect + referer_parameter + token_parameter
             return '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="' + newurl + '"'
           }
           return
@@ -705,8 +625,8 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
           if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
           if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
-          if ( contentId ) newurl += '&contentId=' + contentId
-          newurl += content_protect + referer_parameter
+          if ( gamePk ) newurl += '&gamePk=' + gamePk
+          newurl += content_protect + referer_parameter + token_parameter
           return '/playlist?url='+newurl
         }
       })
@@ -748,18 +668,28 @@ app.get('/playlist', async function(req, res) {
     referer_parameter = '&referer=' + encodeURIComponent(req.query.referer)
   }
 
+  var token = false
+  var token_parameter = ''
+  if ( req.query.streamURLToken ) {
+    token = decodeURIComponent(req.query.streamURLToken)
+    token_parameter = '&streamURLToken=' + req.query.streamURLToken
+  }
+
   var force_vod = req.query.force_vod || VALID_FORCE_VOD[0]
   var inning_half = req.query.inning_half || VALID_INNING_HALF[0]
   var inning_number = req.query.inning_number || VALID_INNING_NUMBER[0]
   var skip = req.query.skip || VALID_SKIP[0]
   var pad = req.query.pad || VALID_PAD[0]
-  var contentId = req.query.contentId || false
+  var gamePk = req.query.gamePk || false
 
   var req = function () {
     var headers = {}
     if ( referer ) {
       headers.referer = referer
       headers.origin = getOriginFromURL(referer)
+    }
+    if ( token ) {
+      headers['x-cdn-token'] = token
     }
 
     requestRetry(u, headers, function(err, response) {
@@ -792,20 +722,21 @@ app.get('/playlist', async function(req, res) {
       if ( skip == 'commercials' ) {
         session.debuglog('filtering commercial breaks')
         let new_body = []
+        let break_active = false
         for (var i=0; i<body.length; i++) {
-          if ( body[i].includes('dai.google.com') ) {
-            new_body.pop()
-            if ( new_body[new_body.length-1] != '#EXT-X-DISCONTINUITY' ) {
-              new_body.push('#EXT-X-DISCONTINUITY')
-            }
-          } else {
+          if ( (break_active == false) && body[i].startsWith('#EXT-OATCLS-SCTE35:') ) {
+            break_active = true
+            new_body.push('#EXT-X-DISCONTINUITY')
+          } else if ( (break_active == true) && body[i].startsWith('#EXT-X-CUE-IN') ) {
+            break_active = false
+          } else if ( break_active == false ) {
             new_body.push(body[i])
           }
         }
         body = new_body
-      } else if ( (contentId) && ((inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0])) && (typeof session.temp_cache[contentId] !== 'undefined') && (typeof session.temp_cache[contentId].skip_markers !== 'undefined') ) {
+      } else if ( (gamePk) && ((inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0])) && (typeof session.temp_cache[gamePk] !== 'undefined') && (typeof session.temp_cache[gamePk].skip_markers !== 'undefined') ) {
         session.debuglog('pulling skip markers from temporary cache')
-        skip_markers = session.temp_cache[contentId].skip_markers
+        skip_markers = session.temp_cache[gamePk].skip_markers
       } else {
         session.debuglog('not using skip markers from temporary cache')
       }
@@ -871,7 +802,7 @@ app.get('/playlist', async function(req, res) {
           newline = '/vtt'
         }
 
-        newline += '?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter
+        newline += '?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter + token_parameter
         if ( key ) newline += '&key='+encodeURIComponent(key) + '&iv='+encodeURIComponent(iv)
 
         return newline
@@ -887,12 +818,12 @@ app.get('/playlist', async function(req, res) {
         if ( body_array[last_segment_index] == '#EXT-X-ENDLIST' ) {
           session.debuglog('padding archive stream with extra segments')
           last_segment_index--
-          while ( !body_array[last_segment_index].startsWith('#EXTINF:' + SECONDS_PER_SEGMENT) ) {
+          while ( !body_array[last_segment_index].startsWith('#EXTINF:') ) {
             last_segment_index--
           }
           last_segment_inf = body_array[last_segment_index]
           last_segment = body_array[last_segment_index+1]
-          let pad_lines = '#EXT-X-DISCONTINUITY' + '\n' + last_segment_inf + '\n' + last_segment + '\n'
+          let pad_lines = '#EXT-X-DISCONTINUITY' + '\n' + '#EXTINF:' + SECONDS_PER_SEGMENT + '\n' + last_segment + '\n'
           session.debuglog(pad_lines)
           for (i=0; i<pad; i++) {
             body += pad_lines
@@ -932,6 +863,11 @@ app.get('/ts', async function(req, res) {
     referer = decodeURIComponent(req.query.referer)
     headers.referer = referer
     headers.origin = getOriginFromURL(referer)
+  }
+
+  if ( req.query.streamURLToken ) {
+    token = decodeURIComponent(req.query.streamURLToken)
+    headers['x-cdn-token'] = token
   }
 
   requestRetry(u, headers, function(err, response) {
@@ -1111,19 +1047,26 @@ app.get('/gamechangerplaylist', async function(req, res) {
         session.log(game_changer_title + 'outside of games starting/ending, skipping')
         respond(GAMECHANGER_RESPONSE_HEADERS, res, Buffer.from(''))
       } else {
-        let streamURL = await session.getBestGame(id)
-
+        let streamURL
+        let streamURLToken
         let discontinuity = false
-        if ( streamURL && (streamURL != session.temp_cache.gamechanger[id].streamURL) ) {
+        let streamInfo = await session.getBestGame(id)
+        if ( streamInfo && streamInfo.streamURL && streamInfo.streamURLToken && (streamInfo.streamURL != session.temp_cache.gamechanger[id].streamURL) ) {
           session.log(game_changer_title + 'game changed')
+          streamURL = streamInfo.streamURL
+          streamURLToken = streamInfo.streamURLToken
           session.temp_cache.gamechanger[id].streamURL = streamURL
+          session.temp_cache.gamechanger[id].streamURLToken = streamURLToken
           if ( session.temp_cache.gamechanger[id].segments.length == GAMECHANGER_LIST_SIZE ) {
             discontinuity = true
             session.temp_cache.gamechanger[id].discontinuitySequence++
           }
         }
 
-        if ( !streamURL ) streamURL = session.temp_cache.gamechanger[id].streamURL
+        if ( !streamURL ) {
+          streamURL = session.temp_cache.gamechanger[id].streamURL
+          streamURLToken = session.temp_cache.gamechanger[id].streamURLToken
+        }
 
         if ( !streamURL ) {
           session.log(game_changer_title + 'no stream found')
@@ -1133,7 +1076,8 @@ app.get('/gamechangerplaylist', async function(req, res) {
           if ( !session.temp_cache.gamechanger[id].playlist[resolution] || !session.temp_cache.gamechanger[id].lastAccess[resolution] || (gamechangerAccess >= (new Date(new Date(session.temp_cache.gamechanger[id].lastAccess[resolution]).getTime() + 1500))) ) {
             session.temp_cache.gamechanger[id].lastAccess[resolution] = gamechangerAccess
             session.debuglog(game_changer_title + 'checking for new segments')
-            let u = streamURL + '/' + GAMECHANGER_RESOLUTIONS[resolution].url_bandwidth + 'K/' + GAMECHANGER_RESOLUTIONS[resolution].url_bandwidth + '_complete.m3u8'
+            let u = streamURL + '_' + GAMECHANGER_RESOLUTIONS[resolution].url_bandwidth + 'K.m3u8'
+            headers['x-cdn-token'] = streamURLToken
             requestRetry(u, headers, function(err, response) {
               session.debuglog(game_changer_title + 'requested ' + u)
               if (err) return res.error(err)
@@ -1149,7 +1093,7 @@ app.get('/gamechangerplaylist', async function(req, res) {
               }
 
               // find the new segments, and make sure all segments have valid keys
-              let segments_to_key = []
+              //let segments_to_key = []
               let new_segments = []
               let new_segments_complete = false
               let segment_count = 0
@@ -1160,7 +1104,7 @@ app.get('/gamechangerplaylist', async function(req, res) {
                     session.debuglog(game_changer_title + 'found segment ' + line)
                     if ( discontinuity ) {
                       session.debuglog(game_changer_title + 'only getting newest segment after stream change')
-                      segments_to_key.unshift({'extinf':body[i], 'ts':line})
+                      new_segments.unshift({'extinf':body[i], 'ts':line, 'streamURLToken':streamURLToken})
                       new_segments_complete = true
                     } else if ( !discontinuity && (session.temp_cache.gamechanger[id].segments.length > 0) && (line == session.temp_cache.gamechanger[id].segments[session.temp_cache.gamechanger[id].segments.length-1].ts) ) {
                       session.debuglog(game_changer_title + 'found previous last segment')
@@ -1173,25 +1117,13 @@ app.get('/gamechangerplaylist', async function(req, res) {
                       }
                       new_segments_complete = true
                     } else {
-                      segments_to_key.unshift({'extinf':body[i], 'ts':line})
+                      new_segments.unshift({'extinf':body[i], 'ts':line, 'streamURLToken':streamURLToken})
                     }
                   }
                   segment_count++
-                } else if ( body[i].indexOf('-KEY:METHOD=AES-128') > 0 ) {
-                  session.debuglog(game_changer_title + 'found key : ' + body[i])
-                  var parsed = body[i].match(/URI="([^"]+)"(?:,IV=(.+))?$/)
-                  let key = parsed[1]
-                  let iv = parsed[2].slice(2).toLowerCase()
-                  session.debuglog(game_changer_title + 'new segments to key: ' + JSON.stringify(segments_to_key))
-                  for (var j=0; j<segments_to_key.length; j++) {
-                    segments_to_key[j].key = key
-                    segments_to_key[j].iv = iv
-                  }
-                  new_segments = segments_to_key.concat(new_segments)
-                  segments_to_key = []
-                  if ( new_segments_complete ) {
-                    break
-                  }
+                }
+                if ( new_segments_complete ) {
+                  break
                 }
               }
 
@@ -1213,12 +1145,12 @@ app.get('/gamechangerplaylist', async function(req, res) {
               //session.debuglog(game_changer_title + 'new segments appended : ' + JSON.stringify(session.temp_cache.gamechanger[id].segments))
 
               // now generate playlists
-              session.temp_cache.gamechanger[id].playlist[resolution] = '#EXTM3U' + '\n' + '#EXT-X-VERSION:6' + '\n' + '#EXT-X-TARGETDURATION:6' + '\n' + '#EXT-X-MEDIA-SEQUENCE:' + session.temp_cache.gamechanger[id].sequence + '\n' + '#EXT-X-DISCONTINUITY-SEQUENCE:' + session.temp_cache.gamechanger[id].discontinuitySequence + '\n'
+              session.temp_cache.gamechanger[id].playlist[resolution] = '#EXTM3U' + '\n' + '#EXT-X-VERSION:6' + '\n' + '#EXT-X-TARGETDURATION:4' + '\n' + '#EXT-X-MEDIA-SEQUENCE:' + session.temp_cache.gamechanger[id].sequence + '\n' + '#EXT-X-DISCONTINUITY-SEQUENCE:' + session.temp_cache.gamechanger[id].discontinuitySequence + '\n'
               for (var i=0; i<session.temp_cache.gamechanger[id].segments.length; i++) {
                 if ( session.temp_cache.gamechanger[id].segments[i].discontinuity ) {
                   session.temp_cache.gamechanger[id].playlist[resolution] += '#EXT-X-DISCONTINUITY' + '\n'
                 }
-                session.temp_cache.gamechanger[id].playlist[resolution] += session.temp_cache.gamechanger[id].segments[i].extinf + '\n' + '/ts?url=' + encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].ts) + '&key='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].key) + '&iv='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].iv) + content_protect + '\n'
+                session.temp_cache.gamechanger[id].playlist[resolution] += session.temp_cache.gamechanger[id].segments[i].extinf + '\n' + '/ts?url=' + encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].ts) + '&streamURLToken='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].streamURLToken) + content_protect + '\n'
               }
 
               session.debuglog(game_changer_title + 'playlist ' + session.temp_cache.gamechanger[id].playlist[resolution])
@@ -1514,7 +1446,7 @@ app.get('/', async function(req, res) {
     }
 
     if ( mediaType == VALID_MEDIA_TYPES[0] ) {
-      body += '<span class="tooltip">Inning<span class="tooltiptext">For video streams only: choose the inning to start with (and the score to display, if applicable). Inning number is relative -- for example, selecting inning 7 here will show inning 7 for scheduled 9-inning games, but inning 5 for scheduled 7-inning games, for example. If an inning number is specified, seeking to an earlier point will not be possible. Inning 0 (zero) should be the broadcast start time, if available. Default is the beginning of the stream. To use with radio, set the video track to "None".</span></span>: '
+      body += '<span class="tooltip">Inning<span class="tooltiptext">For video streams only: choose the inning to start with (and the score to display, if applicable). Inning number is relative -- for example, selecting inning 7 here will show inning 7 for scheduled 9-inning games, but inning 5 for scheduled 7-inning games, for example. If an inning number is specified, seeking to an earlier point will not be possible. Default is the beginning of the stream. To use with radio, set the video track to "None".</span></span>: '
       body += '<select id="inning_half" onchange="inning_half=this.value;reload()">'
       for (var i = 0; i < VALID_INNING_HALF.length; i++) {
         body += '<option value="' + VALID_INNING_HALF[i] + '"'
@@ -1788,16 +1720,11 @@ app.get('/', async function(req, res) {
           state += '<br/>' + resumeDate.toLocaleString('default', { month: 'long', day: 'numeric' })
           // Also show the status by the media links, if one of them is live
           resumeStatus = 'archived'
-          if ( ((typeof cache_data.dates[0].games[j].content.media) != 'undefined') && ((typeof cache_data.dates[0].games[j].content.media.epg) != 'undefined') ) {
-            for (var k = 0; k < cache_data.dates[0].games[j].content.media.epg.length; k++) {
-              if ( cache_data.dates[0].games[j].content.media.epg[k].items ) {
-                for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
-                  if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') ) {
-                    resumeStatus = 'live'
-                    break
-                  }
-                }
-                if ( resumeStatus ) break
+          if ( (typeof cache_data.dates[0].games[j].broadcasts) != 'undefined' ) {
+            for (var k = 0; k < cache_data.dates[0].games[j].broadcasts.length; k++) {
+              if ( cache_data.dates[0].games[j].broadcasts[k].mediaState && cache_data.dates[0].games[j].broadcasts[k].mediaState.mediaStateCode && cache_data.dates[0].games[j].broadcasts[k].mediaState.mediaStateCode == 'MEDIA_ON' ) {
+                resumeStatus = 'live'
+                break
               }
             }
           }
@@ -1830,7 +1757,7 @@ app.get('/', async function(req, res) {
 
         body += '<tr'
         let fav_style = ''
-        if ( argv.free && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.media && cache_data.dates[0].games[j].content.media.freeGame ) {
+        if ( argv.free && cache_data.dates[0].games[j].broadcasts && cache_data.dates[0].games[j].broadcasts[0] && cache_data.dates[0].games[j].broadcasts[0].freeGame ) {
           body += ' class="freegame"'
         } else if ( session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['away'].team.abbreviation) || session.credentials.fav_teams.includes(cache_data.dates[0].games[j].teams['home'].team.abbreviation) ) {
           let fav_team = cache_data.dates[0].games[j].teams['away'].team.abbreviation
@@ -1902,151 +1829,141 @@ app.get('/', async function(req, res) {
           body += "</td>"
         } else {
           // Begin MLB games
-          if ( ((typeof cache_data.dates[0].games[j].content.media) == 'undefined') || ((typeof cache_data.dates[0].games[j].content.media.epg) == 'undefined') ) {
+          if ( (typeof cache_data.dates[0].games[j].broadcasts) == 'undefined' ) {
             body += "<td></td>"
           } else {
             body += "<td>"
-            for (var k = 0; k < cache_data.dates[0].games[j].content.media.epg.length; k++) {
-              let mediaTitle = cache_data.dates[0].games[j].content.media.epg[k].title
-              if ( mediaTitle == mediaType ) {
-                // initial loop will count number of broadcasts
-                let broadcast_count = await session.count_broadcasts(cache_data.dates[0].games[j].content.media.epg[k].items, mediaType, mediaTitle, language)
+            for (var k = 0; k < cache_data.dates[0].games[j].broadcasts.length; k++) {
+              let broadcast = cache_data.dates[0].games[j].broadcasts[k]
+              if ( broadcast.availableForStreaming ) {
+                let mediaTitle = 'Audio'
+                if ( broadcast.type == 'TV' ) {
+                  mediaTitle = 'MLBTV'
+                } else if ( broadcast.language == 'es' ) {
+                  mediaTitle = 'Spanish'
+                }
+                if ( mediaTitle == mediaType ) {
+                  // for video, check that it's not in-market
+                  /*if ( (mediaType == 'MLBTV') && await session.check_in_market(cache_data.dates[0].games[j].content.media.epg[k].items[x]) ) {
+                    continue
+                  }*/
 
-                if ( cache_data.dates[0].games[j].content.media.epg[k].items ) {
-                  for (var x = 0; x < cache_data.dates[0].games[j].content.media.epg[k].items.length; x++) {
-                    // for video, check that it's not in-market
-                    if ( (mediaType == 'MLBTV') && await session.check_in_market(cache_data.dates[0].games[j].content.media.epg[k].items[x]) ) {
-                      continue
+                  // check if language is not set (video) or it matches requested language
+                  if ( broadcast.language == language ) {
+                    let teamabbr
+
+                    if ( broadcast.isNational ) {
+                      teamabbr = 'NATIONAL'
+                    } else {
+                      teamabbr = hometeam
+                      if ( broadcast.homeAway == 'away' ) {
+                        teamabbr = awayteam
+                      }
                     }
+                    let station = broadcast.callSign
 
-                    // check if language is not set (video) or it matches requested language
-                    if ( ((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].language) == 'undefined') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].language == language) ) {
-                      let teamabbr
-
-                      if ( (((typeof cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType) != 'undefined') && (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType == 'NATIONAL')) || ((mediaType == 'MLBTV') && (cache_data.dates[0].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[0].games[j].seriesDescription != 'Spring Training')) ) {
-                        teamabbr = 'NATIONAL'
-                      } else {
-                        teamabbr = hometeam
-                        if ( cache_data.dates[0].games[j].content.media.epg[k].items[x][mediaFeedType] == 'AWAY' ) {
-                          teamabbr = awayteam
-                        }
+                    // display blackout tooltip, if necessary
+                    if ( blackouts[gamePk] ) {
+                      body += '<span class="tooltip"><span class="blackout">' + teamabbr + '</span><span class="tooltiptext">' + blackouts[gamePk].blackout_type + ' video blackout until approx. 2.5 hours after the game'
+                      if ( blackouts[gamePk].blackoutExpiry ) {
+                        body += ' (~' + blackouts[gamePk].blackoutExpiry.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ')'
                       }
-                      let station = cache_data.dates[0].games[j].content.media.epg[k].items[x].callLetters
+                      body += '</span></span>'
+                    } else if ( (station == 'FOX') ) {
+                      body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">Regional FOX game</span></span>'
+                    } else {
+                      body += teamabbr
+                    }
+                    body += ': '
 
-                      // display blackout tooltip, if necessary
-                      if ( blackouts[gamePk] ) {
-                        body += '<span class="tooltip"><span class="blackout">' + teamabbr + '</span><span class="tooltiptext">' + blackouts[gamePk].blackout_type + ' video blackout until approx. 2.5 hours after the game'
-                        if ( blackouts[gamePk].blackoutExpiry ) {
-                          body += ' (~' + blackouts[gamePk].blackoutExpiry.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ')'
-                        }
-                        body += '</span></span>'
-                      } else if ( (station == 'FOX') ) {
-                        body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">Regional FOX game</span></span>'
-                      } else {
-                        body += teamabbr
+                    if ( broadcast.mediaState && broadcast.mediaState.mediaStateCode && ((broadcast.mediaState.mediaStateCode == 'MEDIA_ON') || (broadcast.mediaState.mediaStateCode == 'MEDIA_ARCHIVE') || (abstractGameState == 'Final')) ) {
+                      let gameTime = new Date(cache_data.dates[0].games[j].gameDate)
+                      gameTime.setMinutes(gameTime.getMinutes()-10)
+                      if ( curDate >= gameTime ) {
+                        game_started = true
                       }
-                      body += ': '
+                      let mediaId = broadcast.mediaId
+                      if ( (mediaType == 'MLBTV') && (gameDate == today) && session.cache.media && session.cache.media[mediaId] && session.cache.media[mediaId].blackout && session.cache.media[mediaId].blackoutExpiry && (new Date(session.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
+                        body += '<span class="blackout">' + station + '</span>'
+                      } else {
+                        let querystring
+                        querystring = '?mediaId=' + mediaId
 
-                      //if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || cache_data.dates[0].games[j].gameUtils.isFinal ) {
-                      if ( (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON') || (cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE') || (abstractGameState == 'Final') ) {
-                        let gameTime = new Date(cache_data.dates[0].games[j].gameDate)
-                        gameTime.setMinutes(gameTime.getMinutes()-10)
-                        if ( curDate >= gameTime ) {
-                          game_started = true
+                        let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
+                        if ( linkType == VALID_LINK_TYPES[0] ) {
+                          if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+                          if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
                         }
-                        let mediaId = cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaId
-                        if ( (mediaType == 'MLBTV') && (gameDate == today) && session.cache.media && session.cache.media[mediaId] && session.cache.media[mediaId].blackout && session.cache.media[mediaId].blackoutExpiry && (new Date(session.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
-                          body += '<span class="blackout">' + station + '</span>'
+                        if ( mediaType == 'MLBTV' ) {
+                          if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
+                          if ( inning_number != VALID_INNING_NUMBER[0] ) querystring += '&inning_number=' + relative_inning
+                          if ( skip != VALID_SKIP[0] ) querystring += '&skip=' + skip
+                          if ( (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0]) ) {
+                            querystring += '&gamePk=' + cache_data.dates[0].games[j].gamePk
+                          }
+                          if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+                          if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + encodeURIComponent(audio_track)
+                        }
+                        if ( pad != VALID_PAD[0] ) querystring += '&pad=' + pad
+                        if ( linkType == VALID_LINK_TYPES[1] ) {
+                          if ( broadcast.mediaState.mediaStateCode == 'MEDIA_ON' ) {
+                            if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+                          }
+                        }
+                        querystring += content_protect_b
+                        multiviewquerystring += content_protect_b
+                        stationlink = '<a' + fav_style + ' href="' + thislink + querystring + '">' + station + '</a>'
+
+                        if ( blackouts[gamePk] ) {
+                          body += '<span class="blackout">' + stationlink + '</span>'
                         } else {
-                          let querystring
-                          querystring = '?mediaId=' + mediaId
-
-                          // grab any alternate audio tracks, if necessary
-                          if ( (mediaType == 'MLBTV') && (broadcast_count == 1) ) {
-                            let alternateAudioTracks = await session.getAlternateAudioTracks(cache_data.dates[0].games[j].content.media.epg, cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaFeedType)
-                            for (const [key, value] of Object.entries(alternateAudioTracks)) {
-                              querystring += '&' + key + '=' + value
-                            }
-                          }
-
-                          let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
-                          if ( linkType == VALID_LINK_TYPES[0] ) {
-                            if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
-                            if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
-                          }
-                          if ( mediaType == 'MLBTV' ) {
-                            if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
-                            if ( inning_number != VALID_INNING_NUMBER[0] ) querystring += '&inning_number=' + relative_inning
-                            if ( skip != VALID_SKIP[0] ) querystring += '&skip=' + skip
-                            if ( (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0]) ) {
-                              let contentId = cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId
-                              querystring += '&contentId=' + contentId
-                            }
-                            if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
-                            if ( audio_track != VALID_AUDIO_TRACKS[0] ) querystring += '&audio_track=' + encodeURIComponent(audio_track)
-                          }
-                          if ( pad != VALID_PAD[0] ) querystring += '&pad=' + pad
-                          if ( linkType == VALID_LINK_TYPES[1] ) {
-                            if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ON' ) {
-                              if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
-                            }
-                          }
-                          querystring += content_protect_b
-                          multiviewquerystring += content_protect_b
-                          stationlink = '<a' + fav_style + ' href="' + thislink + querystring + '">' + station + '</a>'
-
-                          if ( blackouts[gamePk] ) {
-                            body += '<span class="blackout">' + stationlink + '</span>'
-                          } else {
-                            body += stationlink
-                          }
-                          if ( mediaType == 'MLBTV' ) {
-                            body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this, [\'' + awayteam + '\', \'' + hometeam + '\'])">'
-                          }
-                          if ( resumeStatus ) {
-                            body += '('
-                            // for suspended games that haven't finished yet, we can simply use the mediaState to determine the status
-                            if ( resumeStatus == 'live' ) {
-                              if ( cache_data.dates[0].games[j].content.media.epg[k].items[x].mediaState == 'MEDIA_ARCHIVE' ) {
-                                body += '1'
-                              } else {
-                                body += '2'
-                              }
-                            // otherwise, for completed games, we need to check the airings data
+                          body += stationlink
+                        }
+                        if ( mediaType == 'MLBTV' ) {
+                          body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this, [\'' + awayteam + '\', \'' + hometeam + '\'])">'
+                        }
+                        if ( resumeStatus ) {
+                          body += '('
+                          // for suspended games that haven't finished yet, we can simply use the mediaState to determine the status
+                          if ( resumeStatus == 'live' ) {
+                            if ( broadcast.mediaState.mediaStateCode == 'MEDIA_ARCHIVE' ) {
+                              body += '1'
                             } else {
-                              airings_data = await session.getAiringsData('', cache_data.dates[0].games[j].gamePk)
-                              if ( airings_data.data && airings_data.data.Airings && (airings_data.data.Airings.length > 0) ) {
-                                for (var y = 0; y < airings_data.data.Airings.length; y++) {
-                                  if ( airings_data.data.Airings[y].contentId == cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId ) {
-                                    if ( (cache_data.dates[0].games[j].resumeDate && (cache_data.dates[0].games[j].resumeDate == airings_data.data.Airings[y].startDate)) || (cache_data.dates[0].games[j].resumedFrom && (cache_data.dates[0].games[j].gameDate == airings_data.data.Airings[y].startDate)) ) {
-                                      body += '2'
-                                    } else {
-                                      body += '1'
-                                    }
-                                    break
+                              body += '2'
+                            }
+                          // otherwise, for completed games, we need to check the airings data
+                          } else {
+                            /*airings_data = await session.getAiringsData('', cache_data.dates[0].games[j].gamePk)
+                            if ( airings_data.data && airings_data.data.Airings && (airings_data.data.Airings.length > 0) ) {
+                              for (var y = 0; y < airings_data.data.Airings.length; y++) {
+                                if ( airings_data.data.Airings[y].contentId == cache_data.dates[0].games[j].content.media.epg[k].items[x].contentId ) {
+                                  if ( (cache_data.dates[0].games[j].resumeDate && (cache_data.dates[0].games[j].resumeDate == airings_data.data.Airings[y].startDate)) || (cache_data.dates[0].games[j].resumedFrom && (cache_data.dates[0].games[j].gameDate == airings_data.data.Airings[y].startDate)) ) {
+                                    body += '2'
+                                  } else {
+                                    body += '1'
                                   }
+                                  break
                                 }
                               }
-                            }
-                            body += ')'
+                            }*/
                           }
-                        }
-                      } else {
-                        if ( blackouts[gamePk] ) {
-                          body += '<s>' + station + '</s>'
-                        } else {
-                          body += station
+                          body += ')'
                         }
                       }
-                      body += ', '
                       // add YouTube link where available
-                      if ( (mediaType == 'MLBTV') && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId ) {
+                      /*if ( (mediaType == 'MLBTV') && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube && cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId ) {
                         body += '<a' + fav_style + ' href="https://www.youtube.com/watch?v=' + cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId + '" target="_blank">' + station + '&UpperRightArrow;</a>'
+                      }*/
+                    } else {
+                      if ( blackouts[gamePk] ) {
+                        body += '<s>' + station + '</s>'
+                      } else {
+                        body += station
                       }
-                    }
-                  }
+                    } // end media active check
+                    body += ', '
+                  } // end streaming available check
                 }
-                break
               }
             }
             if ( body.substr(-2) == ', ' ) {
@@ -2260,14 +2177,6 @@ app.get('/', async function(req, res) {
 
     body += '</p></td></tr></table><br/>' + "\n"
 
-    let local_url = '' // default to embedded player
-    let urlArray = req.url.split('?')
-    if ( (urlArray.length == 2) ) {
-      local_url += '?' + urlArray[1]
-    }
-    let media_center_link = '/live-stream-games/' + gameDate.replace(/-/g,'/') + local_url
-    body += '<p><span class="tooltip">Media Center View<span class="tooltiptext">Allows you to use the MLB Media Center page format for nagivation.</span></span>: <a href="' + media_center_link + '" target="_blank">Link</a></p>' + "\n"
-
     body += '<p><span class="tooltip">Sample video<span class="tooltiptext">A sample stream. Useful for testing and troubleshooting.</span></span>: <a href="/embed.html' + content_protect_a + '">Embed</a> | <a href="/stream.m3u8' + content_protect_a + '">Stream</a> | <a href="/chromecast.html' + content_protect_a + '">Chromecast</a> | <a href="/advanced.html' + content_protect_a + '">Advanced</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Bookmarklets for MLB.com<span class="tooltiptext">If you watch at MLB.com, drag these bookmarklets to your bookmarks toolbar and use them to hide parts of the interface.</span></span>: <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}})();">Boxscore</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Scoreboard</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Linescore</a> | <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">All</a></p>' + "\n"
@@ -2307,60 +2216,6 @@ app.options('*', function(req, res) {
   res.writeHead(204, cors_headers)
   res.end()
   return
-})
-
-// Listen for live-stream-games (schedule) page requests, return the page after local url substitution
-app.get('/live-stream-games*', async function(req, res) {
-  if ( ! (await protect(req, res)) ) return
-
-  session.requestlog('live-stream-games', req)
-
-  // check for a linkType parameter in the url
-  let linkType = VALID_LINK_TYPES[0]
-  if ( req.query.linkType ) {
-    linkType = req.query.linkType
-    session.setLinkType(linkType)
-  }
-
-  // use the link type to determine the local url to use
-  var local_url = '/embed.html' // default to embedded player
-  if ( linkType == VALID_LINK_TYPES[1] ) { // direct stream
-    local_url = '/stream.m3u8'
-  } else { // other
-    local_url = '/' + linkType + '.html'
-  }
-  let urlArray = req.url.split('?')
-  if ( (urlArray.length == 2) ) {
-    local_url += '?' + urlArray[1]
-  }
-
-  // remove our local parameters, if specified, from the url we will fetch remotely
-  var remote_url = url.parse(req.url).pathname
-
-  let reqObj = {
-    url: 'https://www.mlb.com' + remote_url,
-    headers: {
-      'User-Agent': session.getUserAgent(),
-      'Origin': 'https://www.mlb.com',
-      'Accept-Encoding': 'gzip, deflate, br'
-    },
-    gzip: true
-  }
-
-  var body = await session.httpGet(reqObj)
-
-  // a regex substitution to change existing links to local urls
-  body = body.replace(/https:\/\/www.mlb.com\/tv\/g(\d+)\/[v]([a-zA-Z0-9-]+)/g,local_url+"&gamePk=$1&contentId=$2")
-
-  // a regex substitution to remove unsupported filter menus
-  if ( session.protection.content_protect ) {
-    body = body.replace(/<div\n            id="date-container"[\S\s]+><\/span>\n        <\/div>/g,'')
-  }
-
-  // hide popup to accept cookies
-  body = body.replace(/www.googletagmanager.com/g,'0.0.0.0')
-
-  res.end(body)
 })
 
 // Listen for embed request, respond with embedded hls.js player
@@ -2608,7 +2463,7 @@ app.get('/guide.xml', async function(req, res) {
   res.end(body)
 })
 
-// Listen for image requests
+// Listen for SVG image requests
 app.get('/image.svg', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
