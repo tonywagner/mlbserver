@@ -1472,46 +1472,11 @@ class sessionClass {
     })
   }
 
-  // API call
-  /*async getApiKeys() {
-    this.debuglog('getApiKeys')
-    let reqObj = {
-      url: 'https://www.mlb.com/tv/g632102/',
-      headers: {
-        'User-agent': USER_AGENT,
-        'Origin': 'https://www.mlb.com',
-        'Accept-Encoding': 'gzip, deflate, br'
-      },
-      gzip: true
-    }
-    var response = await this.httpGet(reqObj)
-    if ( response ) {
-      // disabled because it's very big!
-      //this.debuglog('getApiKeys response : ' + response)
-      var parsed = response.match('"x-api-key","value":"([^"]+)"')
-      if ( parsed[1] ) {
-        this.data.xApiKey = parsed[1]
-        this.save_session_data()
-      } else {
-        this.log('getApiKeys xApiKey parse failure')
-      }
-      parsed = response.match('"clientApiKey":"([^"]+)"')
-      if ( parsed[1] ) {
-        this.data.clientApiKey = parsed[1]
-        this.save_session_data()
-      } else {
-        this.log('getApiKeys clientApiKey parse failure')
-      }
-    } else {
-      this.log('getApiKeys response failure')
-    }
-  }*/
-
   // new API call
   async getDeviceId() {
     this.debuglog('getDeviceId')
     if ( !this.data.deviceId ) {
-      this.getSession()
+      await this.getSession()
     }
     if ( this.data.deviceId ) {
       this.debuglog('using cached deviceId')
@@ -1525,7 +1490,7 @@ class sessionClass {
   async getSessionId() {
     this.debuglog('getSessionId')
     if ( !this.data.sessionId ) {
-      this.getSession()
+      await this.getSession()
     }
     if ( this.data.sessionId ) {
       this.debuglog('using cached sessionId')
@@ -1650,204 +1615,6 @@ class sessionClass {
       }
     }
   }
-
-  // API call
-  /*async getStreamURL(mediaId) {
-    this.debuglog('getStreamURL from ' + mediaId)
-    if ( this.cache.media && this.cache.media[mediaId] && this.cache.media[mediaId].streamURL && this.cache.media[mediaId].streamURLExpiry && (Date.parse(this.cache.media[mediaId].streamURLExpiry) > new Date()) ) {
-      this.debuglog('using cached streamURL')
-      return this.cache.media[mediaId].streamURL
-    } else if ( this.cache.media && this.cache.media[mediaId] && this.cache.media[mediaId].blackout && this.cache.media[mediaId].blackoutExpiry && (Date.parse(this.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
-      this.log('mediaId recently blacked out, skipping')
-    } else {
-      let playbackURL = 'https://edge.svcs.mlb.com/media/' + mediaId + '/scenarios/browser~csai'
-      let reqObj = {
-        url: playbackURL,
-        simple: false,
-        headers: {
-          'Authorization': await this.getBamAccessToken() || this.halt('missing bamAccessToken'),
-          'User-agent': USER_AGENT,
-          'Accept': 'application/vnd.media-service+json; version=1',
-          'x-bamsdk-version': BAM_SDK_VERSION,
-          'x-bamsdk-platform': PLATFORM,
-          'Origin': 'https://www.mlb.com',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Content-type': 'application/json'
-        },
-        gzip: true
-      }
-      var response = await this.httpGet(reqObj)
-      if ( response && this.isValidJson(response) ) {
-        this.debuglog('getStreamURL response : ' + response)
-        let obj = JSON.parse(response)
-        if ( obj.errors ) {
-          this.log('getStreamURL error: ' + obj.errors[0])
-          if ( obj.errors[0] == 'blackout' ) {
-            this.markBlackoutError(mediaId)
-          }
-          return false
-        } else {
-          let streamURL = obj.stream.complete
-          this.debuglog('getStreamURL : ' + streamURL)
-          this.cacheStreamURL(mediaId, streamURL)
-          return streamURL
-        }
-      } else {
-        this.log('getStreamURL response failure')
-      }
-    }
-  }
-
-  // API call
-  async getBamAccessToken() {
-    this.debuglog('getBamAccessToken')
-    if ( !this.data.bamAccessToken || !this.data.bamAccessTokenExpiry || (Date.parse(this.data.bamAccessTokenExpiry) < new Date()) ) {
-      this.debuglog('need to get new bamAccessToken')
-      let reqObj = {
-        url: BAM_TOKEN_URL,
-        headers: {
-          'Authorization': 'Bearer ' + API_KEY,
-          'User-agent': USER_AGENT,
-          'Accept': 'application/vnd.media-service+json; version=1',
-          'x-bamsdk-version': BAM_SDK_VERSION,
-          'x-bamsdk-platform': PLATFORM,
-          'Origin': 'https://www.mlb.com',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Content-type': 'application/x-www-form-urlencoded'
-        },
-        form: {
-          'grant_type': 'urn:ietf:params:oauth:grant-type:token-exchange',
-          'platform': 'browser',
-          'subject_token': await this.getEntitlementToken() || this.halt('missing EntitlementToken'),
-          'subject_token_type': 'urn:bamtech:params:oauth:token-type:account'
-        },
-        gzip: true
-      }
-      var response = await this.httpPost(reqObj)
-      if ( this.isValidJson(response) ) {
-        let obj = JSON.parse(response)
-        this.debuglog('getBamAccessToken : ' + obj.access_token)
-        this.debuglog('getBamAccessToken expires in : ' + obj.expires_in)
-        this.data.bamAccessToken = obj.access_token
-        this.data.bamAccessTokenExpiry = new Date(new Date().getTime() + obj.expires_in * 1000)
-        this.save_session_data()
-        return this.data.bamAccessToken
-      } else {
-        this.log('getBamAccessToken response failure')
-      }
-    } else {
-      return this.data.bamAccessToken
-    }
-  }
-
-  // API call
-  async getEntitlementToken() {
-    this.debuglog('getEntitlementToken')
-    let reqObj = {
-      url: 'https://media-entitlement.mlb.com/api/v3/jwt',
-      headers: {
-        'Authorization': 'Bearer ' + await this.getLoginToken() || this.halt('missing loginToken'),
-        'Origin': 'https://www.mlb.com'
-      },
-      qs: {
-        'os': PLATFORM,
-        'did': await this.getDeviceId() || this.halt('missing deviceId'),
-        'appname': 'mlbtv_web'
-      }
-    }
-    var response = await this.httpGet(reqObj)
-    if ( response ) {
-      this.debuglog('getEntitlementToken response : ' + response)
-      this.debuglog('getEntitlementToken : ' + response)
-      return response
-    } else {
-      this.log('getEntitlementToken response failure')
-    }
-  }
-
-  async getDeviceId() {
-    this.debuglog('getDeviceId')
-    let reqObj = {
-      url: 'https://us.edge.bamgrid.com/session',
-      headers: {
-        'Authorization': await this.getDeviceAccessToken() || this.halt('missing device_access_token'),
-        'User-agent': USER_AGENT,
-        'Origin': 'https://www.mlb.com',
-        'Accept': 'application/vnd.session-service+json; version=1',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'x-bamsdk-version': BAM_SDK_VERSION,
-        'x-bamsdk-platform': PLATFORM,
-        'Content-type': 'application/json',
-        'TE': 'Trailers'
-      },
-      gzip: true
-    }
-    var response = await this.httpGet(reqObj)
-    if ( response && this.isValidJson(response) ) {
-      this.debuglog('getDeviceId response : ' + response)
-      let obj = JSON.parse(response)
-      this.debuglog('getDeviceId : ' + obj.device.id)
-      return obj.device.id
-    } else {
-      this.log('getDeviceId response failure')
-    }
-  }
-
-  // API call
-  async getDeviceAccessToken() {
-    this.debuglog('getDeviceAccessToken')
-    let reqObj = {
-      url: BAM_TOKEN_URL,
-      headers: {
-        'Authorization': 'Bearer ' + API_KEY,
-        'Origin': 'https://www.mlb.com'
-      },
-      form: {
-        'grant_type': 'urn:ietf:params:oauth:grant-type:token-exchange',
-        'latitude': '0',
-        'longitude': '0',
-        'platform': 'browser',
-        'subject_token': await this.getDevicesAssertion() || this.halt('missing devicesAssertion'),
-        'subject_token_type': 'urn:bamtech:params:oauth:token-type:device'
-      }
-    }
-    var response = await this.httpPost(reqObj)
-    if ( this.isValidJson(response) ) {
-      this.debuglog('getDeviceAccessToken response : ' + response)
-      let obj = JSON.parse(response)
-      this.debuglog('getDeviceAccessToken : ' + obj.access_token)
-      return obj.access_token
-    } else {
-      this.log('getDeviceAccessToken response failure')
-    }
-  }
-
-  // API call
-  async getDevicesAssertion() {
-    this.debuglog('getDevicesAssertion')
-    let reqObj = {
-      url: 'https://us.edge.bamgrid.com/devices',
-      headers: {
-        'Authorization': 'Bearer ' + API_KEY,
-        'Origin': 'https://www.mlb.com'
-      },
-      json: {
-        'applicationRuntime': 'firefox',
-        'attributes': {},
-        'deviceFamily': 'browser',
-        'deviceProfile': 'macosx'
-      }
-    }
-    var response = await this.httpPost(reqObj)
-    if ( response.assertion ) {
-      this.debuglog('getDevicesAssertion response : ' + JSON.stringify(response))
-      this.debuglog('getDevicesAssertion : ' + response.assertion)
-      return response.assertion
-    } else {
-      this.log('getDevicesAssertion response failure')
-    }
-  }*/
 
   // API call
   async getLoginToken() {
