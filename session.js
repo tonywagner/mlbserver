@@ -2579,7 +2579,7 @@ class sessionClass {
                               team = 'FREE.' + gameCounter['Free']
                             }
 
-                            let icon = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA&s'
+                            let icon = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
                             if ( (cache_data.dates[i].games[j].teams['home'].team.id >= 108) && (cache_data.dates[i].games[j].teams['home'].team.id <= 158) && (cache_data.dates[i].games[j].teams['away'].team.id >= 108) && (cache_data.dates[i].games[j].teams['away'].team.id <= 158) ) {
                               icon = 'https://img.mlbstatic.com/mlb-photos/image/upload/ar_167:215,c_crop/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':fill:spot.png,w_1.0,h_1,x_0.5,y_0,fl_no_overflow,e_distort:100p:0:200p:0:200p:100p:0:100p/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['away'].team.id + ':logo:spot:current,w_0.38,x_-0.25,y_-0.16/fl_relative,l_team:' + cache_data.dates[i].games[j].teams['home'].team.id + ':logo:spot:current,w_0.38,x_0.25,y_0.16/w_750/team/' + cache_data.dates[i].games[j].teams['away'].team.id + '/fill/spot.png'
                             }
@@ -2610,7 +2610,7 @@ class sessionClass {
                             if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
                               //logo += '/image.svg?teamId=MLB'
                               //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
-                              logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA&s'
+                              logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
                               nationalChannels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
                             } else {
                               seriesId = cache_data.dates[i].games[j].teams[teamType].team.teamId
@@ -2776,7 +2776,7 @@ class sessionClass {
               let channelid = mediaType + '.GAMECHANGER'
               //let logo = server + '/image.svg?teamId=MLB'
               //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
-              let logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA&s'
+              let logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
               let stream = server + '/gamechanger.m3u8?resolution=' + resolution
               if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
               if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
@@ -2823,7 +2823,7 @@ class sessionClass {
               let channelid = mediaType + '.MULTIVIEW'
               //let logo = server + '/image.svg?teamId=MLB'
               //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
-              let logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA&s'
+              let logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
               let stream = server.replace(':' + this.data.port, ':' + this.data.multiviewPort) + this.data.multiviewStreamURLPath
               if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
               channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
@@ -3737,6 +3737,8 @@ class sessionClass {
           end.setHours(end.getHours()+4)
         }
       }
+      this.debuglog('Game changer start ' + start)
+      this.debuglog('Game changer end ' + end)
       this.temp_cache.gamechanger = {
         date: today,
         start: start,
@@ -4226,7 +4228,7 @@ class sessionClass {
     for (var j = 0; j < games.length; j++) {
       let gamePk = games[j].gamePk.toString()
       if ( games[j].gameDate && !blackouts[gamePk] && !games[j].rescheduleDate && !games[j].status.startTimeTBD && games[j].broadcasts && (await this.count_broadcasts(games[j].broadcasts, 'MLBTV') > 0) ) {
-        this.debuglog('get_first_and_last_games first : ' + j)
+        this.debuglog('get_first_and_last_games first : ' + j + ' ' + gamePk + ' at ' + games[j].gameDate)
         firstGameIndex = j
         break
       }
@@ -4235,7 +4237,7 @@ class sessionClass {
     for (var j = (games.length-1); j >= 0; j--) {
       let gamePk = games[j].gamePk.toString()
       if ( games[j].gameDate && !blackouts[gamePk] && !games[j].rescheduleDate && games[j].broadcasts && (await this.count_broadcasts(games[j].broadcasts, 'MLBTV') > 0) ) {
-        this.debuglog('get_first_and_last_games last : ' + j)
+        this.debuglog('get_first_and_last_games last : ' + j + ' ' + gamePk + ' at ' + games[j].gameDate)
         lastGameIndex = j
         break
       }
@@ -4354,7 +4356,7 @@ class sessionClass {
     let xml_output = "\n" + '    <programme channel="' + channelid + '" start="' + start + '" stop="' + stop + '">' + "\n" +
     '      <title lang="en">' + title + '</title>' + "\n"
     if ( subtitle ) {
-      xml_output += '      <subtitle lang="en">' + subtitle + '</title>' + "\n"
+      xml_output += '      <subtitle lang="en">' + subtitle + '</subtitle>' + "\n"
     }
     xml_output += '      <desc lang="en">' + description.trim() + '</desc>' + "\n" +
     '      <category lang="en">Sports</category>' + "\n" +
@@ -4362,7 +4364,7 @@ class sessionClass {
     '      <category lang="en">Sports event</category>' + "\n" +
     '      <icon src="' + icon + '"></icon>' + "\n"
     if ( teamId ) {
-      xml_output += '      <series-id system="team-id">{' + teamId + '</series-id>' + "\n"
+      xml_output += '      <series-id system="team-id">' + teamId + '</series-id>' + "\n"
     }
     xml_output += '      <episode-num system="original-air-date">' + date + '</episode-num>' + "\n"
     if ( gamePk ) {

@@ -1,8 +1,8 @@
+[![GitHub release](https://img.shields.io/github/release/tonywagner/mlbserver.svg)](https://github.com/tonywagner/mlbserver/releases)
+![License](https://img.shields.io/badge/license-MIT-blue)
+[![Contributors](https://img.shields.io/github/contributors/tonywagner/mlbserver.svg)](https://github.com/tonywagner/mlbserver/graphs/contributors)
+
 # mlbserver
-
-Current version 2024.07.24
-
-Credit to https://github.com/tonycpsu/streamglob and https://github.com/mafintosh/hls-decryptor
 
 ## Installation
 
@@ -134,6 +134,13 @@ h264_v4l2m2m use V4L2 Linux kernel api to access hardware codecs
 h264_vaapi use VAAPI which is another abstraction API to access video acceleration hardware (Linux only)
 h264_videotoolbox use videotoolbox an API to access hardware on OS X
 ```
+
+## Credits
+
+https://github.com/tonycpsu/streamglob
+https://github.com/mafintosh/hls-decryptor
+https://github.com/eracknaphobia/plugin.video.mlbtv
+
 
 ## License
 
