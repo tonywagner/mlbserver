@@ -4356,7 +4356,7 @@ class sessionClass {
     let xml_output = "\n" + '    <programme channel="' + channelid + '" start="' + start + '" stop="' + stop + '">' + "\n" +
     '      <title lang="en">' + title + '</title>' + "\n"
     if ( subtitle ) {
-      xml_output += '      <subtitle lang="en">' + subtitle + '</subtitle>' + "\n"
+      xml_output += '      <sub-title lang="en">' + subtitle + '</sub-title>' + "\n"
     }
     xml_output += '      <desc lang="en">' + description.trim() + '</desc>' + "\n" +
     '      <category lang="en">Sports</category>' + "\n" +

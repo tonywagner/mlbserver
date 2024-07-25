@@ -1,4 +1,5 @@
-[![GitHub release](https://img.shields.io/github/release/tonywagner/mlbserver.svg)](https://github.com/tonywagner/mlbserver/releases)
+[![Docker release](https://img.shields.io/docker/v/tonywagner/mlbserver)](https://hub.docker.com/r/tonywagner/mlbserver)
+[![NPM release](https://img.shields.io/npm/v/mlbserver)](https://www.npmjs.com/package/mlbserver)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 [![Contributors](https://img.shields.io/github/contributors/tonywagner/mlbserver.svg)](https://github.com/tonywagner/mlbserver/graphs/contributors)
 
