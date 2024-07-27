@@ -1501,6 +1501,20 @@ class sessionClass {
   }
 
   // new API call
+  async getEntitlements() {
+    this.debuglog('getEntitlements')
+    if ( !this.data.entitlements ) {
+      await this.getSession()
+    }
+    if ( this.data.entitlements ) {
+      this.debuglog('using cached entitlements')
+      return this.data.entitlements
+    } else {
+      this.log('failed to getEntitlements')
+    }
+  }
+
+  // new API call
   async getSession() {
     this.debuglog('getSession')
     let reqObj = {
@@ -1543,6 +1557,11 @@ class sessionClass {
       this.debuglog('getSession response : ' + JSON.stringify(response))
       this.data.deviceId = response.data.initSession.deviceId
       this.data.sessionId = response.data.initSession.sessionId
+      var entitlements = []
+      for (var i=0; i<response.data.initSession.entitlements.length; i++) {
+        entitlements.push(response.data.initSession.entitlements[i].code)
+      }
+      this.data.entitlements = entitlements
       this.save_session_data()
     } else {
       this.log('getSession response failure')
@@ -1637,8 +1656,9 @@ class sessionClass {
       }
       var response = await this.httpPost(reqObj)
       if ( this.isValidJson(response) ) {
+        this.debuglog('getLoginToken : ' + response)
         let obj = JSON.parse(response)
-        this.debuglog('getLoginToken : ' + obj.access_token)
+        this.debuglog('getLoginToken token : ' + obj.access_token)
         this.debuglog('getLoginToken expires in : ' + obj.expires_in)
         this.data.loginToken = obj.access_token
         this.data.loginTokenExpiry = new Date(new Date().getTime() + obj.expires_in * 1000)
@@ -2496,6 +2516,40 @@ class sessionClass {
           channels = this.sortObj(channels)
           channels = Object.assign(channels, nationalChannels)
 
+          // MLB Network
+          try {
+            let entitlements = await this.getEntitlements()
+            if ( entitlements.includes('MLBN') || entitlements.includes('MLBALL') || entitlements.includes('MLBTVMLBNADOBEPASS') ) {
+              if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
+                if ( (excludeTeams.length > 0) && excludeTeams.includes('MLBN') ) {
+                  // do nothing
+                } else if ( (includeTeams.length == 0) || includeTeams.includes('MLBN') ) {
+                  this.debuglog('getTVData processing MLB Network')
+                  let logo = 'https://encrypted-tbn1.gstatic.com/images?q=tbn:ANd9GcQRgC2JdbtFplKjfhXm5_vzpkUQ3XyDT91SEnHmuB0p5tReQ3Ez'
+                  let channelid = mediaType + '.MLBN'
+                  if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
+                  let stream = server + '/stream.m3u8?event=mlbn&mediaType=Video&resolution=' + resolution
+                  if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
+                  if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
+                  channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
+
+                  let title = 'MLB Network'
+                  let description = 'Live stream of MLB Network'
+
+                  let start = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+                  let stop = this.convertDateToXMLTV(new Date(cache_data.dates[cache_data.dates.length-1].date + ' 00:00:00'))
+
+                  // Big Inning guide XML
+                  programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(cache_data.dates[0].date))
+                  this.debuglog('getTVData completed MLB Network')
+                }
+              }
+
+            }
+          } catch (e) {
+            this.debuglog('getTVData MLB Network detect error : ' + e.message)
+          }
+
           // Big Inning
           if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
             if ( (excludeTeams.length > 0) && excludeTeams.includes('BIGINNING') ) {
@@ -2541,7 +2595,7 @@ class sessionClass {
                   calendar += await this.generate_ics_event(prefix, new Date(this.cache.bigInningSchedule[gameDate].start), new Date(this.cache.bigInningSchedule[gameDate].end), title, description, location)
 
                   // Big Inning guide XML
-                  programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(this.cache.bigInningSchedule[gameDate].start))
+                  programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(new Date(this.cache.bigInningSchedule[gameDate].start)))
                 }
                 this.debuglog('getTVData completed Big Inning for date ' + cache_data.dates[i].date)
               }
@@ -3317,6 +3371,8 @@ class sessionClass {
           let dateString = eventName.substring(12)
           this.debuglog('getEventStreamURL RecapRundown for ' + dateString)
           playbackURL = await this.getRecapRundownURL(dateString)
+        } else if ( eventName.toUpperCase() == 'MLBN' ) {
+          playbackURL = 'https://falcon.mlbinfra.com/api/v1/linear/mlbn'
         } else {
           playbackURL = await this.getEventURL(eventName)
         }

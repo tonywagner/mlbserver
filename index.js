@@ -252,7 +252,7 @@ app.get('/stream.m3u8', async function(req, res) {
       streamURL = SAMPLE_STREAM_URL
       options.referer = 'https://hls-js-dev.netlify.app/'
     } else {
-      if ( req.query.resolution && (options.resolution == 'best') ) {
+      if ( req.query.resolution && (req.query.resolution == 'best') ) {
         options.resolution = VALID_RESOLUTIONS[1]
       } else {
         options.resolution = session.returnValidItem(req.query.resolution, VALID_RESOLUTIONS)
@@ -469,6 +469,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
       // Some variables for controlling audio/video stream selection, if specified
       var video_track_matched = false
+      var video_track_found = false
       var audio_track_matched = false
       var frame_rate = '29.97'
       if ( (resolution != VALID_RESOLUTIONS[0]) && (resolution != VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1]) ) {
@@ -588,8 +589,9 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
             if ( resolution === VALID_RESOLUTIONS[0] ) {
               return line
             } else {
-              if ( line.indexOf(resolution+',FRAME-RATE='+frame_rate) > 0 ) {
+              if ( (video_track_found == false) && (line.indexOf(resolution+',FRAME-RATE='+frame_rate) > 0) ) {
                 video_track_matched = true
+                video_track_found = true
                 return line
               } else {
                 return
@@ -1500,6 +1502,32 @@ app.get('/', async function(req, res) {
     let blackouts = {}
 
     let currentDate = new Date()
+
+    // MLB Network live stream for paid accounts
+    try {
+      let entitlements = await session.getEntitlements()
+      if ( entitlements.includes('MLBN') || entitlements.includes('MLBALL') || entitlements.includes('MLBTVMLBNADOBEPASS') ) {
+        body += '<tr><td><span class="tooltip">MLB Network<span class="tooltiptext">MLB Network live stream is now included with paid MLBTV subscriptions, or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://www.mlb.com/news/mlb-network-launches-direct-to-consumer-streaming-option">See here for more information</a>.</span></span></td><td>'
+        let querystring = '?event=MLBN'
+        let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+        if ( linkType == VALID_LINK_TYPES[0] ) {
+          if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+          if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+        }
+        if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+        if ( linkType == VALID_LINK_TYPES[1] ) {
+          if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+        }
+        querystring += content_protect_b
+        multiviewquerystring += content_protect_b
+        body += '<a href="' + thislink + querystring + '">MLB Network</a>'
+        body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+        body += '</td></tr>' + "\n"
+
+      }
+    } catch (e) {
+      session.debuglog('MLB Network detect error : ' + e.message)
+    }
 
     if ( (mediaType == 'MLBTV') && ((level_ids == levels['MLB']) || level_ids.startsWith(levels['MLB'] + ',')) ) {
       // Recap Rundown beginning in 2023, disabled because it stopped working
@@ -2471,6 +2499,17 @@ app.get('/guide.xml', async function(req, res) {
   let server = 'http://' + req.headers.host
 
   var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles)
+
+  res.end(body)
+})
+
+// Listen for entitlements requests
+app.get('/entitlements', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  session.requestlog('entitlements', req, true)
+
+  var body = await session.getEntitlements()
 
   res.end(body)
 })
