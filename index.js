@@ -2119,6 +2119,8 @@ app.get('/', async function(req, res) {
 
     body += '<p><span class="tooltip">Include by level<span class="tooltiptext">Including a level (AAA, AA, A+ encoded as A%2B, or A, in a comma-separated list if more than 1) will include all of its broadcasts, and exclude all other levels.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeLevels=a%2B,aaa' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeLevels=a%2B,aaa' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeLevels=a%2B,aaa' + content_protect_b + '">ics</a></p>' + "\n"
 
+    body += '<p><span class="tooltip">Include teams in titles<span class="tooltiptext">An optional parameter added to the URL will include team names in the ICS/XML titles.</span></span>: <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeTeamsInTitles=true' + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeTeamsInTitles=true' + content_protect_b + '">calendar.ics</a></p>' + "\n"
+
     body += '</td></tr></table><br/>' + "\n"
 
     body += '<table><tr><td>' + "\n"
@@ -2366,7 +2368,7 @@ app.get('/channels.m3u', async function(req, res) {
     includeOrgs = req.query.includeOrgs.toUpperCase().split(',')
   }
 
-  var body = await session.getTVData('channels', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, resolution, pipe, startingChannelNumber)
+  var body = await session.getTVData('channels', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, 'false', resolution, pipe, startingChannelNumber)
 
   res.writeHead(200, {'Content-Type': 'audio/x-mpegurl'})
   res.end(body)
@@ -2408,9 +2410,14 @@ app.get('/calendar.ics', async function(req, res) {
       includeOrgs = req.query.includeOrgs.toUpperCase().split(',')
     }
 
+    let includeTeamsInTitles = 'false'
+    if ( req.query.includeTeamsInTitles ) {
+      includeTeamsInTitles = req.query.includeTeamsInTitles
+    }
+
     let server = 'http://' + req.headers.host
 
-    var body = await session.getTVData('calendar', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts)
+    var body = await session.getTVData('calendar', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles)
 
     res.writeHead(200, {'Content-Type': 'text/calendar'})
     res.end(body)
@@ -2456,9 +2463,14 @@ app.get('/guide.xml', async function(req, res) {
     includeOrgs = req.query.includeOrgs.toUpperCase().split(',')
   }
 
+  let includeTeamsInTitles = 'false'
+  if ( req.query.includeTeamsInTitles ) {
+    includeTeamsInTitles = req.query.includeTeamsInTitles
+  }
+
   let server = 'http://' + req.headers.host
 
-  var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts)
+  var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles)
 
   res.end(body)
 })

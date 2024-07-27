@@ -2080,7 +2080,7 @@ class sessionClass {
   }
 
   // get TV data (channels or guide)
-  async getTVData(dataType, mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, resolution='best', pipe='false', startingChannelNumber=1) {
+  async getTVData(dataType, mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles='false', resolution='best', pipe='false', startingChannelNumber=1) {
     try {
       this.debuglog('getTVData for ' + dataType)
 
@@ -2213,6 +2213,10 @@ class sessionClass {
                       let away_team = cache_data.dates[i].games[j].teams['away'].team.name
                       let home_team = cache_data.dates[i].games[j].teams['home'].team.name
                       let subtitle = away_team + ' at ' + home_team
+
+                      if (includeTeamsInTitles == 'true') {
+                        title = 'MiLB: ' + subtitle
+                      }
 
                       let description = cache_data.dates[i].games[j].teams['home'].team.league.name + '. '
                       if ( cache_data.dates[i].games[j].seriesDescription != 'Regular Season' ) {
@@ -2392,6 +2396,17 @@ class sessionClass {
                             let away_team = cache_data.dates[i].games[j].teams['away'].team.teamName
                             let home_team = cache_data.dates[i].games[j].teams['home'].team.teamName
                             let subtitle = away_team + ' at ' + home_team
+
+                            if (includeTeamsInTitles == 'true') {
+                              title = 'MLB: ' + subtitle + ' (' + station
+                              if ( language == 'es' ) {
+                                title += ' Spanish'
+                              }
+                              if ( mediaType == 'Audio' ) {
+                                title += ' Radio'
+                              }
+                              title += ')'
+                            }
 
                             let description = station
                             if ( mediaType == 'Audio' ) {
