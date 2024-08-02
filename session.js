@@ -2404,10 +2404,10 @@ class sessionClass {
                               logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
                               nationalChannels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
                             } else {
-                              seriesId = cache_data.dates[i].games[j].teams[teamType].team.teamId
-                              //logo += '/image.svg?teamId=' + cache_data.dates[i].games[j].teams[teamType].team.teamId
+                              seriesId = cache_data.dates[i].games[j].teams[teamType].team.id
+                              //logo += '/image.svg?teamId=' + cache_data.dates[i].games[j].teams[teamType].team.id
                               //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
-                              logo = 'https://www.mlbstatic.com/team-logos/share/' + cache_data.dates[i].games[j].teams[teamType].team.teamId + '.jpg'
+                              logo = 'https://www.mlbstatic.com/team-logos/share/' + cache_data.dates[i].games[j].teams[teamType].team.id + '.jpg'
                               channels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
                             }
 
@@ -2516,36 +2516,37 @@ class sessionClass {
           channels = this.sortObj(channels)
           channels = Object.assign(channels, nationalChannels)
 
-          // MLB Network
+          // MLB Network live stream for eligible USA subscribers
           try {
-            let entitlements = await this.getEntitlements()
-            if ( entitlements.includes('MLBN') || entitlements.includes('MLBALL') || entitlements.includes('MLBTVMLBNADOBEPASS') ) {
-              if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
-                if ( (excludeTeams.length > 0) && excludeTeams.includes('MLBN') ) {
-                  // do nothing
-                } else if ( (includeTeams.length == 0) || includeTeams.includes('MLBN') ) {
-                  this.debuglog('getTVData processing MLB Network')
-                  let logo = 'https://encrypted-tbn1.gstatic.com/images?q=tbn:ANd9GcQRgC2JdbtFplKjfhXm5_vzpkUQ3XyDT91SEnHmuB0p5tReQ3Ez'
-                  let channelid = mediaType + '.MLBN'
-                  if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
-                  let stream = server + '/stream.m3u8?event=mlbn&mediaType=Video&resolution=' + resolution
-                  if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
-                  if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
-                  channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
+            if ( this.credentials.country == 'USA' ) {
+              let entitlements = await this.getEntitlements()
+              if ( (this.credentials.country == 'USA') && (entitlements.includes('MLBN') || entitlements.includes('EXECMLB') || entitlements.includes('MLBTVMLBNADOBEPASS')) ) {
+                if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
+                  if ( (excludeTeams.length > 0) && excludeTeams.includes('MLBN') ) {
+                    // do nothing
+                  } else if ( (includeTeams.length == 0) || includeTeams.includes('MLBN') ) {
+                    this.debuglog('getTVData processing MLB Network')
+                    let logo = 'https://encrypted-tbn1.gstatic.com/images?q=tbn:ANd9GcQRgC2JdbtFplKjfhXm5_vzpkUQ3XyDT91SEnHmuB0p5tReQ3Ez'
+                    let channelid = mediaType + '.MLBN'
+                    if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
+                    let stream = server + '/stream.m3u8?event=mlbn&mediaType=Video&resolution=' + resolution
+                    if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
+                    if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
+                    channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
 
-                  let title = 'MLB Network'
-                  let description = 'Live stream of MLB Network'
+                    let title = 'MLB Network'
+                    let description = 'Live stream of MLB Network'
 
-                  let start = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
-                  let stop = this.convertDateToXMLTV(new Date(cache_data.dates[cache_data.dates.length-1].date + ' 00:00:00'))
+                    let start = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+                    let stop = this.convertDateToXMLTV(new Date(cache_data.dates[cache_data.dates.length-1].date + ' 00:00:00'))
 
-                  // Big Inning guide XML
-                  programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(cache_data.dates[0].date))
-                  this.debuglog('getTVData completed MLB Network')
-                }
-              }
-
-            }
+                    // MLB Network guide XML
+                    programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(cache_data.dates[0].date))
+                    this.debuglog('getTVData completed MLB Network')
+                  } // end includeTeams check
+                } // end mediaType check
+              } // end entitlements check
+            } // end country check
           } catch (e) {
             this.debuglog('getTVData MLB Network detect error : ' + e.message)
           }

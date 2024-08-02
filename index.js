@@ -1503,28 +1503,29 @@ app.get('/', async function(req, res) {
 
     let currentDate = new Date()
 
-    // MLB Network live stream for paid accounts
+    // MLB Network live stream for eligible USA subscribers
     try {
-      let entitlements = await session.getEntitlements()
-      if ( entitlements.includes('MLBN') || entitlements.includes('MLBALL') || entitlements.includes('MLBTVMLBNADOBEPASS') ) {
-        body += '<tr><td><span class="tooltip">MLB Network<span class="tooltiptext">MLB Network live stream is now included with paid MLBTV subscriptions, or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://www.mlb.com/news/mlb-network-launches-direct-to-consumer-streaming-option">See here for more information</a>.</span></span></td><td>'
-        let querystring = '?event=MLBN'
-        let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
-        if ( linkType == VALID_LINK_TYPES[0] ) {
-          if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
-          if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
-        }
-        if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
-        if ( linkType == VALID_LINK_TYPES[1] ) {
-          if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
-        }
-        querystring += content_protect_b
-        multiviewquerystring += content_protect_b
-        body += '<a href="' + thislink + querystring + '">MLB Network</a>'
-        body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
-        body += '</td></tr>' + "\n"
-
-      }
+      if ( session.credentials.country == 'USA' ) {
+        let entitlements = await session.getEntitlements()
+        if ( entitlements.includes('MLBN') || entitlements.includes('EXECMLB') || entitlements.includes('MLBTVMLBNADOBEPASS') ) {
+          body += '<tr><td><span class="tooltip">MLB Network<span class="tooltiptext">MLB Network live stream is now available in the USA for paid MLBTV subscribers or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://www.mlb.com/news/mlb-network-launches-direct-to-consumer-streaming-option">See here for more information</a>.</span></span></td><td>'
+          let querystring = '?event=MLBN'
+          let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+          if ( linkType == VALID_LINK_TYPES[0] ) {
+            if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+            if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+          }
+          if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+          if ( linkType == VALID_LINK_TYPES[1] ) {
+            if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+          }
+          querystring += content_protect_b
+          multiviewquerystring += content_protect_b
+          body += '<a href="' + thislink + querystring + '">MLB Network</a>'
+          body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+          body += '</td></tr>' + "\n"
+        } // end entitlements check
+      } // end country check
     } catch (e) {
       session.debuglog('MLB Network detect error : ' + e.message)
     }
@@ -2110,7 +2111,7 @@ app.get('/', async function(req, res) {
       resolution = 'best'
     }
 
-    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live MLB broadcasts. If favorite team(s) have been provided, it will also include affiliate games for those organizations. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + content_protect_b + '">calendar.ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live MLB broadcasts (all games plus MLB Network, Big Inning, Game Changer, and Multiview). If favorite team(s) have been provided, it will also include affiliate games for those organizations. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
     let include_teams = 'atl,national'
     if ( session.credentials.fav_teams.length > 0 ) {
@@ -2128,6 +2129,8 @@ app.get('/', async function(req, res) {
     body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from, even if you have not provided a zip code. Excluding a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">ics</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">ics</a></p>' + "\n"
+
+    body += '<p><span class="tooltip">Include (or exclude) MLB Network<span class="tooltiptext">MLB Network live stream is now available in the USA for paid MLBTV subscribers or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://www.mlb.com/news/mlb-network-launches-direct-to-consumer-streaming-option">See here for more information</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=mlbn' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=mlbn' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=mlb' + content_protect_b + '">ics</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">ics</a></p>' + "\n"
 
