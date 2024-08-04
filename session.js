@@ -2829,6 +2829,9 @@ class sessionClass {
       if ( streamURLToken ) {
         variant_url += '&streamURLToken=' + encodeURIComponent(streamURLToken)
       }
+      if ( this.protection.content_protect ) {
+        variant_url += '&content_protect=' + this.protection.content_protect
+      }
       let reqObj = {
         url: variant_url
       }
