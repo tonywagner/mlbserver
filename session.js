@@ -1674,6 +1674,7 @@ class sessionClass {
         this.data.loginToken = obj.access_token
         this.data.loginTokenExpiry = new Date(new Date().getTime() + obj.expires_in * 1000)
         this.save_session_data()
+        await this.getSession()
         return this.data.loginToken
       } else {
         this.log('getLoginToken response failure')
