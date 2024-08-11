@@ -1201,6 +1201,17 @@ class sessionClass {
     this.save_cache_data()
   }
 
+  setBlackoutsCacheExpiry(cache_name, expiryDate) {
+    if ( !this.cache.blackouts ) {
+      this.cache.blackouts={}
+    }
+    if ( !this.cache.blackouts[cache_name] ) {
+      this.cache.blackouts[cache_name] = {}
+    }
+    this.cache.blackouts[cache_name].blackoutsCacheExpiry = expiryDate
+    this.save_cache_data()
+  }
+
   setDateCacheExpiry(cache_name, expiryDate) {
     if ( !this.cache.dates ) {
       this.cache.dates={}
@@ -1714,7 +1725,7 @@ class sessionClass {
           let nationalCount = 0
           let freeCount = 0
           let blackouts = {}
-          if ( includeBlackouts == 'false' ) blackouts = await this.get_blackout_games(cache_data.dates[0].games, true)
+          if ( includeBlackouts == 'false' ) blackouts = await this.get_blackout_games(cache_data.dates[0].date, true)
 
           for (var j = 0; j < cache_data.dates[0].games.length; j++) {
             if ( mediaInfo.mediaId || mediaInfo.gamePk ) break
@@ -2181,13 +2192,14 @@ class sessionClass {
 
           let gameIndexes_obj = {}
 
+          let blackouts = {}
+          if ( includeBlackouts == 'false' ) blackouts = await this.get_blackout_games()
+
           for (var i = 0; i < cache_data.dates.length; i++) {
             this.debuglog('getTVData processing date ' + cache_data.dates[i].date)
             let dateIndex = {MLBTV:i,Free:i,Audio:i}
             let gameCounter = {MLBTV:0,Free:0,Audio:0}
 
-            let blackouts = {}
-            if ( includeBlackouts == 'false' ) blackouts = await this.get_blackout_games(cache_data.dates[i].games)
             let gameIndexes = await this.get_first_and_last_games(cache_data.dates[i].games, blackouts)
             // store gameIndexes for gamechanger/multiview reference later
             gameIndexes_obj[cache_data.dates[i].date] = gameIndexes
@@ -3489,70 +3501,110 @@ class sessionClass {
     return regional_fox_games_exist
   }
 
+  // get blackouts data for a day
+  async getBlackoutsData(dateString, endDate) {
+    try {
+      let cache_data
+      let cache_name = 'b' + dateString
+      let data_url = 'https://mastapi.mobile.mlbinfra.com/api/epg/v3/search?exp=MLB&date=' + dateString
+      let utcHours = 10
+      if ( dateString == 'guide' ) {
+        cache_name = 'bweek'
+        this.debuglog('getBlackoutsData for week')
+        let startDate = this.liveDate(utcHours)
+        let endDate = new Date(startDate)
+        endDate.setDate(endDate.getDate()+20)
+        endDate = endDate.toISOString().substring(0,10)
+        data_url = 'https://mastapi.mobile.mlbinfra.com/api/epg/v3/search?exp=MLB&startDate=' + startDate + '&endDate=' + endDate
+      } else {
+        this.debuglog('getBlackoutsData for ' + dateString)
+      }
+      let cache_file = path.join(this.CACHE_DIRECTORY, cache_name+'.json')
+      let currentDate = new Date()
+      if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.blackouts || !this.cache.blackouts[cache_name] || !this.cache.blackouts[cache_name].blackoutsCacheExpiry || (currentDate > new Date(this.cache.blackouts[cache_name].blackoutsCacheExpiry)) ) {
+        let reqObj = {
+          url: data_url,
+          headers: {
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Content-Type': 'application/json',
+            'Origin': 'https://www.mlb.com',
+            'Referer': 'https://www.mlb.com/',
+            'User-Agent': USER_AGENT
+          }
+        }
+        var response = await this.httpGet(reqObj, false)
+        if ( response && this.isValidJson(response) ) {
+          //this.debuglog(response)
+          cache_data = JSON.parse(response)
+          this.save_json_cache_file(cache_name, cache_data)
+
+          // Default cache period is 1 day from now
+          let today = this.liveDate()
+          let tomorrowDate = new Date(today)
+          tomorrowDate.setDate(tomorrowDate.getDate()+1)
+          tomorrowDate.setHours(tomorrowDate.getHours()+utcHours)
+          let cacheExpiry = tomorrowDate
+
+          // finally save the setting
+          this.setBlackoutsCacheExpiry(cache_name, cacheExpiry)
+        } else {
+          this.log('error : invalid json from url ' + reqObj.url)
+        }
+      } else {
+        this.debuglog('using cached date data')
+        cache_data = this.readFileToJson(cache_file)
+      }
+      if (cache_data) {
+        return cache_data
+      }
+    } catch(e) {
+      this.log('getBlackoutsData error : ' + e.message)
+    }
+  }
+
   // get all blackout games for a date
-  async get_blackout_games(games, calculate_expiries=false) {
+  async get_blackout_games(gameDate='guide', calculate_expiries=false) {
     this.debuglog('get_blackout_games')
     let blackouts = {}
 
-    let usa_blackout = /(^\d{5}$)/.test(this.credentials.zip_code) && (this.credentials.country == 'USA')
+    let cache_data
+    cache_data = await this.getBlackoutsData(gameDate)
 
-    let regional_fox_games_exist
-    for (var j = 0; j < games.length; j++) {
-      let game_pk = games[j].gamePk.toString()
-      this.debuglog('get_blackout_games checking game ' + game_pk)
-      if ( games[j].broadcasts ) {
-        for (var k = 0; k < games[j].broadcasts.length; k++) {
-          let broadcast = games[j].broadcasts[k]
-          if ( broadcast.type == 'TV' ) {
-            this.debuglog('get_blackout_games checking feed ' + broadcast.callSign)
-            if ( (broadcast.isNational == true) || (await this.check_pay_tv(broadcast)) || broadcast.callSign.endsWith('-INT') ) {
-              this.debuglog('get_blackout_games checking national game')
-              // International blackouts according to https://www.mlb.com/live-stream-games/help-center/blackouts-available-games
-              if ( usa_blackout && (broadcast.callSign == 'FOX') ) {
-                if ( !regional_fox_games_exist && (games[j].seriesDescription == 'Regular Season') ) {
-                  regional_fox_games_exist = await this.check_regional_fox_games(games)
-                }
-                if ( !regional_fox_games_exist || (regional_fox_games_exist == 'false') ) {
-                  this.debuglog('get_blackout_games found non-regional FOX game')
-                  blackouts[game_pk] = { blackout_type:'National' }
-                  break
-                }
-              // Apple TV+ games are blacked out everywhere
-              } else if ( broadcast.callSign == 'Apple TV+' ) {
-                this.debuglog('get_blackout_games found Apple TV+ blackout')
-                blackouts[game_pk] = { blackout_type:'Full International' }
-              // ESPN Sunday Night games are blacked out in a list of countries
-              } else if ( (broadcast.callSign == 'ESPN') && (new Date(games[j].gameDate).getDay() == 0) && ESPN_SUNDAY_NIGHT_BLACKOUT_COUNTRIES.includes(this.credentials.country) ) {
-                this.debuglog('get_blackout_games found ESPN blackout')
-                blackouts[game_pk] = { blackout_type:'Partial International' }
-              // games with an "-INT" variant are postseason games, blacked out in USA and Canada
-              } else if ( broadcast.callSign.endsWith('-INT') && (usa_blackout || (this.credentials.country == 'Canada')) ) {
-                this.debuglog('get_blackout_games found national blackout')
-                blackouts[game_pk] = { blackout_type:'National' }
-              } else if ( usa_blackout ) {
-                this.debuglog('get_blackout_games found USA blackout')
-                blackouts[game_pk] = { blackout_type:'National' }
-              }
-              break
-            // check local blackouts
-            } else {
-              this.debuglog('get_blackout_games checking local game')
-              let awayteam = games[j].teams['away'].team.abbreviation
-              let hometeam = games[j].teams['home'].team.abbreviation
-              if ( (games[j].seriesDescription != 'Spring Training') && (this.credentials.blackout_teams.includes(hometeam) || this.credentials.blackout_teams.includes(awayteam)) ) {
-                this.debuglog('get_blackout_games found local blackout')
-                blackouts[game_pk] = { blackout_type:'Local' }
-                break
-              }
-            }
-            break
-          }
+    if ( cache_data && cache_data.results && (cache_data.results.length > 0) ) {
+      for (var j = 0; j < cache_data.results.length; j++) {
+        let game = cache_data.results[j]
+        let game_pk = game.gamePk
+        this.debuglog('get_blackout_games checking game ' + game_pk)
+        if ( game.blackedOutVideo ) {
+          this.debuglog('get_blackout_games found blackout')
+          let blackout_type = ''
+          // local/national blackout label disabled, as all were returning local
+          /*if ( game.videoStatusCodes.includes('2') ) {
+            this.debuglog('get_blackout_games found national blackout')
+            blackout_type = 'National/International'
+          } else {
+            this.debuglog('get_blackout_games found local blackout')
+            blackout_type = 'Local'
+          }*/
+          blackouts[game_pk] = { blackout_type: blackout_type }
         }
 
         // add blackout expiry, if requested
-        if ( blackouts[game_pk] && calculate_expiries && await this.check_game_time(games[j]) ) {
-          let blackoutExpiry = await this.get_blackout_expiry(games[j])
-          blackouts[game_pk].blackoutExpiry = blackoutExpiry
+        if ( blackouts[game_pk] && calculate_expiries && await this.check_game_time(game.gameData) ) {
+          this.debuglog('get_blackout_games calculating blackout expiry')
+          let date_cache_data = await this.getDayData(gameDate)
+          if ( date_cache_data.dates && date_cache_data.dates[0] && date_cache_data.dates[0].games && (date_cache_data.dates[0].games.length > 0) ) {
+            for (var k = 0; k < date_cache_data.dates[0].games.length; k++) {
+              if ( game_pk == date_cache_data.dates[0].games[k].gamePk ) {
+                this.debuglog('get_blackout_games found matching game')
+                let blackoutExpiry = await this.get_blackout_expiry(date_cache_data.dates[0].games[k])
+                this.debuglog('get_blackout_games calculated blackout expiry as ' + blackoutExpiry)
+                blackouts[game_pk].blackoutExpiry = blackoutExpiry
+                break
+              }
+            }
+          }
         }
       }
     }
@@ -3569,7 +3621,7 @@ class sessionClass {
       let start
       let end
       if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
-        blackouts = await this.get_blackout_games(cache_data.dates[0].games)
+        blackouts = await this.get_blackout_games(today)
         this.debuglog('Game changer blackouts ' + JSON.stringify(blackouts))
 
         let gameIndexes = await this.get_first_and_last_games(cache_data.dates[0].games, blackouts)
@@ -4137,8 +4189,8 @@ class sessionClass {
     return scheduledInnings
   }
 
-  async check_game_time(game) {
-    if ( !game.resumeGameDate && !game.resumedFromDate && (game.status.startTimeTBD == false) ) {
+  async check_game_time(gameData) {
+    if ( !gameData.resumeGameDate && !gameData.resumedFromDate && (gameData.startTimeTBD == false) ) {
       return true
     } else {
       return false
@@ -4147,20 +4199,25 @@ class sessionClass {
 
   async get_blackout_expiry(game) {
     let scheduledInnings = await this.get_scheduled_innings(game)
-    // avg 9 inning game was 3:11 in 2021, or 21.22 minutes per inning
-    let gameDurationMinutes = 21.22 * scheduledInnings
+    this.debuglog('get_blackout_expiry scheduledInnings ' + scheduledInnings)
+    // avg 9 inning game was 2:39 in 2023, or 17.66 minutes per inning
+    let gameDurationMinutes = 17.66 * scheduledInnings
     // default to assuming the scheduled game time is the first pitch time
     let firstPitch = new Date(game.gameDate)
+    this.debuglog('get_blackout_expiry gameDate ' + firstPitch)
     if ( game.gameInfo ) {
       // check if firstPitch has been updated with a valid time (later than the scheduled game time)
       if ( game.gameInfo.firstPitch && (game.gameInfo.firstPitch >= game.gameDate) ) {
         firstPitch = new Date(game.gameInfo.firstPitch)
+        this.debuglog('get_blackout_expiry firstPitch ' + firstPitch)
         // for completed games, get the duration too
         if ( game.gameInfo.gameDurationMinutes ) {
           gameDurationMinutes = game.gameInfo.gameDurationMinutes
+          this.debuglog('get_blackout_expiry gameDurationMinutes ' + gameDurationMinutes)
           // add any delays
           if ( game.gameInfo.delayDurationMinutes ) {
             gameDurationMinutes += game.gameInfo.delayDurationMinutes
+            this.debuglog('get_blackout_expiry delayDurationMinutes ' + game.gameInfo.delayDurationMinutes)
           }
         }
       }
