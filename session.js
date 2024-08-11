@@ -4069,7 +4069,7 @@ class sessionClass {
     let firstGameIndex
     for (var j = 0; j < games.length; j++) {
       let gamePk = games[j].gamePk.toString()
-      if ( games[j].gameDate && !blackouts[gamePk] && !games[j].rescheduleDate && !games[j].status.startTimeTBD && games[j].broadcasts && (await this.count_broadcasts(games[j].broadcasts, 'MLBTV') > 0) ) {
+      if ( games[j].gameDate && (games[j].teams.home.team.sport.id == 1) && (games[j].teams.away.team.sport.id == 1) && !blackouts[gamePk] && !games[j].rescheduleDate && !games[j].status.startTimeTBD && games[j].broadcasts && (await this.count_broadcasts(games[j].broadcasts, 'MLBTV') > 0) ) {
         this.debuglog('get_first_and_last_games first : ' + j + ' ' + gamePk + ' at ' + games[j].gameDate)
         firstGameIndex = j
         break
@@ -4078,7 +4078,7 @@ class sessionClass {
     let lastGameIndex
     for (var j = (games.length-1); j >= 0; j--) {
       let gamePk = games[j].gamePk.toString()
-      if ( games[j].gameDate && !blackouts[gamePk] && !games[j].rescheduleDate && games[j].broadcasts && (await this.count_broadcasts(games[j].broadcasts, 'MLBTV') > 0) ) {
+      if ( games[j].gameDate && (games[j].teams.home.team.sport.id == 1) && (games[j].teams.away.team.sport.id == 1) && !blackouts[gamePk] && !games[j].rescheduleDate && games[j].broadcasts && (await this.count_broadcasts(games[j].broadcasts, 'MLBTV') > 0) ) {
         this.debuglog('get_first_and_last_games last : ' + j + ' ' + gamePk + ' at ' + games[j].gameDate)
         lastGameIndex = j
         break
