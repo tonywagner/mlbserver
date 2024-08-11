@@ -1047,10 +1047,10 @@ app.get('/gamechangerplaylist', async function(req, res) {
       }
       session.temp_cache.gamechanger[id].lastAccess = gamechangerAccess
 
-      if ( !session.temp_cache.gamechanger.start || (gamechangerAccess < session.temp_cache.gamechanger.start) || !session.temp_cache.gamechanger.end || (gamechangerAccess > session.temp_cache.gamechanger.end) ) {
+      /*if ( !session.temp_cache.gamechanger.start || (gamechangerAccess < session.temp_cache.gamechanger.start) || !session.temp_cache.gamechanger.end || (gamechangerAccess > session.temp_cache.gamechanger.end) ) {
         session.log(game_changer_title + 'outside of games starting/ending, skipping')
         respond(GAMECHANGER_RESPONSE_HEADERS, res, Buffer.from(''))
-      } else {
+      } else {*/
         let streamURL
         let streamURLToken
         let discontinuity = false
@@ -1166,7 +1166,7 @@ app.get('/gamechangerplaylist', async function(req, res) {
             respond(GAMECHANGER_RESPONSE_HEADERS, res, Buffer.from(session.temp_cache.gamechanger[id].playlist[resolution]))
           }
         }
-      }
+      //}
     }
 
     return req()
