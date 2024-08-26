@@ -2323,7 +2323,7 @@ app.get('/advanced.html', async function(req, res) {
   }
   session.debuglog('advanced embed src : ' + video_url)
 
-  res.redirect('http://hls-js-dev.netlify.app/demo/?src=' + encodeURIComponent(video_url))
+  res.redirect('https://hls-js-dev.netlify.app/demo/?src=' + encodeURIComponent(video_url))
 })
 
 // Listen for Chromecast request, redirect to chromecast.link player

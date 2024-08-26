@@ -1958,7 +1958,7 @@ class sessionClass {
         cache_name += '.' + team_ids
       }
       //let data_url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&sportId=17&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&leagueId=103&leagueId=131&contextTeamId='
-      let data_url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=' + level_ids
+      let data_url = 'https://statsapi.mlb.com/api/v1/schedule?sportId=' + level_ids
       if ( team_ids != '' ) {
         data_url += '&teamId=' + team_ids
       }
@@ -1966,7 +1966,7 @@ class sessionClass {
       if ( team && !team.toUpperCase().startsWith('NATIONAL.') && !team.toUpperCase().startsWith('FREE.') ) {
         this.debuglog('getDayData for team ' + team + ' on date ' + dateString)
         cache_name = team.toUpperCase() + dateString
-        data_url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=' + TEAM_IDS[team.toUpperCase()] + '&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=team,broadcasts(all)'
+        data_url = 'https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=' + TEAM_IDS[team.toUpperCase()] + '&startDate=' + dateString + '&endDate=' + dateString + '&hydrate=team,broadcasts(all)'
       } else {
         this.debuglog('getDayData for level(s) ' + level_ids + ' on date ' + dateString)
       }
@@ -2068,7 +2068,7 @@ class sessionClass {
         let endDate = new Date(startDate)
         endDate.setDate(endDate.getDate()+20)
         endDate = endDate.toISOString().substring(0,10)
-        let data_url = 'http://statsapi.mlb.com/api/v1/schedule?sportId=' + level_ids
+        let data_url = 'https://statsapi.mlb.com/api/v1/schedule?sportId=' + level_ids
         if ( team_ids != '' ) {
           data_url += '&teamId=' + team_ids
         }
@@ -2783,7 +2783,7 @@ class sessionClass {
       let currentDate = new Date()
       if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.gameday || !this.cache.gameday[cache_name] || !this.cache.gameday[cache_name].gamedayCacheExpiry || (currentDate > new Date(this.cache.gameday[cache_name].gamedayCacheExpiry)) ) {
         let reqObj = {
-          url: 'http://statsapi.mlb.com/api/v1.1/game/' + gamePk + '/feed/live',
+          url: 'https://statsapi.mlb.com/api/v1.1/game/' + gamePk + '/feed/live',
           headers: {
             'User-agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
@@ -3677,8 +3677,8 @@ class sessionClass {
         cacheExpiry.setSeconds(cacheExpiry.getSeconds()+9)
         this.temp_cache.gamechangerCacheExpiry = cacheExpiry
         let reqObj = {
-          //url: 'http://gd2.mlb.com/components/game/mlb/year_' + this.temp_cache.gamechanger.dateString + '/master_scoreboard.json',
-          url: 'http://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=' + this.temp_cache.gamechanger.date + '&endDate=' + this.temp_cache.gamechanger.date + '&hydrate=broadcasts(all),linescore,team,flags,gameInfo',
+          //url: 'https://gd2.mlb.com/components/game/mlb/year_' + this.temp_cache.gamechanger.dateString + '/master_scoreboard.json',
+          url: 'https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=' + this.temp_cache.gamechanger.date + '&endDate=' + this.temp_cache.gamechanger.date + '&hydrate=broadcasts(all),linescore,team,flags,gameInfo',
           headers: {
             'User-Agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
