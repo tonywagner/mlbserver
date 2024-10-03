@@ -37,6 +37,7 @@ const VALID_AUDIO_TRACKS = [ 'all', 'English', 'English Radio', 'Radio Española
 const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spanish', 'Alt.', 'Alt. Spanish', 'none' ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
 const VALID_SKIP = [ 'off', 'breaks', 'idle time', 'pitches', 'commercials' ]
+const DEFAULT_SKIP_ADJUST = 0
 const VALID_PAD = [ 'off', 'on' ]
 const VALID_FORCE_VOD = [ 'off', 'on' ]
 const VALID_SCAN_MODES = [ 'off', 'on' ]
@@ -340,10 +341,12 @@ app.get('/stream.m3u8', async function(req, res) {
         if ( gamePk ) {
           options.gamePk = gamePk
 
+          let skip_adjust = parseInt(req.query.skip_adjust) || DEFAULT_SKIP_ADJUST
+
           let skip_type = VALID_SKIP.indexOf(options.skip)
           // for skip other than commercial skip, look up markers
           if ( skip_type != 4 ) {
-            await session.getSkipMarkers(gamePk, skip_type, options.inning_number, options.inning_half, streamURL, streamURLToken)
+            await session.getSkipMarkers(gamePk, skip_type, options.inning_number, options.inning_half, streamURL, streamURLToken, skip_adjust)
           }
         }
       }
@@ -457,6 +460,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
       let inning_half = options.inning_half || VALID_INNING_HALF[0]
       let inning_number = options.inning_number || VALID_INNING_NUMBER[0]
       let skip = options.skip || VALID_SKIP[0]
+      let skip_adjust = options.skip_adjust || DEFAULT_SKIP_ADJUST
       let pad = options.pad || VALID_PAD[0]
       let gamePk = options.gamePk || false
 
@@ -561,6 +565,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
                   if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
                   if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
                   if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
+                  if ( skip_adjust != DEFAULT_SKIP_ADJUST ) newurl += '&skip_adjust=' + skip_adjust
                   if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
                   if ( gamePk ) newurl += '&gamePk=' + gamePk
                   newurl += content_protect + referer_parameter + token_parameter
@@ -628,6 +633,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
           if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
           if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
+          if ( skip_adjust != DEFAULT_SKIP_ADJUST ) newurl += '&skip_adjust=' + skip_adjust
           if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
           if ( gamePk ) newurl += '&gamePk=' + gamePk
           newurl += content_protect + referer_parameter + token_parameter
@@ -683,6 +689,7 @@ app.get('/playlist', async function(req, res) {
   var inning_half = req.query.inning_half || VALID_INNING_HALF[0]
   var inning_number = req.query.inning_number || VALID_INNING_NUMBER[0]
   var skip = req.query.skip || VALID_SKIP[0]
+  var skip_adjust = req.query.skip_adjust || DEFAULT_SKIP_ADJUST
   var pad = req.query.pad || VALID_PAD[0]
   var gamePk = req.query.gamePk || false
 
@@ -1331,6 +1338,10 @@ app.get('/', async function(req, res) {
     if ( req.query.skip ) {
       skip = req.query.skip
     }
+    var skip_adjust = DEFAULT_SKIP_ADJUST
+    if ( req.query.skip_adjust ) {
+      skip_adjust = req.query.skip_adjust
+    }
     var pad = VALID_PAD[0]
     if ( req.query.pad ) {
       pad = req.query.pad
@@ -1363,10 +1374,10 @@ app.get('/', async function(req, res) {
     body += '</style><script type="text/javascript">' + "\n";
 
     // Define option variables in page
-    body += 'var date="' + gameDate + '";var level="' + level + '";var org="' + org + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var pad="' + pad + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var controls="' + controls + '";var scan_mode="' + scan_mode + '";var content_protect="' + content_protect + '";' + "\n"
+    body += 'var date="' + gameDate + '";var level="' + level + '";var org="' + org + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var skip_adjust="' + skip_adjust + '";var pad="' + pad + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var controls="' + controls + '";var scan_mode="' + scan_mode + '";var content_protect="' + content_protect + '";' + "\n"
 
     // Reload function, called after options change
-    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (level != "' + default_level + '"){newurl+="level="+encodeURIComponent(level)+"&"}if (org != "All"){newurl+="org="+encodeURIComponent(org)+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (level != "' + default_level + '"){newurl+="level="+encodeURIComponent(level)+"&"}if (org != "All"){newurl+="org="+encodeURIComponent(org)+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";if (skip_adjust != "' + DEFAULT_SKIP_ADJUST + '"){newurl+="skip_adjust="+skip_adjust+"&"}}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
     // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
@@ -1837,7 +1848,7 @@ app.get('/', async function(req, res) {
                     if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
                     if ( inning_number != VALID_INNING_NUMBER[0] ) querystring += '&inning_number=' + relative_inning
                     if ( skip != VALID_SKIP[0] ) querystring += '&skip=' + skip
-                    //if ( skip_adjust != DEFAULT_SKIP_ADJUST ) querystring += '&skip_adjust=' + skip_adjust
+                    if ( skip_adjust != DEFAULT_SKIP_ADJUST ) querystring += '&skip_adjust=' + skip_adjust
                   }
                   if ( pad != VALID_PAD[0] ) querystring += '&pad=' + pad
                   if ( linkType == VALID_LINK_TYPES[1] ) {
@@ -1929,6 +1940,7 @@ app.get('/', async function(req, res) {
                           if ( inning_half != VALID_INNING_HALF[0] ) querystring += '&inning_half=' + inning_half
                           if ( inning_number != VALID_INNING_NUMBER[0] ) querystring += '&inning_number=' + relative_inning
                           if ( skip != VALID_SKIP[0] ) querystring += '&skip=' + skip
+                          if ( skip_adjust != DEFAULT_SKIP_ADJUST ) querystring += '&skip_adjust=' + skip_adjust
                           if ( (inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0]) ) {
                             querystring += '&gamePk=' + cache_data.dates[0].games[j].gamePk
                           }
@@ -2054,6 +2066,9 @@ app.get('/', async function(req, res) {
           body += '<button '
           if ( skip == VALID_SKIP[i] ) body += 'class="default" '
           body += 'onclick="skip=\'' + VALID_SKIP[i] + '\';reload()">' + VALID_SKIP[i] + '</button> '
+        }
+        if ( skip != VALID_SKIP[0] ) {
+          body += '<br><span class="tooltip">Skip Adjust<span class="tooltiptext">Seconds to adjust the skip time video segments, if necessary. Try a negative number if the plays are ending before the video segments begin; use a positive number if the video segments are ending before the play happens.</span></span>: <input type="number" id="skip_adjust" value="' + skip_adjust + '" step="1" onchange="setTimeout(function(){skip_adjust=document.getElementById(\'skip_adjust\').value;reload()},750)" onblur="skip_adjust=this.value;reload()" style="vertical-align:top;font-size:.8em;width:3em"/>'
         }
         body += '</p>' + "\n"
       }

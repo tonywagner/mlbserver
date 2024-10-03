@@ -2869,9 +2869,11 @@ class sessionClass {
   }
 
   // Get skip markers into temporary cache
-  async getSkipMarkers(gamePk, skip_type, start_inning, start_inning_half, streamURL, streamURLToken) {
+  async getSkipMarkers(gamePk, skip_type, start_inning, start_inning_half, streamURL, streamURLToken, skip_adjust) {
     try {
       this.debuglog('getSkipMarkers')
+
+      if ( skip_adjust != 0 ) this.log('manual adjustment of ' + skip_adjust + ' seconds being applied')
 
       if ( !this.temp_cache[gamePk] ) {
         this.temp_cache[gamePk] = {}
@@ -2988,6 +2990,8 @@ class sessionClass {
                     // then we'll add the skip marker
                     // otherwise we'll ignore it and move on to the next one
                     if ( ((break_end - break_start) >= MINIMUM_BREAK_DURATION) && ((skip_type != 1) || (current_inning != previous_inning) || (current_inning_half != previous_inning_half)) ) {
+                      if ( break_start > 0 ) break_start += skip_adjust
+                      break_end += skip_adjust
                       skip_markers.push({'break_start': break_start, 'break_end': break_end})
                       total_skip_time += break_end - break_start
                       previous_inning = current_inning
