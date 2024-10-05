@@ -33,8 +33,8 @@ const VALID_RESOLUTIONS = [ 'adaptive', '720p60', '720p', '540p', '504p', '360p'
 const DEFAULT_MULTIVIEW_RESOLUTION = '504p'
 // Corresponding andwidths to display for above resolutions
 const DISPLAY_BANDWIDTHS = [ '', '6600k', '4160k', '2950k', '2120k', '1400k', '' ]
-const VALID_AUDIO_TRACKS = [ 'all', 'English', 'English Radio', 'Radio Española', 'Alternate English', 'Alternate Spanish', 'none' ]
-const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spanish', 'Alt.', 'Alt. Spanish', 'none' ]
+const VALID_AUDIO_TRACKS = [ 'all', 'English', 'Home Radio', 'Casa Radio', 'Away Radio', 'Visita Radio', 'none' ]
+const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spanish', 'Away Radio', 'Away Sp.', 'none' ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
 const VALID_SKIP = [ 'off', 'breaks', 'idle time', 'pitches', 'commercials' ]
 const DEFAULT_SKIP_ADJUST = 0
@@ -544,11 +544,12 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
               audio_output += line
             }
           } else {
-            if ( (audio_track == VALID_AUDIO_TRACKS[0]) || (audio_track == VALID_AUDIO_TRACKS[2]) || (audio_track == VALID_AUDIO_TRACKS[3]) ) {
-              // if user specified home radio or home Spanish audio track, check if this one matches
-              if ( (audio_track == VALID_AUDIO_TRACKS[2]) || (audio_track == VALID_AUDIO_TRACKS[3]) ) {
+            if ( (audio_track == VALID_AUDIO_TRACKS[0]) || (audio_track == VALID_AUDIO_TRACKS[2]) || (audio_track == VALID_AUDIO_TRACKS[3]) || (audio_track == VALID_AUDIO_TRACKS[4]) || (audio_track == VALID_AUDIO_TRACKS[5]) ) {
+              // if user specified home/away radio or home/away Spanish audio track, check if this one matches
+              if ( (audio_track == VALID_AUDIO_TRACKS[2]) || (audio_track == VALID_AUDIO_TRACKS[3]) || (audio_track == VALID_AUDIO_TRACKS[4]) || (audio_track == VALID_AUDIO_TRACKS[5]) ) {
                 if ( line.includes('NAME="'+audio_track+'"') || line.includes('NAME="'+audio_track.substring(0,audio_track.length-1)+'"') ) {
                   audio_track_matched = true
+                  line = line.replace('DEFAULT=NO','DEFAULT=YES')
                   line = line.replace('AUTOSELECT=NO','AUTOSELECT=YES')
                   if ( !line.includes(',DEFAULT=YES') ) line = line.replace('AUTOSELECT=YES','AUTOSELECT=YES,DEFAULT=YES')
                 } else {
@@ -1497,7 +1498,7 @@ app.get('/', async function(req, res) {
     if ( mediaType == VALID_MEDIA_TYPES[0] ) {
       mediaType = 'MLBTV'
     } else if ( mediaType == VALID_MEDIA_TYPES[2] ) {
-      mediaType = VALID_MEDIA_TYPES[1]
+      //mediaType = VALID_MEDIA_TYPES[1]
       language = 'es'
     }
     if ( mediaType == VALID_MEDIA_TYPES[1] ) {
@@ -1637,14 +1638,18 @@ app.get('/', async function(req, res) {
         let awayteam = cache_data.dates[0].games[j].teams['away'].team.abbreviation
         let awayteam_abbr
         if ( cache_data.dates[0].games[j].teams['away'].team.sport.name != 'Major League Baseball' ) {
-          awayteam = cache_data.dates[0].games[j].teams['away'].team.shortName + ' (' + session.getParent(cache_data.dates[0].games[j].teams['away'].team.parentOrgName) + ')'
+          awayteam = cache_data.dates[0].games[j].teams['away'].team.shortName
+          let parentOrgName = cache_data.dates[0].games[j].teams['away'].team.parentOrgName
+          if (parentOrgName != 'Office of the Commissioner') awayteam += ' (' + session.getParent(parentOrgName) + ')'
           awayteam_abbr = cache_data.dates[0].games[j].teams['away'].team.abbreviation
           awayteam_level = session.getLevelNameFromSportId(cache_data.dates[0].games[j].teams['away'].team.sport.id)
         }
         let hometeam = cache_data.dates[0].games[j].teams['home'].team.abbreviation
         let hometeam_abbr
         if ( cache_data.dates[0].games[j].teams['home'].team.sport.name != 'Major League Baseball' ) {
-          hometeam = cache_data.dates[0].games[j].teams['home'].team.shortName + ' (' + session.getParent(cache_data.dates[0].games[j].teams['home'].team.parentOrgName) + ')'
+          hometeam = cache_data.dates[0].games[j].teams['home'].team.shortName
+          let parentOrgName = cache_data.dates[0].games[j].teams['home'].team.parentOrgName
+          if (parentOrgName != 'Office of the Commissioner') hometeam += ' (' + session.getParent(parentOrgName) + ')'
           hometeam_abbr = cache_data.dates[0].games[j].teams['home'].team.abbreviation
           hometeam_level = session.getLevelNameFromSportId(cache_data.dates[0].games[j].teams['home'].team.sport.id)
         }
@@ -1837,7 +1842,11 @@ app.get('/', async function(req, res) {
                 startTime.setMinutes(startTime.getMinutes()-30)
                 if ( (currentTime >= startTime) ) {
                   let querystring
-                  querystring = '?gamePk=' + gamePk
+                  if ( cache_data.dates[0].games[j].teams['home'].team.league.id == session.getLidomId() ) {
+                    querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.clubName.toUpperCase())
+                  } else {
+                    querystring = '?gamePk=' + gamePk
+                  }
                   let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
                   if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
                   if ( linkType == VALID_LINK_TYPES[0] ) {
@@ -1911,8 +1920,6 @@ app.get('/', async function(req, res) {
                         body += ' (~' + blackouts[gamePk].blackoutExpiry.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ')'
                       }
                       body += '</span></span>'
-                    } else if ( (station == 'FOX') ) {
-                      body += '<span class="tooltip">' + teamabbr + '<span class="tooltiptext">Regional FOX game</span></span>'
                     } else {
                       body += teamabbr
                     }
@@ -2727,13 +2734,19 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, park_audio
     audio_reencoded = []
     for (var i=0; i<audio_present.length; i++) {
       //let audio_input = audio_present[i] + ':a:m:language:en?'
-      let audio_input = audio_present[i] + ':a:0'
+      let audio_input = audio_present[i] + ':a:'
+      let video_url = streams[audio_present[i]]
+      if ( video_url.includes('audio_track=English') || !video_url.includes('audio_track=') ) {
+        audio_input += '0'
+      } else {
+        audio_input += '1'
+      }
       let filter = ''
       // Optionally apply sync adjustments
       if ( sync[audio_present[i]] ) {
         if ( sync[audio_present[i]] > 0 ) {
           session.log('delaying audio for stream ' + (audio_present[i]+1) + ' by ' + sync[audio_present[i]] + ' seconds')
-          filter = 'adelay=' + (sync[i] * 1000) + ','
+          filter = 'adelay=' + (sync[i] * 1000) + ':all=1,'
         } else if ( sync[audio_present[i]] < 0 ) {
           session.log('trimming audio for stream ' + (audio_present[i]+1) + ' by ' + sync[audio_present[i]] + ' seconds')
           filter = 'atrim=start=' + (sync[audio_present[i]] * -1) + 's,'
@@ -2764,7 +2777,13 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, park_audio
       if ( audio_reencoded.indexOf(audio_present[i]) > -1 ) {
         audio_output = '[out' + i + ']'
       } else {
-        audio_output = audio_present[i] + ':a:0'
+        audio_output = audio_present[i] + ':a:'
+        let video_url = streams[audio_present[i]]
+        if ( video_url.includes('audio_track=English') || !video_url.includes('audio_track=') ) {
+          audio_output += '0'
+        } else {
+          audio_output += '1'
+        }
       }
       ffmpeg_command.addOutputOption('-map', audio_output)
       var_stream_map += ' a:' + i + ',agroup:aac,language:ENG'

@@ -32,7 +32,12 @@ const AFFILIATE_TEAM_IDS = { 'ATL': '430,431,432,478', 'AZ': '419,516,2310,5368'
 const ESPN_SUNDAY_NIGHT_BLACKOUT_COUNTRIES = ["Angola", "Anguilla", "Antigua and Barbuda", "Argentina", "Aruba", "Australia", "Bahamas", "Barbados", "Belize", "Belize", "Benin", "Bermuda", "Bolivia", "Bonaire", "Botswana", "Brazil", "British Virgin Islands", "Burkina Faso", "Burundi", "Cameroon", "Cape Verde", "Cayman Islands", "Central African Republic", "Chad", "Chile", "Colombia", "Comoros", "Cook Islands", "Costa Rica", "Cote d'Ivoire", "Curacao", "Democratic Republic of the Congo", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "El Salvador", "England", "Equatorial Guinea", "Eritrea", "Eswatini", "Ethiopia", "Falkland Islands", "Falkland Islands", "Fiji", "French Guiana", "French Guiana", "French Polynesia", "Gabon", "Ghana", "Grenada", "Guadeloupe", "Guatemala", "Guinea", "Guinea Bissau", "Guyana", "Guyana", "Haiti", "Honduras", "Ireland", "Jamaica", "Kenya", "Kiribati", "Lesotho", "Liberia", "Madagascar", "Malawi", "Mali", "Marshall Islands", "Martinique", "Mayotte", "Mexico", "Micronesia", "Montserrat", "Mozambique", "Namibia", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Northern Ireland", "Palau Islands", "Panama", "Paraguay", "Peru", "Republic of Ireland", "Reunion", "Rwanda", "Saba", "Saint Maarten", "Samoa", "Sao Tome & Principe", "Scotland", "Senegal", "Seychelles", "Sierra Leone", "Solomon Islands", "Somalia", "South Africa", "St. Barthelemy", "St. Eustatius", "St. Kitts and Nevis", "St. Lucia", "St. Martin", "St. Vincent and the Grenadines", "Sudan", "Surinam", "Suriname", "Tahiti", "Tanzania & Zanzibar", "The Gambia", "The Republic of Congo", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Turks and Caicos Islands", "Tuvalu", "Uganda", "Uruguay", "Venezuela", "Wales", "Zambia", "Zimbabwe"]
 
 // First is default level, last should be All (also used as default org)
-const LEVELS = { 'MLB': '1', 'AAA': '11', 'AA': '12', 'A+': '13', 'A': '14', 'All': '1,11,12,13,14' }
+const LEVELS = { 'MLB': '1', 'AAA': '11', 'AA': '12', 'A+': '13', 'A': '14', 'WINTER': '17', 'All': '1,11,12,13,14,17' }
+
+// Winter Leagues
+const AFL_ID = '119'
+const LIDOM_ID = '131'
+const WINTER_LEAGUES = [AFL_ID, LIDOM_ID]
 
 // These are the events to ignore, if we're skipping breaks
 const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
@@ -1109,6 +1114,10 @@ class sessionClass {
     return LEVELS
   }
 
+  getLidomId() {
+    return LIDOM_ID
+  }
+
   getLevelNameFromSportId(sportId) {
     let sportIds = Object.values(LEVELS)
     for (var i=0; i<sportIds.length; i++) {
@@ -1685,6 +1694,53 @@ class sessionClass {
     }
   }
 
+  // API call
+  async getOktaId() {
+    this.debuglog('getOktaId')
+    if ( !this.data.oktaId ) {
+      this.debuglog('need to get oktaId')
+      // get a sample playback token from which to extract the base64-encoded okta_id
+      let token
+
+      // use any currently cached playback token
+      try {
+        this.debuglog('getOktaId attempting to use cached playback token')
+        let mediaIds = Object.keys(this.cache.media)
+        for (var i=0; i<mediaIds.length; i++) {
+          if ( this.cache.media[mediaIds[i]].streamURLToken && (this.cache.media[mediaIds[i]].streamURLToken != '') ) {
+            this.debuglog('getOktaId using cached playback token')
+            token = this.cache.media[mediaIds[i]].streamURLToken
+            break
+          }
+        }
+      } catch(e) {
+        this.debuglog('getOktaId failed to use cached playback token')
+      }
+
+      // otherwise, get a new playback token for a past free game
+      if ( !token ) {
+        this.debuglog('getOktaId getting new playback token')
+        let streamInfo = await this.getStreamURL('b7f0fff7-266f-4171-aa2d-af7988dc9302')
+        token = streamInfo.streamURLToken
+      }
+
+      if ( token ) {
+        this.debuglog('getOktaId using token ' + token)
+        let encoded_okta_id = token.split('_')[1]
+        let okta_id = Buffer.from(encoded_okta_id + '==', 'base64').toString('ascii')
+        this.debuglog('getOktaId extracted okta_id ' + okta_id)
+        this.data.oktaId = okta_id
+        this.save_session_data()
+        return this.data.oktaId
+      } else {
+        this.debuglog('failed to get oktaId')
+      }
+    } else {
+      this.debuglog('using cached oktaId')
+      return this.data.oktaId
+    }
+  }
+
   // get mediaId for a live channel request
   async getMediaId(team, level, mediaType, mediaDate, gameNumber, includeBlackouts) {
     try {
@@ -2221,6 +2277,7 @@ class sessionClass {
                     continue
                   } else {
                     for (var k = 0; k < cache_data.dates[i].games[j].broadcasts.length; k++) {
+                      let league_id = cache_data.dates[i].games[j].teams['home'].team.league.id
                       let team = cache_data.dates[i].games[j].teams['home'].team.abbreviation
                       let team_id = cache_data.dates[i].games[j].teams['home'].team.id.toString()
                       let opponent_team_id = cache_data.dates[i].games[j].teams['away'].team.id.toString()
@@ -2232,9 +2289,16 @@ class sessionClass {
                       let channelid = mediaType + '.' + sportId + '.' + team
                       //let logo = server + '/image.svg?teamId=' + team_id
                       let logo = 'https://www.mlbstatic.com/team-logos/share/' + team_id + '.jpg'
-                      if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
+                      //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
+                      if ( league_id == LIDOM_ID ) {
+                        let lidom_abbr = cache_data.dates[i].games[j].teams['home'].team.name.replace(/[^A-Z]/g, '').toLowerCase()
+                        logo = 'https://pizarra.multimediard.com/ac/' + lidom_abbr + '.png'
+                      }
                       let streamMediaType = 'Video'
                       let stream = server + '/stream.m3u8?team=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
+                      if ( league_id == LIDOM_ID ) {
+                        stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.clubName.toUpperCase()) + '&mediaType=' + streamMediaType
+                      }
                       stream += '&level=' + encodeURIComponent(this.getLevelNameFromSportId(sportId))
                       stream += '&resolution=' + resolution
                       if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
@@ -2242,13 +2306,23 @@ class sessionClass {
                       channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
 
                       let title = 'Minor League Baseball'
+                      if ( WINTER_LEAGUES.includes(league_id.toString()) ) {
+                        title = cache_data.dates[i].games[j].teams['home'].team.league.name
+                      }
 
                       let away_team = cache_data.dates[i].games[j].teams['away'].team.name
                       let home_team = cache_data.dates[i].games[j].teams['home'].team.name
                       let subtitle = away_team + ' at ' + home_team
 
                       if (includeTeamsInTitles == 'true') {
-                        title = 'MiLB: ' + subtitle
+                        if ( league_id == AFL_ID ) {
+                          title = 'AFL'
+                        } else if ( league_id == LIDOM_ID ) {
+                          title = 'LIDOM'
+                        } else {
+                          title = 'MiLB'
+                        }
+                        title += ': ' + subtitle
                       }
 
                       let description = cache_data.dates[i].games[j].teams['home'].team.league.name + '. '
@@ -2541,7 +2615,7 @@ class sessionClass {
                     this.debuglog('getTVData processing MLB Network')
                     let logo = 'https://encrypted-tbn1.gstatic.com/images?q=tbn:ANd9GcQRgC2JdbtFplKjfhXm5_vzpkUQ3XyDT91SEnHmuB0p5tReQ3Ez'
                     let channelid = mediaType + '.MLBN'
-                    if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
+                    //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
                     let stream = server + '/stream.m3u8?event=mlbn&mediaType=Video&resolution=' + resolution
                     if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
                     if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
@@ -2572,7 +2646,7 @@ class sessionClass {
               this.debuglog('getTVData processing Big Inning')
               let logo = 'https://img.mlbstatic.com/mlb-images/image/private/ar_16:9,g_auto,q_auto:good,w_372,c_fill,f_jpg/mlb/uwr8vepua4t1fe8uwyki'
               let channelid = mediaType + '.BIGINNING'
-              if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
+              //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
               let stream = server + '/stream.m3u8?event=biginning&mediaType=Video&resolution=' + resolution
               if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
               if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
@@ -3538,6 +3612,14 @@ class sessionClass {
             'User-Agent': USER_AGENT
           }
         }
+        if ( (this.credentials.account_username.length > 0) && (this.credentials.account_password.length > 0) ) {
+          let access_token = await this.getLoginToken()
+          let okta_id = await this.getOktaId()
+          if ( access_token && okta_id ) {
+            reqObj.headers['authorization'] = 'Bearer ' + access_token
+            reqObj.headers['x-okta-id'] = okta_id
+          }
+        }
         var response = await this.httpGet(reqObj, false)
         if ( response && this.isValidJson(response) ) {
           //this.debuglog(response)
@@ -3593,6 +3675,9 @@ class sessionClass {
             blackout_type = 'Local'
           }*/
           blackouts[game_pk] = { blackout_type: blackout_type }
+        } else if ( !game.entitledVideo && (game.videoStatusCodes[0] == '3') ) {
+          this.debuglog('get_blackout_games found non-entitled MVPD required blackout')
+          blackouts[game_pk] = { blackout_type: '' }
         }
 
         // add blackout expiry, if requested
