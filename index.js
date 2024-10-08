@@ -29,12 +29,12 @@ const VALID_CONTROLS = [ 'Show', 'Hide' ]
 const VALID_INNING_HALF = [ '', 'top', 'bottom' ]
 const VALID_INNING_NUMBER = [ '', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12' ]
 const VALID_SCORES = [ 'Hide', 'Show' ]
-const VALID_RESOLUTIONS = [ 'adaptive', '720p60', '720p', '540p', '504p', '360p', 'none'  ]
+const VALID_RESOLUTIONS = [ 'adaptive', '720p60', '720p', '540p', '504p', '360p', 'none' ]
 const DEFAULT_MULTIVIEW_RESOLUTION = '504p'
 // Corresponding andwidths to display for above resolutions
 const DISPLAY_BANDWIDTHS = [ '', '6600k', '4160k', '2950k', '2120k', '1400k', '' ]
-const VALID_AUDIO_TRACKS = [ 'all', 'English', 'Home Radio', 'Casa Radio', 'Away Radio', 'Visita Radio', 'none' ]
-const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spanish', 'Away Radio', 'Away Sp.', 'none' ]
+const VALID_AUDIO_TRACKS = [ 'all', 'English', 'Home Radio', 'Casa Radio', 'Away Radio', 'Visita Radio', 'Park', 'none' ]
+const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spa.', 'Away Rad.', 'Away Sp.', 'Park', 'none' ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
 const VALID_SKIP = [ 'off', 'breaks', 'idle time', 'pitches', 'commercials' ]
 const DEFAULT_SKIP_ADJUST = 0
@@ -536,9 +536,9 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           // we'll append to this and output track(s) at the end of this code block
           let audio_output = ''
 
-          // default TV audio
+          // default TV audio, or park sounds
           if ( !line.includes(',URI=') ) {
-            if ( audio_track == VALID_AUDIO_TRACKS[1] ) {
+            if ( (audio_track == VALID_AUDIO_TRACKS[1]) || (audio_track == VALID_AUDIO_TRACKS[6]) ) {
               return line
             } else if ( audio_track == VALID_AUDIO_TRACKS[0] ) {
               audio_output += line
@@ -637,6 +637,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( skip_adjust != DEFAULT_SKIP_ADJUST ) newurl += '&skip_adjust=' + skip_adjust
           if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
           if ( gamePk ) newurl += '&gamePk=' + gamePk
+          if ( audio_track == VALID_AUDIO_TRACKS[6] ) newurl += '&park_audio=true'
           newurl += content_protect + referer_parameter + token_parameter
           return '/playlist?url='+newurl
         }
@@ -693,6 +694,7 @@ app.get('/playlist', async function(req, res) {
   var skip_adjust = req.query.skip_adjust || DEFAULT_SKIP_ADJUST
   var pad = req.query.pad || VALID_PAD[0]
   var gamePk = req.query.gamePk || false
+  var park_audio = req.query.park_audio || false
 
   var req = function () {
     var headers = {}
@@ -816,6 +818,11 @@ app.get('/playlist', async function(req, res) {
 
         newline += '?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter + token_parameter
         if ( key ) newline += '&key='+encodeURIComponent(key) + '&iv='+encodeURIComponent(iv)
+
+        // park audio
+        if ( park_audio ) {
+          newline = 'download.html?park_audio=true&src=' + encodeURIComponent('http://127.0.0.1:' + session.data.port + newline) + content_protect
+        }
 
         return newline
       })
@@ -1532,13 +1539,13 @@ app.get('/', async function(req, res) {
           if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
           if ( linkType == VALID_LINK_TYPES[1] ) {
             if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
-          } else if ( linkType == VALID_LINK_TYPES[VALID_LINK_TYPES.length-1] ) {
+          } else if ( linkType == VALID_LINK_TYPES[4] ) {
             querystring += '&filename=' + gameDate + ' MLB Network'
           }
           querystring += content_protect_b
           multiviewquerystring += content_protect_b
           body += '<a href="' + thislink + querystring + '">MLB Network</a>'
-          body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+          body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
           body += '</td></tr>' + "\n"
         } // end entitlements check
       } // end country check
@@ -1590,13 +1597,13 @@ app.get('/', async function(req, res) {
           if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
           if ( linkType == VALID_LINK_TYPES[1] ) {
             if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
-          } else if ( linkType == VALID_LINK_TYPES[VALID_LINK_TYPES.length-1] ) {
+          } else if ( linkType == VALID_LINK_TYPES[4] ) {
             querystring += '&filename=' + gameDate + ' Big Inning'
           }
           querystring += content_protect_b
           multiviewquerystring += content_protect_b
           body += '<a href="' + thislink + querystring + '">Big Inning</a>'
-          body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+          body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
         } else {
           body += 'Big Inning'
         }
@@ -1623,11 +1630,11 @@ app.get('/', async function(req, res) {
             if ( linkType != VALID_LINK_TYPES[1] ) {
               streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b
             }
-            if ( linkType == VALID_LINK_TYPES[VALID_LINK_TYPES.length-1] ) {
+            if ( linkType == VALID_LINK_TYPES[4] ) {
               streamURL += '&filename=' + gameDate + ' Game Changer'
             }
             body += '<a href="' + streamURL + '">Game Changer</a>'
-            body += '<input type="checkbox" value="' + multiviewquerystring + '" onclick="addmultiview(this, [], excludeTeams)">'
+            body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + multiviewquerystring + '" onclick="addmultiview(this, [], excludeTeams)">'
           } else {
             body += 'Game Changer'
           }
@@ -1876,13 +1883,13 @@ app.get('/', async function(req, res) {
                     if ( currentTime < endTime ) {
                       if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
                     }
-                  } else if ( linkType == VALID_LINK_TYPES[VALID_LINK_TYPES.length-1] ) {
+                  } else if ( linkType == VALID_LINK_TYPES[4] ) {
                     querystring += '&filename=' + filename + broadcastName
                   }
                   querystring += content_protect_b
                   multiviewquerystring += content_protect_b
                   body += '<a href="' + thislink + querystring + '">' + broadcastName + '</a>'
-                  body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+                  body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
                 } else {
                   body += broadcastName
                 }
@@ -1971,7 +1978,7 @@ app.get('/', async function(req, res) {
                           if ( broadcast.mediaState.mediaStateCode == 'MEDIA_ON' ) {
                             if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
                           }
-                        } else if ( linkType == VALID_LINK_TYPES[VALID_LINK_TYPES.length-1] ) {
+                        } else if ( linkType == VALID_LINK_TYPES[4] ) {
                           querystring += '&filename=' + filename + station
                         }
                         querystring += content_protect_b
@@ -1984,7 +1991,7 @@ app.get('/', async function(req, res) {
                           body += stationlink
                         }
                         if ( mediaType == 'MLBTV' ) {
-                          body += '<input type="checkbox" value="' + server + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this, [\'' + awayteam + '\', \'' + hometeam + '\'])">'
+                          body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this, [\'' + awayteam + '\', \'' + hometeam + '\'])">'
                         }
                         if ( resumeStatus ) {
                           body += '('
@@ -2954,7 +2961,11 @@ app.get('/download.html', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   try {
-    session.requestlog('download', req)
+    if ( req.query.park_audio ) {
+      session.debuglog('parkaudio', req)
+    } else {
+      session.requestlog('download', req)
+    }
 
     let server = 'http://' + req.headers.host
 
@@ -2972,24 +2983,48 @@ app.get('/download.html', async function(req, res) {
 
     ffmpeg_command = ffmpeg({ timeout: 432000 })
 
-    // Set input stream and its thread queue size
-    ffmpeg_command.input(video_url)
-    .addOutputOption('-c', 'copy')
-    .addOutputOption('-f', 'mpegts')
+    // park audio
+    if ( req.query.park_audio ) {
+      ffmpeg_command.complexFilter([{
+        filter: 'pan=stereo|c0=c0|c1=-1*c1',
+        inputs: '0:a:0',
+        outputs: 'out0'
+      }])
+
+      // Set input stream, minimize ffmpeg startup latency, re-encode audio to mono, and copy source PTS values
+      ffmpeg_command.input(video_url)
+      .addInputOption('-fflags', 'nobuffer')
+      .addInputOption('-probesize', '32')
+      .addInputOption('-analyzeduration', '0')
+      .addOutputOption('-map', '0:v:0')
+      .addOutputOption('-map', '[out0]')
+      .addOutputOption('-c:v', 'copy')
+      .addOutputOption('-c:a', 'aac')
+      .addOutputOption('-ac:a:0', '1')
+      .addOutputOption('-copyts')
+      .addOutputOption('-muxpreload', '0')
+      .addOutputOption('-muxdelay', '0')
+    } else {
+      // Set input stream
+      ffmpeg_command.input(video_url)
+      .addOutputOption('-c', 'copy')
+    }
+
+    ffmpeg_command.addOutputOption('-f', 'mpegts')
     .output(res)
     .on('start', function(commandLine) {
-      session.log('download command started')
+      session.debuglog('download command started')
       if ( argv.debug || argv.ffmpeg_logging ) {
-        session.log('download command: ' + commandLine)
+        session.debuglog('download command: ' + commandLine)
       }
     })
     .on('error', function(err, stdout, stderr) {
-      session.log('download command stopped: ' + err.message)
+      session.debuglog('download command stopped: ' + err.message)
       if ( stdout ) session.log(stdout)
       if ( stderr ) session.log(stderr)
     })
     .on('end', function() {
-      session.log('download command ended')
+      session.debuglog('download command ended')
     })
 
     if ( argv.ffmpeg_logging ) {
@@ -2999,12 +3034,9 @@ app.get('/download.html', async function(req, res) {
       })
     }
 
-    var filename = 'mlbserver'
+    var download_headers = {}
     if ( req.query.filename ) {
-      filename = req.query.filename
-    }
-    var download_headers = {
-      'Content-Disposition': 'attachment; filename="' + filename + '.ts"'
+      download_headers['Content-Disposition'] = 'attachment; filename="' + req.query.filename + '.ts"'
     }
     res.writeHead(200, download_headers)
 
