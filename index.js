@@ -23,7 +23,7 @@ const sessionClass = require('./session.js')
 const VALID_DATES = [ 'today', 'yesterday' ]
 const YESTERDAY_UTC_HOURS = 14 // UTC hours (EST + 4) to change home page default date from yesterday to today
 const VALID_MEDIA_TYPES = [ 'Video', 'Audio', 'Spanish' ]
-const VALID_LINK_TYPES = [ 'Embed', 'Stream', 'Chromecast', 'Advanced' ]
+const VALID_LINK_TYPES = [ 'Embed', 'Stream', 'Chromecast', 'Advanced', 'Download' ]
 const VALID_START_FROM = [ 'Beginning', 'Live' ]
 const VALID_CONTROLS = [ 'Show', 'Hide' ]
 const VALID_INNING_HALF = [ '', 'top', 'bottom' ]
@@ -1384,7 +1384,7 @@ app.get('/', async function(req, res) {
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
 
     // Multiview functions
-    body += 'var excludeTeams=[];function parsemultiviewresponse(responsetext){if (responsetext == "started"){setTimeout(function(){document.getElementById("startmultiview").innerHTML="Restart";document.getElementById("stopmultiview").innerHTML="Stop"},15000)}else if (responsetext == "stopped"){setTimeout(function(){document.getElementById("stopmultiview").innerHTML="Stopped";document.getElementById("startmultiview").innerHTML="Start"},3000)}else{alert(responsetext)}}function addmultiview(e, teams=[], excludes=[]){var newvalue=e.value;for(var i=1;i<=4;i++){var valuefound = false;var oldvalue="";if(!e.checked){oldvalue=e.value;newvalue=""}if ((document.getElementById("multiview" + i).value == oldvalue) || ((oldvalue != "") && (document.getElementById("multiview" + i).value.startsWith(oldvalue)))){if ((newvalue != "") && (excludes.length > 0)){newvalue+="&excludeTeams="+excludeTeams.toString()}document.getElementById("multiview" + i).value=newvalue;valuefound=true;break}}if(e.checked && !valuefound){e.checked=false}for(var i=0;i<teams.length;i++){if(e.checked){excludeTeams.push(teams[i])}else{var index=excludeTeams.indexOf(teams[i]);if (index !== -1){excludeTeams.splice(index,1)}}}}function startmultiview(e){var count=0;var getstr="";for(var i=1;i<=4;i++){if (document.getElementById("multiview"+i).value != ""){count++;getstr+="streams="+encodeURIComponent(document.getElementById("multiview"+i).value)+"&sync="+encodeURIComponent(document.getElementById("sync"+i).value)+"' + content_protect_b + '"+"&"}}if((count >= 1) && (count <= 4)){if (document.getElementById("faster").checked){getstr+="faster=true&dvr=true&"}else if (document.getElementById("dvr").checked){getstr+="dvr=true&"}if (document.getElementById("reencode").checked){getstr+="reencode=true&"}if (document.getElementById("park_audio").checked){getstr+="park_audio=true&"}if (document.getElementById("audio_url").value != ""){getstr+="audio_url="+encodeURIComponent(document.getElementById("audio_url").value)+"&";if (document.getElementById("audio_url_seek").value != "0"){getstr+="audio_url_seek="+encodeURIComponent(document.getElementById("audio_url_seek").value)}}e.innerHTML="starting...";makeGETRequest("/multiview?"+getstr, parsemultiviewresponse)}else{alert("Multiview requires between 1-4 streams to be selected")}return false}function stopmultiview(e){e.innerHTML="stopping...";makeGETRequest("/multiview", parsemultiviewresponse);return false}' + "\n"
+    body += 'var excludeTeams=[];function parsemultiviewresponse(responsetext){if (responsetext == "started"){setTimeout(function(){document.getElementById("startmultiview").innerHTML="Restart";document.getElementById("stopmultiview").innerHTML="Stop"},15000)}else if (responsetext == "stopped"){setTimeout(function(){document.getElementById("stopmultiview").innerHTML="Stopped";document.getElementById("startmultiview").innerHTML="Start"},3000)}else{alert(responsetext)}}function addmultiview(e, teams=[], excludes=[]){var newvalue=e.value;for(var i=1;i<=4;i++){var valuefound = false;var oldvalue="";if(!e.checked){oldvalue=e.value;newvalue=""}if ((document.getElementById("multiview" + i).value == oldvalue) || ((oldvalue != "") && (document.getElementById("multiview" + i).value.startsWith(oldvalue)))){if ((newvalue != "") && (excludes.length > 0)){newvalue+="&excludeTeams="+excludeTeams.toString()}document.getElementById("multiview" + i).value=newvalue;valuefound=true;break}}if(e.checked && !valuefound){e.checked=false}for(var i=0;i<teams.length;i++){if(e.checked){excludeTeams.push(teams[i])}else{var index=excludeTeams.indexOf(teams[i]);if (index !== -1){excludeTeams.splice(index,1)}}}}function startmultiview(e){var count=0;var getstr="";for(var i=1;i<=4;i++){if (document.getElementById("multiview"+i).value != ""){count++;getstr+="streams="+encodeURIComponent(document.getElementById("multiview"+i).value)+"&sync="+encodeURIComponent(document.getElementById("sync"+i).value)+"' + content_protect_b + '"+"&"}}if((count >= 1) && (count <= 4)){if (document.getElementById("faster").checked){getstr+="faster=true&dvr=true&"}else if (document.getElementById("dvr").checked){getstr+="dvr=true&"}if (document.getElementById("reencode").checked){getstr+="reencode=true&"}if (document.getElementById("park_audio").checked){getstr+="park_audio=true&"}if (document.getElementById("audio_url").value != ""){getstr+="audio_url="+encodeURIComponent(document.getElementById("audio_url").value)+"&";if (document.getElementById("audio_url_seek").value != "0"){getstr+="audio_url_seek="+encodeURIComponent(document.getElementById("audio_url_seek").value)}}e.innerHTML="starting...";makeGETRequest("/multiview?"+getstr, parsemultiviewresponse)}else{alert("Multiview requires between 1-4 streams to be selected")}return false}function stopmultiview(e){e.innerHTML="stopping...";makeGETRequest("/multiview' + content_protect_a + '", parsemultiviewresponse);return false}' + "\n"
 
     // Function to switch URLs to stream URLs, where necessary
     body += 'function stream_substitution(url){return url.replace(/\\/([a-zA-Z]+\.html)/,"/stream.m3u8")}' + "\n"
@@ -1431,7 +1431,7 @@ app.get('/', async function(req, res) {
     }
     body += '</p>' + "\n"
 
-    body += '<p><span class="tooltip">Link Type<span class="tooltiptext">Embed will play in your browser (with AirPlay support), Stream will give you a stream URL to open directly in media players like Kodi or VLC, Chromecast is a desktop browser-based casting site, and Advanced will play in your desktop browser with some extra tools and debugging information (Advanced may require you to disable insecure / mixed content blocking in your browser).<br><br>NOTE: Chromecast may not be able to resolve local domain names; if so, you can simply access this page (and thus the streams) using an IP address instead.</span></span>: '
+    body += '<p><span class="tooltip">Link Type<span class="tooltiptext">Embed will play in your browser (with AirPlay support), Stream will give you a stream URL to open directly in media players like Kodi or VLC, Chromecast is a desktop browser-based casting site, Advanced will play in your desktop browser with some extra tools and debugging information (Advanced may require you to disable insecure / mixed content blocking in your browser), and Download will prompt your browser to save the stream to a TS (Transport Stream) file.<br><br>NOTE: Chromecast may not be able to resolve local domain names; if so, you can simply access this page (and thus the streams) using an IP address instead.</span></span>: '
     for (var i = 0; i < VALID_LINK_TYPES.length; i++) {
       body += '<button '
       if ( linkType == VALID_LINK_TYPES[i] ) body += 'class="default" '
@@ -1532,6 +1532,8 @@ app.get('/', async function(req, res) {
           if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
           if ( linkType == VALID_LINK_TYPES[1] ) {
             if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+          } else if ( linkType == VALID_LINK_TYPES[VALID_LINK_TYPES.length-1] ) {
+            querystring += '&filename=' + gameDate + ' MLB Network'
           }
           querystring += content_protect_b
           multiviewquerystring += content_protect_b
@@ -1588,6 +1590,8 @@ app.get('/', async function(req, res) {
           if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
           if ( linkType == VALID_LINK_TYPES[1] ) {
             if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+          } else if ( linkType == VALID_LINK_TYPES[VALID_LINK_TYPES.length-1] ) {
+            querystring += '&filename=' + gameDate + ' Big Inning'
           }
           querystring += content_protect_b
           multiviewquerystring += content_protect_b
@@ -1618,6 +1622,9 @@ app.get('/', async function(req, res) {
             if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += '&resolution=' + resolution
             if ( linkType != VALID_LINK_TYPES[1] ) {
               streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b
+            }
+            if ( linkType == VALID_LINK_TYPES[VALID_LINK_TYPES.length-1] ) {
+              streamURL += '&filename=' + gameDate + ' Game Changer'
             }
             body += '<a href="' + streamURL + '">Game Changer</a>'
             body += '<input type="checkbox" value="' + multiviewquerystring + '" onclick="addmultiview(this, [], excludeTeams)">'
@@ -1744,8 +1751,11 @@ app.get('/', async function(req, res) {
           state += "<br/>" + detailedState
         }
 
+        var filename = gameDate + ' ' + teams + ' '
+
         if ( cache_data.dates[0].games[j].doubleHeader != 'N'  ) {
           state += "<br/>Game " + cache_data.dates[0].games[j].gameNumber
+          filename += 'Game ' + cache_data.dates[0].games[j].gameNumber + ' '
         }
         if ( cache_data.dates[0].games[j].description ) {
           state += "<br/>" + cache_data.dates[0].games[j].description
@@ -1866,6 +1876,8 @@ app.get('/', async function(req, res) {
                     if ( currentTime < endTime ) {
                       if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
                     }
+                  } else if ( linkType == VALID_LINK_TYPES[VALID_LINK_TYPES.length-1] ) {
+                    querystring += '&filename=' + filename + broadcastName
                   }
                   querystring += content_protect_b
                   multiviewquerystring += content_protect_b
@@ -1959,6 +1971,8 @@ app.get('/', async function(req, res) {
                           if ( broadcast.mediaState.mediaStateCode == 'MEDIA_ON' ) {
                             if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
                           }
+                        } else if ( linkType == VALID_LINK_TYPES[VALID_LINK_TYPES.length-1] ) {
+                          querystring += '&filename=' + filename + station
                         }
                         querystring += content_protect_b
                         multiviewquerystring += content_protect_b
@@ -2105,7 +2119,7 @@ app.get('/', async function(req, res) {
         body += '<input type="checkbox" id="reencode"/> <span class="tooltip">Re-encode all audio<span class="tooltiptext">Uses more CPU. Generally only necessary if you need the multiview stream to continue after one of the individual streams has ended. (Any streams with sync adjustments above will automatically be re-encoded, regardless of this setting.)</span></span><br/>' + "\n"
         body += '<input type="checkbox" id="park_audio"/> <span class="tooltip">Park audio: filter out announcers<span class="tooltiptext">Implies re-encoding all audio. If this is enabled, an extra audio filter is applied to remove the announcer voices.</span></span><br/>' + "\n"
         body += '<hr><span class="tooltip">Alternate audio URL and sync<span class="tooltiptext">Optional: you can also include a separate audio-only URL as an additional alternate audio track. Archive games will likely require a very large negative sync value, as the radio broadcasts may not be trimmed like the video archives.</span></span>:<br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)"></textarea><input id="audio_url_seek" type="number" value="0" style="vertical-align:top;font-size:.8em;width:4em"/>'
-        body += '<hr>Watch: <a href="/embed.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Embed</a> | <a href="' + multiview_server + multiview_url_path + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Advanced</a><br/><span class="tinytext">Download: <a href="/kodi.strm?src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Kodi STRM file</a> (<a href="/kodi.strm?version=18&src=' + encodeURIComponent(multiview_server + multiview_url_path) + '">Leia/18</a>)</span>'
+        body += '<hr>Watch: <a href="/embed.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Embed</a> | <a href="' + multiview_server + multiview_url_path + content_protect_b + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Advanced</a> | <a href="/download.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '&filename=' + gameDate + ' Multiview">Download</a><br/><span class="tinytext">Kodi STRM files: <a href="/kodi.strm?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Matrix/19+</a> (<a href="/kodi.strm?version=18&src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Leia/18</a>)</span>'
         body += '</td></tr></table><br/>' + "\n"
     }
 
@@ -2932,5 +2946,71 @@ app.get('/kodi.strm', async function(req, res) {
   } catch (e) {
     session.log('kodi.strm request error : ' + e.message)
     res.end('kodi.strm request error, check log')
+  }
+})
+
+// Listen for download requests
+app.get('/download.html', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  try {
+    session.requestlog('download', req)
+
+    let server = 'http://' + req.headers.host
+
+    let video_url = '/stream.m3u8'
+    if ( req.query.src ) {
+      video_url = req.query.src
+    } else {
+      let urlArray = req.url.split('?')
+      if ( (urlArray.length == 2) ) {
+        video_url += '?' + urlArray[1]
+      }
+      video_url = server + video_url
+    }
+    session.debuglog('download src : ' + video_url)
+
+    ffmpeg_command = ffmpeg({ timeout: 432000 })
+
+    // Set input stream and its thread queue size
+    ffmpeg_command.input(video_url)
+    .addOutputOption('-c', 'copy')
+    .addOutputOption('-f', 'mpegts')
+    .output(res)
+    .on('start', function(commandLine) {
+      session.log('download command started')
+      if ( argv.debug || argv.ffmpeg_logging ) {
+        session.log('download command: ' + commandLine)
+      }
+    })
+    .on('error', function(err, stdout, stderr) {
+      session.log('download command stopped: ' + err.message)
+      if ( stdout ) session.log(stdout)
+      if ( stderr ) session.log(stderr)
+    })
+    .on('end', function() {
+      session.log('download command ended')
+    })
+
+    if ( argv.ffmpeg_logging ) {
+      session.log('ffmpeg output logging enabled')
+      ffmpeg_command.on('stderr', function(stderrLine) {
+        session.log(stderrLine);
+      })
+    }
+
+    var filename = 'mlbserver'
+    if ( req.query.filename ) {
+      filename = req.query.filename
+    }
+    var download_headers = {
+      'Content-Disposition': 'attachment; filename="' + filename + '.ts"'
+    }
+    res.writeHead(200, download_headers)
+
+    ffmpeg_command.run()
+  } catch (e) {
+    session.log('download request error : ' + e.message)
+    res.end('')
   }
 })
