@@ -1797,10 +1797,10 @@ class sessionClass {
               this.debuglog('checking game ' + cache_data.dates[0].games[j].teams['home'].team.abbreviation + '@' + cache_data.dates[0].games[j].teams['away'].team.abbreviation)
 
               // check that that game involves the requested team, or if we've requested a national or free game
-              if ( ((team.toUpperCase() == home_team) && (LEVELS[level.toUpperCase()] == home_level)) || ((team.toUpperCase() == away_team) && (LEVELS[level.toUpperCase()] == away_level)) || (team.toUpperCase().indexOf('NATIONAL.') == 0) || ((team.toUpperCase().startsWith('FREE.') && cache_data.dates[0].games[j].broadcasts && cache_data.dates[0].games[j].broadcasts[0] && (cache_data.dates[0].games[j].broadcasts[0].freeGame == true))) ) {
+              if ( ((team.toUpperCase() == home_team) && (LEVELS[level.toUpperCase()] == home_level)) || ((team.toUpperCase() == away_team) && (LEVELS[level.toUpperCase()] == away_level)) || ((team.toUpperCase().indexOf('NATIONAL.') == 0) && (home_level == LEVELS['MLB'])) || ((team.toUpperCase().startsWith('FREE.') && cache_data.dates[0].games[j].broadcasts && cache_data.dates[0].games[j].broadcasts[0] && (cache_data.dates[0].games[j].broadcasts[0].freeGame == true))) ) {
 
                 // Check if Winter League / MiLB game first
-                if ( (cache_data.dates[0].games[j].teams['home'].team.sport.id != LEVELS['MLB']) && (mediaType == 'MLBTV') ) {
+                if ( (home_level != LEVELS['MLB']) && (mediaType == 'MLBTV') ) {
                   this.debuglog('matched non-MLB team for ' + cache_data.dates[0].games[j].teams['home'].team.abbreviation + '@' + cache_data.dates[0].games[j].teams['away'].team.abbreviation)
                   if ( cache_data.dates[0].games[j].broadcasts ) {
                     let broadcastName = 'N/A'
