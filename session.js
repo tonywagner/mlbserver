@@ -26,6 +26,8 @@ const TODAY_UTC_HOURS = 8 // UTC hours (EST + 4) into tomorrow to still use toda
 
 const TEAM_IDS = { 'ATL': '144', 'AZ': '109', 'BAL': '110', 'BOS': '111', 'CHC': '112', 'CWS': '145', 'CIN': '113', 'CLE': '114', 'COL': '115', 'DET': '116', 'HOU': '117', 'KC': '118', 'LAA': '108', 'LAD': '119', 'MIA': '146', 'MIL': '158', 'MIN': '142', 'NYM': '121', 'NYY': '147', 'OAK': '133', 'PHI': '143', 'PIT': '134', 'STL': '138', 'SD': '135', 'SF': '137', 'SEA': '136', 'TB': '139', 'TEX': '140', 'TOR': '141', 'WSH': '120' }
 
+const LIDOM_TEAM_IDS = { 'AGU': '667', 'TOR': '668', 'EST': '669', 'GIG': '670', 'ESC': '671', 'LIC': '672' }
+
 const AFFILIATE_TEAM_IDS = { 'ATL': '430,431,432,478', 'AZ': '419,516,2310,5368', 'BAL': '418,488,548,568', 'BOS': '414,428,533,546', 'CHC': '451,521,550,553', 'CIN': '416,450,459,498', 'CLE': '402,437,445,481', 'COL': '259,342,486,538', 'CWS': '247,487,494,580', 'DET': '106,512,570,582', 'HOU': '482,573,3712,5434', 'KC': '541,565,1350,3705', 'LAA': '401,460,559,561', 'LAD': '238,260,456,526', 'MIA': '479,554,564,4124', 'MIL': '249,556,572,5015', 'MIN': '492,509,1960,3898', 'NYM': '453,505,507,552', 'NYY': '531,537,587,1956', 'OAK': '237,400,499,524', 'PHI': '427,522,566,1410', 'PIT': '452,477,484,3390', 'SD': '103,510,584,4904', 'SEA': '403,515,529,574', 'SF': '105,461,476,3410', 'STL': '235,279,440,443', 'TB': '233,234,421,2498', 'TEX': '102,448,485,540', 'TOR': '422,424,435,463', 'WSH': '426,436,534,547' }
 
 // Other country options would be USA, Canada, or other
@@ -1136,6 +1138,14 @@ class sessionClass {
     }
   }
 
+  getLidomTeamIds(team_abbr = false) {
+    if ( team_abbr ) {
+      return LIDOM_TEAM_IDS[team_abbr]
+    } else {
+      return Object.values(LIDOM_TEAM_IDS).toString()
+    }
+  }
+
   getAffiliateTeamIds(team_abbr = false) {
     if ( team_abbr ) {
       return AFFILIATE_TEAM_IDS[team_abbr]
@@ -2231,12 +2241,18 @@ class sessionClass {
                 team_ids += ',' + AFFILIATE_TEAM_IDS[includeTeams[i]]
               }
             }
+            if ( includeTeams.includes('LIDOM') ) {
+              team_ids += this.getLidomTeamIds()
+            }
           } else {
             team_ids = this.getTeamIds()
             for (let i=0; i<this.credentials.fav_teams.length; i++) {
               if ( (this.credentials.fav_teams[i] != '') && AFFILIATE_TEAM_IDS[this.credentials.fav_teams[i]] ) {
                 team_ids += ',' + AFFILIATE_TEAM_IDS[this.credentials.fav_teams[i]]
               }
+            }
+            if ( (excludeTeams.length == 0) || !excludeTeams.includes('LIDOM') ) {
+              team_ids += this.getLidomTeamIds()
             }
           }
         }
@@ -2265,19 +2281,21 @@ class sessionClass {
               this.debuglog('getTVData processing game ' + j + ' for date ' + cache_data.dates[i].date)
               // Check if non-MLB (Winter League / MiLB) game first
               if ( (cache_data.dates[i].games[j].teams['home'].team.sport.id != LEVELS['MLB']) && (cache_data.dates[i].games[j].teams['away'].team.sport.id != LEVELS['MLB']) && (mediaType == 'MLBTV') ) {
+                let league_id = cache_data.dates[i].games[j].teams['home'].team.league.id
+                let broadcastName = 'N/A'
                 if ( cache_data.dates[i].games[j].broadcasts ) {
-                  let broadcastName = 'N/A'
                   for (var k = 0; k < cache_data.dates[i].games[j].broadcasts.length; k++) {
                     if ( cache_data.dates[i].games[j].broadcasts[k].name != 'Audio' ) {
                       broadcastName = mediaType
                       break
                     }
                   }
-                  if ( broadcastName == 'N/A' ) {
+                }
+                  if ( (broadcastName == 'N/A') && (league_id != LIDOM_ID) ) {
                     continue
                   } else {
-                    for (var k = 0; k < cache_data.dates[i].games[j].broadcasts.length; k++) {
-                      let league_id = cache_data.dates[i].games[j].teams['home'].team.league.id
+                    //for (var k = 0; k < cache_data.dates[i].games[j].broadcasts.length; k++) {
+                      if (broadcastName == 'N/A') broadcastName = 'MLBTV'
                       let team = cache_data.dates[i].games[j].teams['home'].team.abbreviation
                       let team_id = cache_data.dates[i].games[j].teams['home'].team.id.toString()
                       let opponent_team_id = cache_data.dates[i].games[j].teams['away'].team.id.toString()
@@ -2386,10 +2404,9 @@ class sessionClass {
                       // MILB guide XML
                       programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(gameDate), subtitle, team_id, cache_data.dates[i].games[j].gamePk, away_team, home_team)
 
-                      break
-                    }
+                      //break
+                    //}
                   }
-                }
               } else {
                 // Begin MLB games
                 // check blackout status, if necessary
