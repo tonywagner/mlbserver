@@ -528,23 +528,28 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( audio_track_matched ) return
 
           // user specified no audio tracks
-          if ( audio_track == VALID_AUDIO_TRACKS[VALID_AUDIO_TRACKS.length-1] ) {
+          /*if ( audio_track == VALID_AUDIO_TRACKS[VALID_AUDIO_TRACKS.length-1] ) {
             audio_track_matched = true
             return
-          }
+          }*/
 
           // we'll append to this and output track(s) at the end of this code block
           let audio_output = ''
 
           // default TV audio, or park sounds
           if ( !line.includes(',URI=') ) {
+            // only include default embedded audio track if requested or if filtering for park audio
             if ( (audio_track == VALID_AUDIO_TRACKS[1]) || (audio_track == VALID_AUDIO_TRACKS[6]) ) {
+              audio_track_matched = true
+              if ( audio_track == VALID_AUDIO_TRACKS[6] ) {
+                line = line.replace('English','Park Sounds')
+              }
               return line
             } else if ( audio_track == VALID_AUDIO_TRACKS[0] ) {
               audio_output += line
             }
           } else {
-            if ( (audio_track == VALID_AUDIO_TRACKS[0]) || (audio_track == VALID_AUDIO_TRACKS[2]) || (audio_track == VALID_AUDIO_TRACKS[3]) || (audio_track == VALID_AUDIO_TRACKS[4]) || (audio_track == VALID_AUDIO_TRACKS[5]) ) {
+            if ( (audio_track != VALID_AUDIO_TRACKS[1]) && (audio_track != VALID_AUDIO_TRACKS[6]) && (audio_track != VALID_AUDIO_TRACKS[7]) ) {
               // if user specified home/away radio or home/away Spanish audio track, check if this one matches
               if ( (audio_track == VALID_AUDIO_TRACKS[2]) || (audio_track == VALID_AUDIO_TRACKS[3]) || (audio_track == VALID_AUDIO_TRACKS[4]) || (audio_track == VALID_AUDIO_TRACKS[5]) ) {
                 if ( line.includes('NAME="'+audio_track+'"') || line.includes('NAME="'+audio_track.substring(0,audio_track.length-1)+'"') ) {
@@ -637,7 +642,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( skip_adjust != DEFAULT_SKIP_ADJUST ) newurl += '&skip_adjust=' + skip_adjust
           if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
           if ( gamePk ) newurl += '&gamePk=' + gamePk
-          if ( audio_track == VALID_AUDIO_TRACKS[6] ) newurl += '&park_audio=true'
+          if ( audio_track != VALID_AUDIO_TRACKS[0] ) newurl += '&audio_track=' + encodeURIComponent(audio_track)
           newurl += content_protect + referer_parameter + token_parameter
           return '/playlist?url='+newurl
         }
@@ -694,7 +699,7 @@ app.get('/playlist', async function(req, res) {
   var skip_adjust = req.query.skip_adjust || DEFAULT_SKIP_ADJUST
   var pad = req.query.pad || VALID_PAD[0]
   var gamePk = req.query.gamePk || false
-  var park_audio = req.query.park_audio || false
+  var audio_track = req.query.audio_track || VALID_AUDIO_TRACKS[0]
 
   var req = function () {
     var headers = {}
@@ -819,9 +824,9 @@ app.get('/playlist', async function(req, res) {
         newline += '?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter + token_parameter
         if ( key ) newline += '&key='+encodeURIComponent(key) + '&iv='+encodeURIComponent(iv)
 
-        // park audio
-        if ( park_audio ) {
-          newline = 'download.html?park_audio=true&src=' + encodeURIComponent('http://127.0.0.1:' + session.data.port + newline) + content_protect
+        // if an alternate audio track is specified, force removal of embedded audio
+        if ( (audio_track != VALID_AUDIO_TRACKS[0]) && (audio_track != VALID_AUDIO_TRACKS[1]) ) {
+          newline = 'download.html?audio_track=' + encodeURIComponent(audio_track) + '&src=' + encodeURIComponent('http://127.0.0.1:' + session.data.port + newline) + content_protect
         }
 
         return newline
@@ -2956,15 +2961,16 @@ app.get('/kodi.strm', async function(req, res) {
   }
 })
 
-// Listen for download requests
+// Listen for download requests (either for actual downloads or just proxying stream through ffmpeg)
 app.get('/download.html', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   try {
-    if ( req.query.park_audio ) {
-      session.debuglog('parkaudio', req)
-    } else {
+    // we'll know it's an actual download request if it include a filename parameter
+    if ( req.query.filename ) {
       session.requestlog('download', req)
+    } else {
+      session.debuglog('force alternate audio', req)
     }
 
     let server = 'http://' + req.headers.host
@@ -2981,35 +2987,70 @@ app.get('/download.html', async function(req, res) {
     }
     session.debuglog('download src : ' + video_url)
 
-    ffmpeg_command = ffmpeg({ timeout: 432000 })
-
-    // park audio
-    if ( req.query.park_audio ) {
-      ffmpeg_command.complexFilter([{
-        filter: 'pan=stereo|c0=c0|c1=-1*c1',
-        inputs: '0:a:0',
-        outputs: 'out0'
-      }])
-
-      // Set input stream, minimize ffmpeg startup latency, re-encode audio to mono, and copy source PTS values
-      ffmpeg_command.input(video_url)
-      .addInputOption('-fflags', 'nobuffer')
-      .addInputOption('-probesize', '32')
-      .addInputOption('-analyzeduration', '0')
-      .addOutputOption('-map', '0:v:0')
-      .addOutputOption('-map', '[out0]')
-      .addOutputOption('-c:v', 'copy')
-      .addOutputOption('-c:a', 'aac')
-      .addOutputOption('-ac:a:0', '1')
-      .addOutputOption('-copyts')
-      .addOutputOption('-muxpreload', '0')
-      .addOutputOption('-muxdelay', '0')
-    } else {
-      // Set input stream
-      ffmpeg_command.input(video_url)
-      .addOutputOption('-c', 'copy')
+    // force adaptive streams to just use a single video resolution/track
+    if ( req.query.filename ) {
+      if ( !video_url.includes('resolution') ) {
+        video_url += '&resolution=best'
+      } else if ( video_url.includes('resolution=adaptive') ) {
+        video_url = video_url.replace('resolution=adaptive', 'resolution=best')
+      }
     }
 
+    ffmpeg_command = ffmpeg({ timeout: 432000 })
+
+    // Set input stream and minimize ffmpeg startup latency
+    ffmpeg_command.input(video_url)
+    .addInputOption('-fflags', 'nobuffer')
+    .addInputOption('-probesize', '32')
+    .addInputOption('-analyzeduration', '0')
+
+    // video
+    if ( !req.query.resolution || (req.query.resolution != VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1]) ) {
+      // copy first video track if available
+      ffmpeg_command.addOutputOption('-map', '0:v:0?')
+      .addOutputOption('-c:v', 'copy')
+    } else {
+      // suppress video is "none" resolution was specified
+      ffmpeg_command.addOutputOption('-vn')
+    }
+
+    // audio
+    if ( !req.query.audio_track || (req.query.audio_track == VALID_AUDIO_TRACKS[0]) ) {
+      // if no specific audio track was requested, include and copy them all
+      ffmpeg_command.addOutputOption('-map', '0:a')
+      .addOutputOption('-c:a', 'copy')
+    } else {
+      // park sounds audio track
+      if ( req.query.audio_track == VALID_AUDIO_TRACKS[6] ) {
+        // filter for park audio track
+        ffmpeg_command.complexFilter([{
+          filter: 'pan=stereo|c0=c0|c1=-1*c1',
+          inputs: '0:a:0',
+          outputs: 'out0'
+        }])
+        // map filtered audio and re-encode to mono
+        ffmpeg_command.addOutputOption('-map', '[out0]')
+        .addOutputOption('-c:a', 'aac')
+        .addOutputOption('-ac:a:0', '1')
+
+        // if not downloading to a file, also copy source PTS values for continuous playback
+        if ( !req.query.filename ) {
+          ffmpeg_command.addOutputOption('-copyts')
+          .addOutputOption('-muxpreload', '0')
+          .addOutputOption('-muxdelay', '0')
+        }
+      } else if ( (!req.query.filename && (req.query.audio_track != VALID_AUDIO_TRACKS[1])) || (req.query.audio_track == VALID_AUDIO_TRACKS[7]) ) {
+        // if we're not downloading a file, and we requested an alternate audio track, then we want to suppress the embedded TV audio
+        // or if the user requested no audio tracks in their download, we will suppress all
+        ffmpeg_command.addOutputOption('-an')
+      } else {
+        // fallback to only including and copying first audio track
+        ffmpeg_command.addOutputOption('-map', '0:a:0')
+        .addOutputOption('-c:a', 'copy')
+      }
+    }
+
+    // output mpegts to response stream
     ffmpeg_command.addOutputOption('-f', 'mpegts')
     .output(res)
     .on('start', function(commandLine) {
