@@ -1865,7 +1865,7 @@ app.get('/', async function(req, res) {
                 if ( (currentTime >= startTime) ) {
                   let querystring
                   if ( cache_data.dates[0].games[j].teams['home'].team.league.id == session.getLidomId() ) {
-                    querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.clubName.toUpperCase())
+                    querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.shortName.toUpperCase())
                   } else {
                     querystring = '?gamePk=' + gamePk
                   }

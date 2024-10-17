@@ -2315,7 +2315,7 @@ class sessionClass {
                       let streamMediaType = 'Video'
                       let stream = server + '/stream.m3u8?team=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
                       if ( league_id == LIDOM_ID ) {
-                        stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.clubName.toUpperCase()) + '&mediaType=' + streamMediaType
+                        stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.shortName.toUpperCase()) + '&mediaType=' + streamMediaType
                       }
                       stream += '&level=' + encodeURIComponent(this.getLevelNameFromSportId(sportId))
                       stream += '&resolution=' + resolution
@@ -3371,16 +3371,19 @@ class sessionClass {
       if ( eventList ) {
         for (var i=0; i<eventList.length; i++) {
           if ( eventList[i].fields && eventList[i].fields.blurb && eventList[i].fields.url ) {
-            if ( !eventList[i].fields.blurb.startsWith('LIVE') ) {
+            if ( !eventList[i].fields.blurb.includes('LIVE') ) {
               break
             } else {
               if ( eventList[i].title ) {
                 if ( (eventName == 'BIGINNING') && eventList[i].title.startsWith('LIVE') && eventList[i].title.includes('Big Inning') ) {
                   this.debuglog('active big inning url')
                   return eventList[i].fields.url
-                } else if ( eventList[i].title.toUpperCase().endsWith(' VS. ' + eventName) ) {
-                  this.debuglog('active ' + eventName + ' url')
-                  return eventList[i].fields.url
+                } else {
+                  let cleaned_title = eventList[i].title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+                  if ( cleaned_title.endsWith(' VS. ' + eventName) || cleaned_title.includes(eventName + ' VS. ') ) {
+                    this.debuglog('active ' + eventName + ' url')
+                    return eventList[i].fields.url
+                  }
                 }
               }
             }
