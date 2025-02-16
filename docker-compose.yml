@@ -1,4 +1,3 @@
-version: "3"
 services:
   mlbserver:
     image: tonywagner/mlbserver:latest
@@ -8,10 +7,7 @@ services:
       - data_directory=/mlbserver/data_directory
       - account_username=your.account.email@example.com
       - account_password=youraccountpassword
-      - zip_code=0
-      - fav_teams=0
-      #- zip_code=00000
-      #- fav_teams=ARI,ATL
+      #- fav_teams=AZ,BAL
       #- debug=false
       #- port=9999
       #- multiview_port=10000
@@ -26,4 +22,4 @@ services:
       - 9999:9999
       - 10000:10000
     volumes:
-      - /mlbserver/data_directory
+      - /path/to/your/desired/local/mlbserver/persistent/data/directory:/mlbserver/data_directory

@@ -47,7 +47,7 @@ const SAMPLE_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
 const SECONDS_PER_SEGMENT = 5
 
 // for favorites: text, then background, based on https://teamcolors.jim-nielsen.com/
-const TEAM_COLORS = { 'ATL': ['13274F', 'CE1141'], 'AZ': ['E3D4AD', 'A71930'], 'BAL': ['000000', 'DF4601'], 'BOS': ['0D2B56', 'BD3039'], 'CHC': ['CC3433', '0E3386'], 'CWS': ['000000', 'C4CED4'], 'CIN': ['FFFFFF', 'C6011F'], 'CLE': ['002B5C', 'E31937'], 'COL': ['C4CED4', '333366'], 'DET': ['0C2C56', 'FFFFFF'], 'HOU': ['002D62', 'EB6E1F'], 'KC': ['C09A5B', '004687'], 'LAA': ['FFFFFF', 'BA0021'], 'LAD': ['FFFFFF', '005A9C'], 'MIA': ['0077C8', 'FF6600'], 'MIL': ['0A2351', 'B6922E'], 'MIN': ['D31145', '002B5C'], 'NYM': ['002D72', 'FF5910'], 'NYY': ['FFFFFF', '003087'], 'OAK': ['003831', 'EFB21E'], 'PHI': ['284898', 'E81828'], 'PIT': ['000000', 'FDB827'], 'STL': ['FEDB00', 'C41E3A'], 'SD': ['FEC325', '7F411C'], 'SF': ['000000', 'FD5A1E'], 'SEA': ['C4CED4', '005C5C'], 'TB': ['092C5C', '8FBCE6'], 'TEX': ['003278', 'C0111F'], 'TOR': ['FFFFFF', '134A8E'], 'WSH': ['AB0003', '11225B'] }
+const TEAM_COLORS = { 'ATH': ['003831', 'EFB21E'], 'ATL': ['13274F', 'CE1141'], 'AZ': ['E3D4AD', 'A71930'], 'BAL': ['000000', 'DF4601'], 'BOS': ['0D2B56', 'BD3039'], 'CHC': ['CC3433', '0E3386'], 'CWS': ['000000', 'C4CED4'], 'CIN': ['FFFFFF', 'C6011F'], 'CLE': ['002B5C', 'E31937'], 'COL': ['C4CED4', '333366'], 'DET': ['0C2C56', 'FFFFFF'], 'HOU': ['002D62', 'EB6E1F'], 'KC': ['C09A5B', '004687'], 'LAA': ['FFFFFF', 'BA0021'], 'LAD': ['FFFFFF', '005A9C'], 'MIA': ['0077C8', 'FF6600'], 'MIL': ['0A2351', 'B6922E'], 'MIN': ['D31145', '002B5C'], 'NYM': ['002D72', 'FF5910'], 'NYY': ['FFFFFF', '003087'], 'PHI': ['284898', 'E81828'], 'PIT': ['000000', 'FDB827'], 'STL': ['FEDB00', 'C41E3A'], 'SD': ['FEC325', '7F411C'], 'SF': ['000000', 'FD5A1E'], 'SEA': ['C4CED4', '005C5C'], 'TB': ['092C5C', '8FBCE6'], 'TEX': ['003278', 'C0111F'], 'TOR': ['FFFFFF', '134A8E'], 'WSH': ['AB0003', '11225B'] }
 
 // Gamechanger resolutions
 const GAMECHANGER_RESOLUTIONS = {
@@ -90,32 +90,8 @@ const GAMECHANGER_RESOLUTIONS = {
 const GAMECHANGER_LIST_SIZE = 6
 const GAMECHANGER_RESPONSE_HEADERS = {"statusCode":200,"headers":{"content-type":"application/x-mpegURL","access-control-allow-origin":"*"}}
 
-// Basic command line arguments, if specified:
-// --port or -p (primary port to run on; defaults to 9999 if not specified)
-// --debug or -d (false if not specified)
-// --version or -v (returns package version number)
-// --logout or -l (logs out and clears session)
-// --session or -s (clears session)
-// --cache or -c (clears cache)
-// --env or -e (use environment variables instead of command line arguments; necessary for Docker)
-//
-// Advanced command line arguments:
-// --account_username (email address, default will use stored credentials or prompt user to enter them)
-// --account_password (default will use stored credentials or prompt user to enter them)
-// --zip_code (optional, for USA blackout labels, will prompt if not set or stored)
-// --country (optional, for international blackout labels -- see list of accepted names in session.js -- defaults to USA if not set or stored)
-// --fav_teams (optional, comma-separated list of favorite team abbreviations from https://github.com/tonywagner/mlbserver/blob/master/session.js#L26 -- will prompt if not set or stored)
-// --data_directory (defaults to app directory, must already exist if set to something else; should match storage volume for Docker)
-// --free (optional, free account, highlights free games)
-// --multiview_port (port for multiview streaming; defaults to 1 more than primary port, or 10000)
-// --multiview_path (where to create the folder for multiview encoded files; defaults to data directory)
-// --ffmpeg_path (path to ffmpeg binary to use for multiview encoding; default downloads a binary using ffmpeg-static)
-// --ffmpeg_encoder (ffmpeg video encoder to use for multiview; default is the software encoder libx264)
-// --ffmpeg_logging (if present, logs all ffmpeg output -- useful for experimenting or troubleshooting)
-// --page_username (username to protect pages; default is no protection)
-// --page_password (password to protect pages; default is no protection)
-// --content_protect (specify the content protection key to include as a URL parameter, if page protection is enabled)
-// --gamechanger_delay (specify extra delay for the gamechanger switches in 10 second increments, default is 0)
+// See README for descriptions of command line arguments
+// https://github.com/tonywagner/mlbserver/blob/master/README.md#usage
 var argv = minimist(process.argv, {
   alias: {
     p: 'port',
@@ -127,7 +103,7 @@ var argv = minimist(process.argv, {
     e: 'env'
   },
   boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version', 'free', 'env'],
-  string: ['account_username', 'account_password', 'zip_code', 'country', 'fav_teams', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'data_directory']
+  string: ['account_username', 'account_password', 'fav_teams', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'data_directory']
 })
 
 if (argv.env) argv = process.env
@@ -1531,7 +1507,6 @@ app.get('/', async function(req, res) {
 
     // MLB Network live stream for eligible USA subscribers
     try {
-      if ( session.credentials.country == 'USA' ) {
         let entitlements = await session.getEntitlements()
         if ( entitlements.includes('MLBN') || entitlements.includes('EXECMLB') || entitlements.includes('MLBTVMLBNADOBEPASS') ) {
           body += '<tr><td><span class="tooltip">MLB Network<span class="tooltiptext">MLB Network live stream is now available in the USA for paid MLBTV subscribers or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://www.mlb.com/news/mlb-network-launches-direct-to-consumer-streaming-option">See here for more information</a>.</span></span></td><td>'
@@ -1553,7 +1528,6 @@ app.get('/', async function(req, res) {
           body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
           body += '</td></tr>' + "\n"
         } // end entitlements check
-      } // end country check
     } catch (e) {
       session.debuglog('MLB Network detect error : ' + e.message)
     }
@@ -2058,7 +2032,7 @@ app.get('/', async function(req, res) {
     body += "</table>" + "\n"
 
     if ( (Object.keys(blackouts).length > 0) ) {
-      body += '<span class="tooltip tinytext"><span class="blackout">strikethrough</span> indicates a live blackout<span class="tooltiptext">USA only. Blackout labels are purely informative and based on the USA zip code, if any, you provided when starting the server. The actual blackouts are based on your location, not on the provided zip code, so providing a different zip code will not enable you to see different games. Tap or hover over the team abbreviation to see an estimate of when the blackout will be lifted (officially ~90 minutes, but more likely ~150 minutes or ~2.5 hours after the game ends).</span></span>' + "\n"
+      body += '<span class="tooltip tinytext"><span class="blackout">strikethrough</span> indicates a live blackout<span class="tooltiptext">Tap or hover over the team abbreviation to see an estimate of when the blackout will be lifted (officially ~90 minutes, but more likely ~150 minutes or ~2.5 hours after the game ends).</span></span>' + "\n"
       if ( argv.free ) {
         body += '<br/>'
       }
@@ -2161,22 +2135,18 @@ app.get('/', async function(req, res) {
       resolution = 'best'
     }
 
-    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live MLB broadcasts (all games plus MLB Network, Big Inning, Game Changer, and Multiview). If favorite team(s) have been provided, it will also include affiliate games for those organizations. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + content_protect_b + '">calendar.ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live MLB broadcasts (all games plus MLB Network, Big Inning, Game Changer, and Multiview). If favorite team(s) have been provided, it will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
-    let include_teams = 'atl,national'
+    let include_teams = 'ath,national'
     if ( session.credentials.fav_teams.length > 0 ) {
       include_teams = session.credentials.fav_teams.toString()
     }
-    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. It will also include affiliate games for those organizations. If a zip code has been provided, channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">calendar.ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. It will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include blackouts<span class="tooltiptext">An optional parameter added to the URL will include channels/games subject to blackout (although you may not be able to play those games).</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
-    let exclude_teams = 'atl,national'
-    if ( session.credentials.blackout_teams.length > 0 ) {
-      exclude_teams = session.credentials.blackout_teams.toString()
-      exclude_teams += ',national'
-    }
-    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">This is useful for excluding games you may be blacked out from, even if you have not provided a zip code. Excluding a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">ics</a></p>' + "\n"
+    let exclude_teams = 'ath,national'
+    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">Excluding a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">ics</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">ics</a></p>' + "\n"
 
@@ -2193,10 +2163,10 @@ app.get('/', async function(req, res) {
     body += '<p><span class="tooltip">Include (or exclude) Multiview<span class="tooltiptext">Requires starting and stopping the multiview stream from the web interface.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">ics</a></p>' + "\n"
 
     if ( argv.free ) {
-      body += '<p><span class="tooltip">Free games only<span class="tooltiptext">Only includes games marked as free. Blackouts still apply. If a zip code has been provided, channels/games subject to blackout will be omitted by default.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=free' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">ics</a></p>' + "\n"
+      body += '<p><span class="tooltip">Free games only<span class="tooltiptext">Only includes games marked as free. Blackouts still apply. Channels/games subject to blackout will be omitted by default.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=free' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">ics</a></p>' + "\n"
     }
 
-    body += '<p><span class="tooltip">Include affiliates by org<span class="tooltiptext">Including an organization (by MLB team abbreviation, in a comma-separated list if more than 1) will include all of its affiliate broadcasts, or if that affiliate is not broadcasting the game, it will include the opponent\'s broadcast if available. If this option is not specified, but favorite team(s) have been provided, affiliate games for those organizations will be included anyway.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeOrgs=atl,az' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeOrgs=atl,az' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeOrgs=atl,az' + content_protect_b + '">ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include affiliates by org<span class="tooltiptext">Including an organization (by MLB team abbreviation, in a comma-separated list if more than 1) will include all of its affiliate broadcasts, or if that affiliate is not broadcasting the game, it will include the opponent\'s broadcast if available. If this option is not specified, but favorite team(s) have been provided, affiliate games for those organizations will be included anyway.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeOrgs=ath,atl' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeOrgs=ath' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeOrgs=ath' + content_protect_b + '">ics</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include by level<span class="tooltiptext">Including a level (AAA, AA, A+ encoded as A%2B, or A, in a comma-separated list if more than 1) will include all of its broadcasts, and exclude all other levels.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeLevels=a%2B,aaa' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeLevels=a%2B,aaa' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeLevels=a%2B,aaa' + content_protect_b + '">ics</a></p>' + "\n"
 
@@ -2209,7 +2179,7 @@ app.get('/', async function(req, res) {
     body += '<p>' + "\n"
     let example_types = [ ['embed.html', 'Embed'], ['stream.m3u8', 'Stream'], ['chromecast.html', 'Chromecast'], ['kodi.strm', 'Kodi'] ]
 
-    let example_team = 'atl'
+    let example_team = 'ath'
     if ( session.credentials.fav_teams.length > 0 ) {
       example_team = session.credentials.fav_teams[0]
     }
@@ -2254,7 +2224,7 @@ app.get('/', async function(req, res) {
     let gamechanger_streamURL = server + '/gamechanger.m3u8?resolution=best' + content_protect_b
     let gamechanger_types = ['in', 'ex']
     for (var i=0; i<gamechanger_types.length; i++) {
-      let example_streamURL = gamechanger_streamURL + '&' + gamechanger_types[i] + 'cludeTeams=ATL,AZ'
+      let example_streamURL = gamechanger_streamURL + '&' + gamechanger_types[i] + 'cludeTeams=ath'
       body += '&bull; ' + gamechanger_types[i] + 'clude: <a href="/embed.html?src=' + encodeURIComponent(example_streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b + '">Embed</a> | <a href="' + example_streamURL + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Advanced</a> | <a href="/kodi.strm?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Kodi</a><br/>' + "\n"
     }
 

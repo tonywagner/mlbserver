@@ -12,26 +12,19 @@ const parseString = require('xml2js').parseString
 const MULTIVIEW_DIRECTORY_NAME = 'multiview'
 
 // Default user agent to use for API requests
-const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
 
 // Other variables to use in API communications
-/*const PLATFORM = "macintosh"
-const BAM_SDK_VERSION = '28.0'
-const BAM_TOKEN_URL = 'https://us.edge.bamgrid.com/token'
-const API_KEY = 'bWxidHYmYW5kcm9pZCYxLjAuMA.6LZMbH2r--rbXcgEabaDdIslpo4RyZrlVfWZhsAgXIk'*/
 const GRAPHQL_URL = 'https://media-gateway.mlb.com/graphql'
 
 // Default date handling
 const TODAY_UTC_HOURS = 8 // UTC hours (EST + 4) into tomorrow to still use today's date
 
-const TEAM_IDS = { 'ATL': '144', 'AZ': '109', 'BAL': '110', 'BOS': '111', 'CHC': '112', 'CWS': '145', 'CIN': '113', 'CLE': '114', 'COL': '115', 'DET': '116', 'HOU': '117', 'KC': '118', 'LAA': '108', 'LAD': '119', 'MIA': '146', 'MIL': '158', 'MIN': '142', 'NYM': '121', 'NYY': '147', 'OAK': '133', 'PHI': '143', 'PIT': '134', 'STL': '138', 'SD': '135', 'SF': '137', 'SEA': '136', 'TB': '139', 'TEX': '140', 'TOR': '141', 'WSH': '120' }
+const TEAM_IDS = { 'ATH': '133', 'ATL': '144', 'AZ': '109', 'BAL': '110', 'BOS': '111', 'CHC': '112', 'CWS': '145', 'CIN': '113', 'CLE': '114', 'COL': '115', 'DET': '116', 'HOU': '117', 'KC': '118', 'LAA': '108', 'LAD': '119', 'MIA': '146', 'MIL': '158', 'MIN': '142', 'NYM': '121', 'NYY': '147', 'PHI': '143', 'PIT': '134', 'STL': '138', 'SD': '135', 'SF': '137', 'SEA': '136', 'TB': '139', 'TEX': '140', 'TOR': '141', 'WSH': '120' }
 
 const LIDOM_TEAM_IDS = { 'AGU': '667', 'TOR': '668', 'EST': '669', 'GIG': '670', 'ESC': '671', 'LIC': '672' }
 
-const AFFILIATE_TEAM_IDS = { 'ATL': '430,431,432,478', 'AZ': '419,516,2310,5368', 'BAL': '418,488,548,568', 'BOS': '414,428,533,546', 'CHC': '451,521,550,553', 'CIN': '416,450,459,498', 'CLE': '402,437,445,481', 'COL': '259,342,486,538', 'CWS': '247,487,494,580', 'DET': '106,512,570,582', 'HOU': '482,573,3712,5434', 'KC': '541,565,1350,3705', 'LAA': '401,460,559,561', 'LAD': '238,260,456,526', 'MIA': '479,554,564,4124', 'MIL': '249,556,572,5015', 'MIN': '492,509,1960,3898', 'NYM': '453,505,507,552', 'NYY': '531,537,587,1956', 'OAK': '237,400,499,524', 'PHI': '427,522,566,1410', 'PIT': '452,477,484,3390', 'SD': '103,510,584,4904', 'SEA': '403,515,529,574', 'SF': '105,461,476,3410', 'STL': '235,279,440,443', 'TB': '233,234,421,2498', 'TEX': '102,448,485,540', 'TOR': '422,424,435,463', 'WSH': '426,436,534,547' }
-
-// Other country options would be USA, Canada, or other
-const ESPN_SUNDAY_NIGHT_BLACKOUT_COUNTRIES = ["Angola", "Anguilla", "Antigua and Barbuda", "Argentina", "Aruba", "Australia", "Bahamas", "Barbados", "Belize", "Belize", "Benin", "Bermuda", "Bolivia", "Bonaire", "Botswana", "Brazil", "British Virgin Islands", "Burkina Faso", "Burundi", "Cameroon", "Cape Verde", "Cayman Islands", "Central African Republic", "Chad", "Chile", "Colombia", "Comoros", "Cook Islands", "Costa Rica", "Cote d'Ivoire", "Curacao", "Democratic Republic of the Congo", "Djibouti", "Dominica", "Dominican Republic", "Ecuador", "El Salvador", "England", "Equatorial Guinea", "Eritrea", "Eswatini", "Ethiopia", "Falkland Islands", "Falkland Islands", "Fiji", "French Guiana", "French Guiana", "French Polynesia", "Gabon", "Ghana", "Grenada", "Guadeloupe", "Guatemala", "Guinea", "Guinea Bissau", "Guyana", "Guyana", "Haiti", "Honduras", "Ireland", "Jamaica", "Kenya", "Kiribati", "Lesotho", "Liberia", "Madagascar", "Malawi", "Mali", "Marshall Islands", "Martinique", "Mayotte", "Mexico", "Micronesia", "Montserrat", "Mozambique", "Namibia", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", "Niue", "Northern Ireland", "Palau Islands", "Panama", "Paraguay", "Peru", "Republic of Ireland", "Reunion", "Rwanda", "Saba", "Saint Maarten", "Samoa", "Sao Tome & Principe", "Scotland", "Senegal", "Seychelles", "Sierra Leone", "Solomon Islands", "Somalia", "South Africa", "St. Barthelemy", "St. Eustatius", "St. Kitts and Nevis", "St. Lucia", "St. Martin", "St. Vincent and the Grenadines", "Sudan", "Surinam", "Suriname", "Tahiti", "Tanzania & Zanzibar", "The Gambia", "The Republic of Congo", "Togo", "Tokelau", "Tonga", "Trinidad and Tobago", "Turks and Caicos Islands", "Tuvalu", "Uganda", "Uruguay", "Venezuela", "Wales", "Zambia", "Zimbabwe"]
+const AFFILIATE_TEAM_IDS = { 'ATH': '237,400,499,524', 'ATL': '431,432,478,6325', 'AZ': '419,516,2310,5368', 'BAL': '418,488,548,568', 'BOS': '414,428,533,546', 'CHC': '451,521,550,553', 'CIN': '416,450,459,498', 'CLE': '402,437,445,481', 'COL': '259,342,486,538', 'CWS': '247,487,494,580', 'DET': '106,512,570,582', 'HOU': '482,573,3712,5434', 'KC': '541,565,1350,3705', 'LAA': '401,460,559,561', 'LAD': '238,260,456,526', 'MIA': '479,554,564,4124', 'MIL': '249,556,572,5015', 'MIN': '492,509,1960,3898', 'NYM': '453,505,507,552', 'NYY': '531,537,587,1956', 'PHI': '427,522,566,1410', 'PIT': '452,477,484,3390', 'SD': '103,510,584,4904', 'SEA': '403,515,529,574', 'SF': '105,461,476,3410', 'STL': '235,279,440,443', 'TB': '233,234,421,2498', 'TEX': '102,448,540,6324', 'TOR': '422,424,435,463', 'WSH': '426,436,534,547' }
 
 // First is default level, last should be All (also used as default org)
 const LEVELS = { 'MLB': '1', 'AAA': '11', 'AA': '12', 'A+': '13', 'A': '14', 'WINTER': '17', 'All': '1,11,12,13,14,17' }
@@ -861,8 +854,13 @@ class sessionClass {
       // Prompt for credentials if they don't exist
       if ( !this.credentials.account_username || !this.credentials.account_password ) {
         this.debuglog('prompting for account credentials')
-        this.credentials.account_username = readlineSync.question('Enter account username (email address): ')
-        this.credentials.account_password = readlineSync.question('Enter account password: ', { hideEchoBack: true })
+        try {
+          this.credentials.account_username = readlineSync.question('Enter account username (email address): ')
+          this.credentials.account_password = readlineSync.question('Enter account password: ', { hideEchoBack: true })
+        } catch {
+          this.log('error: required account credentials not present in Docker compose/run')
+          process.exit(1)
+        }
         this.save_credentials()
         this.clear_session_data()
       }
@@ -936,47 +934,6 @@ class sessionClass {
       this.setLinkType('embed')
     }
 
-    // Check if country was provided and if it is different from the stored one
-    if ( argv.country ) {
-      let country_arg = argv.country.toString().toUpperCase()
-      if ( country_arg == 'TRUE' ) {
-        country_arg = ''
-      }
-      if ( (typeof(this.credentials.country) === 'undefined') || (country_arg != this.credentials.country) ) {
-        this.log('updating country and blackout teams')
-        this.credentials.country = country_arg
-        this.updateBlackoutTeams()
-      }
-    } else {
-      // Default to USA if it doesn't exist or is not specified
-      if ( typeof(this.credentials.country) === 'undefined' ) {
-        this.credentials.country = 'USA'
-      }
-    }
-
-    // Check if USA zip code was provided and if it is different from the stored one
-    if ( argv.zip_code ) {
-      let zip_code_arg = argv.zip_code.toString().toUpperCase()
-      if ( zip_code_arg == 'TRUE' ) {
-        zip_code_arg = ''
-      }
-      if ( (typeof(this.credentials.zip_code) === 'undefined') || (zip_code_arg != this.credentials.zip_code) ) {
-        this.log('updating zip code and blackout teams')
-        this.credentials.zip_code = zip_code_arg
-        this.updateBlackoutTeams()
-      }
-    } else if ( this.credentials.country == 'USA' ) {
-      // Prompt for USA zip code if it doesn't exist
-      if ( typeof(this.credentials.zip_code) === 'undefined' ) {
-        this.debuglog('prompting for zip code')
-        this.credentials.zip_code = readlineSync.question('Enter 5-digit zip code (optional, for USA blackout labels): ').toString()
-        this.updateBlackoutTeams()
-      }
-    } else {
-      this.credentials.zip_code = '0'
-      this.save_credentials()
-    }
-
     // Check if fav teams was provided and if they are different from the stored fav teams
     if ( argv.fav_teams ) {
       let fav_teams_arg = argv.fav_teams.toString().toUpperCase()
@@ -995,7 +952,12 @@ class sessionClass {
       if ( typeof(this.credentials.fav_teams) === 'undefined' ) {
         this.debuglog('prompting for fav teams')
         let team_abbreviations = Object.keys(TEAM_IDS)
-        this.credentials.fav_teams = readlineSync.question('Enter favorite team(s) (optional, separate by comma from ' + team_abbreviations.join() + '): ').toUpperCase().replace(/[^A-Z,]+/g,'').split(',')
+        try {
+          this.credentials.fav_teams = readlineSync.question('Enter favorite team(s) (optional, separate by comma from ' + team_abbreviations.join() + '): ').toUpperCase().replace(/[^A-Z,]+/g,'').split(',')
+        } catch {
+          this.log('no favorite team specified')
+          this.credentials.fav_teams = ''
+        }
         this.save_credentials()
       }
     }
@@ -2622,9 +2584,8 @@ class sessionClass {
 
           // MLB Network live stream for eligible USA subscribers
           try {
-            if ( this.credentials.country == 'USA' ) {
               let entitlements = await this.getEntitlements()
-              if ( (this.credentials.country == 'USA') && (entitlements.includes('MLBN') || entitlements.includes('EXECMLB') || entitlements.includes('MLBTVMLBNADOBEPASS')) ) {
+              if ( (entitlements.includes('MLBN') || entitlements.includes('EXECMLB') || entitlements.includes('MLBTVMLBNADOBEPASS')) ) {
                 if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
                   if ( (excludeTeams.length > 0) && excludeTeams.includes('MLBN') ) {
                     // do nothing
@@ -2650,7 +2611,6 @@ class sessionClass {
                   } // end includeTeams check
                 } // end mediaType check
               } // end entitlements check
-            } // end country check
           } catch (e) {
             this.debuglog('getTVData MLB Network detect error : ' + e.message)
           }
@@ -3134,6 +3094,10 @@ class sessionClass {
     try {
       this.debuglog('getBigInningSchedule')
 
+      // temporarily disable Big Inning schedule checking until a new source URL is available
+      this.cache.bigInningSchedule = {}
+      return
+
       let currentDate = new Date()
       if ( !this.cache || !this.cache.bigInningScheduleCacheExpiry || (currentDate > new Date(this.cache.bigInningScheduleCacheExpiry)) ) {
         if ( !this.cache.bigInningSchedule ) this.cache.bigInningSchedule = {}
@@ -3147,7 +3111,7 @@ class sessionClass {
             'cache-control': 'no-cache',
             'dnt': '1',
             'pragma': 'no-cache',
-            'sec-ch-ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+            'sec-ch-ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"macOS"',
             'sec-fetch-dest': 'document',
@@ -3530,74 +3494,6 @@ class sessionClass {
         }
       }
     }
-  }
-
-  // Update blackout teams
-  async updateBlackoutTeams() {
-    let blackout_teams = []
-
-    try {
-      if ( /(^\d{5}$)/.test(this.credentials.zip_code) && (this.credentials.country == 'USA') ) {
-        this.log('getBlackoutTeams for zip code ' + this.credentials.zip_code)
-        let reqObj = {
-          url: 'https://content.mlb.com/data/blackouts/' + this.credentials.zip_code + '.json',
-          rejectUnauthorized: false,
-          headers: {
-            'User-Agent': USER_AGENT,
-            'Origin': 'https://www.mlb.com',
-            'Referer': 'https://www.mlb.com/'
-          }
-        }
-        var response = await this.httpGet(reqObj, false)
-        if ( response && this.isValidJson(response) ) {
-          this.debuglog('getBlackoutTeams response : ' + response)
-          let obj = JSON.parse(response)
-          if ( obj.teams ) {
-            blackout_teams = obj.teams
-          }
-        } else {
-          this.log('error : invalid json from url ' + reqObj.url)
-        }
-      } else if ( this.credentials.country == 'Canada' ) {
-        blackout_teams = ['TOR']
-      }
-    } catch(e) {
-      this.log('getBlackoutTeams error : ' + e.message)
-    }
-
-    this.log('setting blackout teams to ' + JSON.stringify(blackout_teams))
-    this.credentials.blackout_teams = blackout_teams
-    this.save_credentials()
-  }
-
-  // Check if Fox regional games exist for a date
-  async check_regional_fox_games(games) {
-    this.debuglog('check_regional_fox_games')
-    let fox_start_time
-    let regional_fox_games_exist = 'false'
-    for (var j = 0; j < games.length; j++) {
-      if ( games[j].broadcasts ) {
-        for (var k = 0; k < games[j].broadcasts.length; k++) {
-          let broadcast = games[j].broadcasts
-          if ( broadcast.type == 'TV' ) {
-            this.debuglog('check_regional_fox_games checking ' + broadcast.callSign)
-            if ( broadcast.callSign == 'FOX' ) {
-              this.debuglog('check_regional_fox_games found FOX game')
-              if ( fox_start_time && (games[j].gameDate == fox_start_time) ) {
-                this.debuglog('check_regional_fox_games determined regional game')
-                regional_fox_games_exist = 'true'
-                break
-              } else {
-                fox_start_time = games[j].gameDate
-                break
-              }
-            }
-            break
-          }
-        }
-      }
-    }
-    return regional_fox_games_exist
   }
 
   // get blackouts data for a day

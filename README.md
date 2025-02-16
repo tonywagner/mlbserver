@@ -32,7 +32,6 @@ node index.js
 ### docker-compose
 Update the environment variables below and save it as docker-compose.yml:
 ```
-version: "3"
 services:
   mlbserver:
     image: tonywagner/mlbserver:latest
@@ -42,11 +41,7 @@ services:
       - data_directory=/mlbserver/data_directory
       - account_username=your.account.email@example.com
       - account_password=youraccountpassword
-      - zip_code=0
-      - fav_teams=0
-      #- zip_code=00000
-      #- country=USA
-      #- fav_teams=ARI,ATL
+      #- fav_teams=AZ,BAL
       #- debug=false
       #- port=9999
       #- multiview_port=10000
@@ -61,7 +56,7 @@ services:
       - 9999:9999
       - 10000:10000
     volumes:
-      - /mlbserver/data_directory
+      - /path/to/your/desired/local/mlbserver/persistent/data/directory:/mlbserver/data_directory
 ```
 Then launch it with ```docker-compose up --detach```
 
@@ -74,11 +69,9 @@ docker run -d \
   --env data_directory=/mlbserver/data_directory \
   --env account_username=your.account.email@example.com \
   --env account_password=youraccountpassword \
-  --env zip_code=0 \
-  --env fav_teams=0 \
   -p 9999:9999 \
   -p 10000:10000 \
-  --volume /mlbserver/data_directory \
+  --volume /path/to/your/desired/local/mlbserver/persistent/data/directory:/mlbserver/data_directory \
   tonywagner/mlbserver
 ```
 Subsequent runs can be launched with ```docker start mlbserver```
@@ -105,11 +98,9 @@ Basic command line or Docker environment options:
 Advanced command line or Docker environment options:
 
 ```
---account_username (email address, default will use stored credentials or prompt user to enter them)
---account_password (default will use stored credentials or prompt user to enter them)
---zip_code (optional, for USA blackout labels, will prompt if not set or stored)
---country (optional, for international blackout labels -- see list of accepted names in session.js -- defaults to USA if not set or stored)
---fav_teams (optional, comma-separated list of favorite team abbreviations from https://github.com/tonywagner/mlbserver/blob/master/session.js#L26 -- will prompt if not set or stored)
+--account_username (required, email address, default will use stored credentials or prompt user to enter them if not using Docker)
+--account_password (required, default will use stored credentials or prompt user to enter them if not using Docker)
+--fav_teams (optional, comma-separated list of favorite team abbreviations from https://github.com/tonywagner/mlbserver/blob/master/session.js#L23 -- will prompt if not set or stored and not using Docker)
 --free (optional, highlights free games)
 --multiview_port (port for multiview streaming; defaults to 1 more than primary port, or 10000)
 --multiview_path (where to create the folder for multiview encoded files; defaults to app directory)
