@@ -29,10 +29,10 @@ const VALID_CONTROLS = [ 'Show', 'Hide' ]
 const VALID_INNING_HALF = [ '', 'top', 'bottom' ]
 const VALID_INNING_NUMBER = [ '', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12' ]
 const VALID_SCORES = [ 'Hide', 'Show' ]
-const VALID_RESOLUTIONS = [ 'adaptive', '720p60', '720p', '540p', '504p', '360p', 'none' ]
+const VALID_RESOLUTIONS = [ 'adaptive', '1080p60', '720p60', '720p', '540p', '504p', '360p', '288p', '214p', 'none' ]
 const DEFAULT_MULTIVIEW_RESOLUTION = '504p'
 // Corresponding andwidths to display for above resolutions
-const DISPLAY_BANDWIDTHS = [ '', '6600k', '4160k', '2950k', '2120k', '1400k', '' ]
+const DISPLAY_BANDWIDTHS = [ '', '9600k', '6600k', '4160k', '2950k', '2120k', '1400k', '1000k', '600k', '' ]
 const VALID_AUDIO_TRACKS = [ 'all', 'English', 'Home Radio', 'Casa Radio', 'Away Radio', 'Visita Radio', 'Park', 'none' ]
 const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spa.', 'Away Rad.', 'Away Sp.', 'Park', 'none' ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
@@ -103,7 +103,7 @@ var argv = minimist(process.argv, {
     e: 'env'
   },
   boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version', 'free', 'env'],
-  string: ['account_username', 'account_password', 'fav_teams', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'data_directory']
+  string: ['account_username', 'account_password', 'fav_teams', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'data_directory', 'http_root']
 })
 
 if (argv.env) argv = process.env
@@ -150,6 +150,22 @@ const ffmpegEncoder = argv.ffmpeg_encoder || defaultEncoder
 
 // Declare web server
 var app = root()
+
+var http_root = '';
+if (argv.http_root) {
+  http_root = argv.http_root
+  app.get(http_root + '/*', async function(req, res) {
+    if ( ! (await protect(req, res)) ) return
+
+    try {
+      req.url = req.url.substr(http_root.length, (req.url.length - http_root.length))
+      app.route(req, res);
+    } catch (e) {
+      session.log('http_root request error : ' + e.message)
+      res.end('http_root request error, check log')
+    }
+  })
+}
 
 // Get appname from directory
 var appname = path.basename(__dirname)
@@ -202,7 +218,7 @@ app.get('/clearcache', async function(req, res) {
     session.clear_session_data()
     session = new sessionClass(argv)
 
-    let server = 'http://' + req.headers.host
+    let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
     res.redirect(server)
   } catch (e) {
     session.log('clearcache request error : ' + e.message)
@@ -231,11 +247,7 @@ app.get('/stream.m3u8', async function(req, res) {
       streamURL = SAMPLE_STREAM_URL
       options.referer = 'https://hls-js-dev.netlify.app/'
     } else {
-      if ( req.query.resolution && (req.query.resolution == 'best') ) {
-        options.resolution = VALID_RESOLUTIONS[1]
-      } else {
-        options.resolution = session.returnValidItem(req.query.resolution, VALID_RESOLUTIONS)
-      }
+      options.resolution = req.query.resolution
       options.audio_track = session.returnValidItem(req.query.audio_track, VALID_AUDIO_TRACKS)
       options.force_vod = req.query.force_vod || VALID_FORCE_VOD[0]
 
@@ -455,8 +467,15 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
       var audio_track_matched = false
       var frame_rate = '29.97'
       if ( (resolution != VALID_RESOLUTIONS[0]) && (resolution != VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1]) ) {
-        if ( resolution.endsWith('p60') ) {
+        if ( resolution.endsWith('p60') || (resolution == 'best') ) {
           frame_rate = '59.94'
+          if ( resolution == 'best') {
+            if ( body.find(a =>a.includes("x1080,")) ) {
+              resolution = VALID_RESOLUTIONS[1]
+            } else {
+              resolution = VALID_RESOLUTIONS[2]
+            }
+          }
           resolution = resolution.slice(0, -3)
         } else if ( resolution.endsWith('p') ) {
           resolution = resolution.slice(0, -1)
@@ -480,7 +499,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           return line
         } else if ( segment_found ) {
           segment_found = false
-          return '/ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect + referer_parameter + token_parameter
+          return http_root + '/ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect + referer_parameter + token_parameter
         }
 
         // Omit keyframe tracks
@@ -542,7 +561,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
                 //var parsed = line.match(/URI="([^"]+)"?$/)
                 var parsed = line.match(',URI="([^"]+)"')
                 if ( parsed[1] ) {
-                  newurl = '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
+                  newurl = http_root + '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
                   if ( force_vod != VALID_FORCE_VOD[0] ) newurl += '&force_vod=on'
                   if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
                   if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
@@ -574,17 +593,15 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         if ( line.startsWith('#EXT-X-STREAM-INF:BANDWIDTH=') ) {
           if ( resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1] ) {
             return
+          } else if ( resolution === VALID_RESOLUTIONS[0] ) {
+              return line
           } else {
-            if ( resolution === VALID_RESOLUTIONS[0] ) {
+            if ( (video_track_found == false) && (line.indexOf(resolution+',FRAME-RATE='+frame_rate) > 0) ) {
+              video_track_matched = true
+              video_track_found = true
               return line
             } else {
-              if ( (video_track_found == false) && (line.indexOf(resolution+',FRAME-RATE='+frame_rate) > 0) ) {
-                video_track_matched = true
-                video_track_found = true
-                return line
-              } else {
-                return
-              }
+              return
             }
           }
         }
@@ -598,7 +615,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="') ) {
           var parsed = line.match(',URI="([^"]+)"')
           if ( parsed[1] ) {
-            newurl = '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim())) + content_protect + referer_parameter + token_parameter
+            newurl = http_root + '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim())) + content_protect + referer_parameter + token_parameter
             return '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="' + newurl + '"'
           }
           return
@@ -620,7 +637,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( gamePk ) newurl += '&gamePk=' + gamePk
           if ( audio_track != VALID_AUDIO_TRACKS[0] ) newurl += '&audio_track=' + encodeURIComponent(audio_track)
           newurl += content_protect + referer_parameter + token_parameter
-          return '/playlist?url='+newurl
+          return http_root + '/playlist?url='+newurl
         }
       })
       .filter(function(line) {
@@ -792,9 +809,9 @@ app.get('/playlist', async function(req, res) {
 
         if (line[0] === '#') return line
 
-        let newline = '/ts'
+        let newline = http_root + '/ts'
         if ( line.includes('.vtt') ) {
-          newline = '/vtt'
+          newline = http_root + '/vtt'
         }
 
         newline += '?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter + token_parameter
@@ -961,12 +978,12 @@ app.get('/gamechanger.m3u8', async function(req, res) {
 
   var resolution
   if ( req.query.resolution && (req.query.resolution == 'best') ) {
-    resolution = VALID_RESOLUTIONS[1]
+    resolution = VALID_RESOLUTIONS[2]
   } else {
     resolution = session.returnValidItem(req.query.resolution, VALID_RESOLUTIONS)
   }
   if ( resolution == VALID_RESOLUTIONS[0] ) {
-    resolution = VALID_RESOLUTIONS[1]
+    resolution = VALID_RESOLUTIONS[2]
   }
 
   var includeTeams = ''
@@ -1020,7 +1037,7 @@ app.get('/gamechangerplaylist', async function(req, res) {
   } else {
     var game_changer_title = 'Game changer ' + id + ' '
 
-    var resolution = req.query.resolution || VALID_RESOLUTIONS[1]
+    var resolution = req.query.resolution || VALID_RESOLUTIONS[2]
 
     var includeTeams = req.query.includeTeams || []
     if ( includeTeams.length > 0 ) includeTeams = includeTeams.split(',')
@@ -1219,8 +1236,9 @@ app.get('/', async function(req, res) {
 
     session.requestlog('homepage', req)
 
-    let server = 'http://' + req.headers.host
+    let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host
     let multiview_server = server.replace(':' + session.data.port, ':' + session.data.multiviewPort)
+    server += http_root
 
     let gameDate = session.liveDate()
     let today = gameDate
@@ -1366,7 +1384,7 @@ app.get('/', async function(req, res) {
     body += 'var date="' + gameDate + '";var level="' + level + '";var org="' + org + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var skip_adjust="' + skip_adjust + '";var pad="' + pad + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var controls="' + controls + '";var scan_mode="' + scan_mode + '";var content_protect="' + content_protect + '";' + "\n"
 
     // Reload function, called after options change
-    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (level != "' + default_level + '"){newurl+="level="+encodeURIComponent(level)+"&"}if (org != "All"){newurl+="org="+encodeURIComponent(org)+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";if (skip_adjust != "' + DEFAULT_SKIP_ADJUST + '"){newurl+="skip_adjust="+skip_adjust+"&"}}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="' + http_root + '/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (level != "' + default_level + '"){newurl+="level="+encodeURIComponent(level)+"&"}if (org != "All"){newurl+="org="+encodeURIComponent(org)+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";if (skip_adjust != "' + DEFAULT_SKIP_ADJUST + '"){newurl+="skip_adjust="+skip_adjust+"&"}}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
     // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
@@ -1499,7 +1517,7 @@ app.get('/', async function(req, res) {
     } else {
       force_vod = VALID_FORCE_VOD[0]
     }
-    var thislink = '/' + link
+    var thislink = http_root + '/' + link
 
     let blackouts = {}
 
@@ -1600,7 +1618,7 @@ app.get('/', async function(req, res) {
             compareEnd.setHours(compareEnd.getHours()+4)
           }
           compareEnd.setHours(compareEnd.getHours()+4)
-          body += '<tr><td><span class="tooltip">' + compareStart.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + compareEnd.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to best resolution if not specified.</span></span></td><td>'
+          body += '<tr><td><span class="tooltip">' + compareStart.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + compareEnd.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to 720p60 resolution if not specified.</span></span></td><td>'
           if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
             let streamURL = server + '/gamechanger.m3u8'
             let multiviewquerystring = streamURL + '?resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
@@ -2048,7 +2066,7 @@ app.get('/', async function(req, res) {
     }
 
     if ( mediaType == VALID_MEDIA_TYPES[0] ) {
-        body += '<p><span class="tooltip">Video<span class="tooltiptext">For video streams only: you can manually specifiy a video track (resolution) to use. Adaptive will let your client choose. 720p60 is the best quality. 540p is default for multiview (see below).<br/><br/>None will allow to remove the video tracks, if you just want to listen to the audio while using the "start at inning" or "skip breaks" options enabled.</span></span>: '
+        body += '<p><span class="tooltip">Video<span class="tooltiptext">For video streams only: you can manually specifiy a video track (resolution) to use. Adaptive will let your client choose. 1080p60 or 720p60 is the best quality. 540p is default for multiview (see below).<br/><br/>None will allow to remove the video tracks, if you just want to listen to the audio while using the "start at inning" or "skip breaks" options enabled.</span></span>: '
         for (var i = 0; i < VALID_RESOLUTIONS.length; i++) {
           body += '<button '
           if ( resolution == VALID_RESOLUTIONS[i] ) body += 'class="default" '
@@ -2105,7 +2123,7 @@ app.get('/', async function(req, res) {
         body += '<input type="checkbox" id="reencode"/> <span class="tooltip">Re-encode all audio<span class="tooltiptext">Uses more CPU. Generally only necessary if you need the multiview stream to continue after one of the individual streams has ended. (Any streams with sync adjustments above will automatically be re-encoded, regardless of this setting.)</span></span><br/>' + "\n"
         body += '<input type="checkbox" id="park_audio"/> <span class="tooltip">Park audio: filter out announcers<span class="tooltiptext">Implies re-encoding all audio. If this is enabled, an extra audio filter is applied to remove the announcer voices.</span></span><br/>' + "\n"
         body += '<hr><span class="tooltip">Alternate audio URL and sync<span class="tooltiptext">Optional: you can also include a separate audio-only URL as an additional alternate audio track. Archive games will likely require a very large negative sync value, as the radio broadcasts may not be trimmed like the video archives.</span></span>:<br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)"></textarea><input id="audio_url_seek" type="number" value="0" style="vertical-align:top;font-size:.8em;width:4em"/>'
-        body += '<hr>Watch: <a href="/embed.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Embed</a> | <a href="' + multiview_server + multiview_url_path + content_protect_b + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Advanced</a> | <a href="/download.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '&filename=' + gameDate + ' Multiview">Download</a><br/><span class="tinytext">Kodi STRM files: <a href="/kodi.strm?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Matrix/19+</a> (<a href="/kodi.strm?version=18&src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Leia/18</a>)</span>'
+        body += '<hr>Watch: <a href="' + http_root + '/embed.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Embed</a> | <a href="' + multiview_server + multiview_url_path + content_protect_b + '">Stream</a> | <a href="' + http_root + '/chromecast.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Chromecast</a> | <a href="' + http_root + '/advanced.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Advanced</a> | <a href="' + http_root + '/download.html?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '&filename=' + gameDate + ' Multiview">Download</a><br/><span class="tinytext">Kodi STRM files: <a href="' + http_root + '/kodi.strm?src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Matrix/19+</a> (<a href="' + http_root + '/kodi.strm?version=18&src=' + encodeURIComponent(multiview_server + multiview_url_path) + content_protect_b + '">Leia/18</a>)</span>'
         body += '</td></tr></table><br/>' + "\n"
     }
 
@@ -2135,42 +2153,42 @@ app.get('/', async function(req, res) {
       resolution = 'best'
     }
 
-    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live MLB broadcasts (all games plus MLB Network, Big Inning, Game Changer, and Multiview). If favorite team(s) have been provided, it will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + content_protect_b + '">calendar.ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live MLB broadcasts (all games plus MLB Network, Big Inning, Game Changer, and Multiview). If favorite team(s) have been provided, it will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
     let include_teams = 'ath,national'
     if ( session.credentials.fav_teams.length > 0 ) {
       include_teams = session.credentials.fav_teams.toString()
     }
-    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. It will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">calendar.ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. It will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include blackouts<span class="tooltiptext">An optional parameter added to the URL will include channels/games subject to blackout (although you may not be able to play those games).</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">channels.m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">calendar.ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include blackouts<span class="tooltiptext">An optional parameter added to the URL will include channels/games subject to blackout (although you may not be able to play those games).</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
     let exclude_teams = 'ath,national'
-    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">Excluding a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">Excluding a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">ics</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">ics</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include (or exclude) MLB Network<span class="tooltiptext">MLB Network live stream is now available in the USA for paid MLBTV subscribers or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://www.mlb.com/news/mlb-network-launches-direct-to-consumer-streaming-option">See here for more information</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=mlbn' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=mlbn' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=mlb' + content_protect_b + '">ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include (or exclude) MLB Network<span class="tooltiptext">MLB Network live stream is now available in the USA for paid MLBTV subscribers or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://www.mlb.com/news/mlb-network-launches-direct-to-consumer-streaming-option">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=mlbn' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=mlbn' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=mlb' + content_protect_b + '">ics</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">ics</a></p>' + "\n"
 
     let gamechanger_resolution = resolution
     if ( gamechanger_resolution == VALID_RESOLUTIONS[0] ) {
       gamechanger_resolution = 'best'
     }
-    body += '<p><span class="tooltip">Include (or exclude) Game Changer<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to best resolution if not specified.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + gamechanger_resolution + '&includeTeams=gamechanger' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=gamechanger' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=gamechanger' + content_protect_b + '">ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include (or exclude) Game Changer<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to best resolution if not specified.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + gamechanger_resolution + '&includeTeams=gamechanger' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=gamechanger' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=gamechanger' + content_protect_b + '">ics</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include (or exclude) Multiview<span class="tooltiptext">Requires starting and stopping the multiview stream from the web interface.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include (or exclude) Multiview<span class="tooltiptext">Requires starting and stopping the multiview stream from the web interface.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">ics</a></p>' + "\n"
 
     if ( argv.free ) {
-      body += '<p><span class="tooltip">Free games only<span class="tooltiptext">Only includes games marked as free. Blackouts still apply. Channels/games subject to blackout will be omitted by default.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=free' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">ics</a></p>' + "\n"
+      body += '<p><span class="tooltip">Free games only<span class="tooltiptext">Only includes games marked as free. Blackouts still apply. Channels/games subject to blackout will be omitted by default.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=free' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=free' + content_protect_b + '">ics</a></p>' + "\n"
     }
 
-    body += '<p><span class="tooltip">Include affiliates by org<span class="tooltiptext">Including an organization (by MLB team abbreviation, in a comma-separated list if more than 1) will include all of its affiliate broadcasts, or if that affiliate is not broadcasting the game, it will include the opponent\'s broadcast if available. If this option is not specified, but favorite team(s) have been provided, affiliate games for those organizations will be included anyway.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeOrgs=ath,atl' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeOrgs=ath' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeOrgs=ath' + content_protect_b + '">ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include affiliates by org<span class="tooltiptext">Including an organization (by MLB team abbreviation, in a comma-separated list if more than 1) will include all of its affiliate broadcasts, or if that affiliate is not broadcasting the game, it will include the opponent\'s broadcast if available. If this option is not specified, but favorite team(s) have been provided, affiliate games for those organizations will be included anyway.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeOrgs=ath,atl' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeOrgs=ath' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeOrgs=ath' + content_protect_b + '">ics</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include by level<span class="tooltiptext">Including a level (AAA, AA, A+ encoded as A%2B, or A, in a comma-separated list if more than 1) will include all of its broadcasts, and exclude all other levels.</span></span>: <a href="/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeLevels=a%2B,aaa' + content_protect_b + '">m3u</a> and <a href="/guide.xml?mediaType=' + mediaType + '&includeLevels=a%2B,aaa' + content_protect_b + '">xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeLevels=a%2B,aaa' + content_protect_b + '">ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include by level<span class="tooltiptext">Including a level (AAA, AA, A+ encoded as A%2B, or A, in a comma-separated list if more than 1) will include all of its broadcasts, and exclude all other levels.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeLevels=a%2B,aaa' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeLevels=a%2B,aaa' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeLevels=a%2B,aaa' + content_protect_b + '">ics</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include teams in titles<span class="tooltiptext">An optional parameter added to the URL will include team names in the ICS/XML titles.</span></span>: <a href="/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeTeamsInTitles=true' + content_protect_b + '">guide.xml</a> and <a href="/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeTeamsInTitles=true' + content_protect_b + '">calendar.ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include teams in titles<span class="tooltiptext">An optional parameter added to the URL will include team names in the ICS/XML titles.</span></span>: <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeTeamsInTitles=true' + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeTeamsInTitles=true' + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
     body += '</td></tr></table><br/>' + "\n"
 
@@ -2207,7 +2225,7 @@ app.get('/', async function(req, res) {
     for (var i=0; i<examples.length; i++) {
       body += '&bull; ' + examples[i][0] + ': '
       for (var j=0; j<example_types.length; j++) {
-        body += '<a href="/' + example_types[j][0] + examples[i][1]
+        body += '<a href="' + http_root + '/' + example_types[j][0] + examples[i][1]
         body += content_protect_b
         body += '">' + example_types[j][1] + '</a>'
         if ( j < (example_types.length-1) ) {
@@ -2225,17 +2243,17 @@ app.get('/', async function(req, res) {
     let gamechanger_types = ['in', 'ex']
     for (var i=0; i<gamechanger_types.length; i++) {
       let example_streamURL = gamechanger_streamURL + '&' + gamechanger_types[i] + 'cludeTeams=ath'
-      body += '&bull; ' + gamechanger_types[i] + 'clude: <a href="/embed.html?src=' + encodeURIComponent(example_streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b + '">Embed</a> | <a href="' + example_streamURL + '">Stream</a> | <a href="/chromecast.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Chromecast</a> | <a href="/advanced.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Advanced</a> | <a href="/kodi.strm?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Kodi</a><br/>' + "\n"
+      body += '&bull; ' + gamechanger_types[i] + 'clude: <a href="' + http_root + '/embed.html?src=' + encodeURIComponent(example_streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b + '">Embed</a> | <a href="' + example_streamURL + '">Stream</a> | <a href="' + http_root + '/chromecast.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Chromecast</a> | <a href="' + http_root + '/advanced.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Advanced</a> | <a href="' + http_root + '/kodi.strm?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Kodi</a><br/>' + "\n"
     }
 
     body += '</p></td></tr></table><br/>' + "\n"
 
-    body += '<p><span class="tooltip">Sample video<span class="tooltiptext">A sample stream. Useful for testing and troubleshooting.</span></span>: <a href="/embed.html' + content_protect_a + '">Embed</a> | <a href="/stream.m3u8' + content_protect_a + '">Stream</a> | <a href="/chromecast.html' + content_protect_a + '">Chromecast</a> | <a href="/advanced.html' + content_protect_a + '">Advanced</a></p>' + "\n"
+    body += '<p><span class="tooltip">Sample video<span class="tooltiptext">A sample stream. Useful for testing and troubleshooting.</span></span>: <a href="' + http_root + '/embed.html' + content_protect_a + '">Embed</a> | <a href="' + http_root + '/stream.m3u8' + content_protect_a + '">Stream</a> | <a href="' + http_root + '/chromecast.html' + content_protect_a + '">Chromecast</a> | <a href="' + http_root + '/advanced.html' + content_protect_a + '">Advanced</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Bookmarklets for MLB.com<span class="tooltiptext">If you watch at MLB.com, drag these bookmarklets to your bookmarks toolbar and use them to hide parts of the interface.</span></span>: <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}})();">Boxscore</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Scoreboard</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Linescore</a> | <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">All</a></p>' + "\n"
 
     // Print version
-    body += '<p class="tinytext">Version ' + version + ' (<a href="/clearcache">clear session and cache</a>)</p>' + "\n"
+    body += '<p class="tinytext">Version ' + version + ' (<a href="' + http_root + '/clearcache">clear session and cache</a>)</p>' + "\n"
 
     // Datepicker functions
     body += '<script>var datePicker=document.getElementById("gameDate");function changeDate(e){date=datePicker.value;reload()}function removeDate(e){datePicker.removeEventListener("change",changeDate,false);datePicker.addEventListener("blur",changeDate,false);if(e.keyCode===13){date=datePicker.value;reload()}}datePicker.addEventListener("change",changeDate,false);datePicker.addEventListener("keypress",removeDate,false)</script>' + "\n"
@@ -2286,7 +2304,7 @@ app.get('/embed.html', async function(req, res) {
     controls = req.query.controls
   }
 
-  let video_url = '/stream.m3u8'
+  let video_url = http_root + '/stream.m3u8'
   if ( req.query.src ) {
     video_url = req.query.src
   } else {
@@ -2303,7 +2321,7 @@ app.get('/embed.html', async function(req, res) {
   }
 
   // Adapted from https://hls-js.netlify.app/demo/basic-usage.html and https://hls-js-dev.netlify.app/demo
-  var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><title>' + appname + ' player</title><link rel="icon" href="favicon.svg' + content_protect + '"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{background-color:black;color:lightgrey;font-family:Arial,Helvetica,sans-serif}video{width:100% !important;height:auto !important;max-width:1280px}input[type=number]::-webkit-inner-spin-button{opacity:1}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}</style><script>function goBack(){var prevPage=window.location.href;window.history.go(-1);setTimeout(function(){if(window.location.href==prevPage){window.location.href="/' + content_protect + '"}}, 500)}function toggleAudio(x){var elements=document.getElementsByClassName("audioButton");for(var i=0;i<elements.length;i++){elements[i].className="audioButton"}document.getElementById("audioButton"+x).className+=" default";hls.audioTrack=x}function changeTime(x){video.currentTime+=x}function changeRate(x){let newRate=Math.round((Number(document.getElementById("playback_rate").value)+x)*10)/10;if((newRate<=document.getElementById("playback_rate").max) && (newRate>=document.getElementById("playback_rate").min)){document.getElementById("playback_rate").value=newRate.toFixed(1);video.defaultPlaybackRate=video.playbackRate=document.getElementById("playback_rate").value}}function myKeyPress(e){if(e.key=="ArrowRight"){changeTime(10)}else if(e.key=="ArrowLeft"){changeTime(-10)}else if(e.key=="ArrowUp"){changeRate(0.1)}else if(e.key=="ArrowDown"){changeRate(-0.1)}}</script></head><body onkeydown="myKeyPress(event)"><script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script><video id="video"'
+  var body = '<html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><title>' + appname + ' player</title><link rel="icon" href="favicon.svg' + content_protect + '"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{background-color:black;color:lightgrey;font-family:Arial,Helvetica,sans-serif}video{width:100% !important;height:auto !important;max-width:1280px}input[type=number]::-webkit-inner-spin-button{opacity:1}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}</style><script>function goBack(){var prevPage=window.location.href;window.history.go(-1);setTimeout(function(){if(window.location.href==prevPage){window.location.href="' + http_root + '/' + content_protect + '"}}, 500)}function toggleAudio(x){var elements=document.getElementsByClassName("audioButton");for(var i=0;i<elements.length;i++){elements[i].className="audioButton"}document.getElementById("audioButton"+x).className+=" default";hls.audioTrack=x}function changeTime(x){video.currentTime+=x}function changeRate(x){let newRate=Math.round((Number(document.getElementById("playback_rate").value)+x)*10)/10;if((newRate<=document.getElementById("playback_rate").max) && (newRate>=document.getElementById("playback_rate").min)){document.getElementById("playback_rate").value=newRate.toFixed(1);video.defaultPlaybackRate=video.playbackRate=document.getElementById("playback_rate").value}}function myKeyPress(e){if(e.key=="ArrowRight"){changeTime(10)}else if(e.key=="ArrowLeft"){changeTime(-10)}else if(e.key=="ArrowUp"){changeRate(0.1)}else if(e.key=="ArrowDown"){changeRate(-0.1)}}</script></head><body onkeydown="myKeyPress(event)"><script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script><video id="video"'
   if ( controls == VALID_CONTROLS[0] ) {
     body += ' controls'
   }
@@ -2327,7 +2345,7 @@ app.get('/advanced.html', async function(req, res) {
 
   session.requestlog('advanced.html', req)
 
-  let server = 'http://' + req.headers.host
+  let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
 
   let video_url = '/stream.m3u8'
   if ( req.query.src ) {
@@ -2350,7 +2368,7 @@ app.get('/chromecast.html', async function(req, res) {
 
   session.requestlog('chromecast.html', req)
 
-  let server = 'http://' + req.headers.host
+  let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
 
   let video_url = '/stream.m3u8'
   if ( req.query.src ) {
@@ -2387,7 +2405,7 @@ app.get('/channels.m3u', async function(req, res) {
     excludeTeams = req.query.excludeTeams.toUpperCase().split(',')
   }
 
-  let server = 'http://' + req.headers.host
+  let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
 
   let resolution = 'best'
   if ( req.query.resolution ) {
@@ -2466,7 +2484,7 @@ app.get('/calendar.ics', async function(req, res) {
       includeTeamsInTitles = req.query.includeTeamsInTitles
     }
 
-    let server = 'http://' + req.headers.host
+    let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
 
     var body = await session.getTVData('calendar', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles)
 
@@ -2519,7 +2537,7 @@ app.get('/guide.xml', async function(req, res) {
     includeTeamsInTitles = req.query.includeTeamsInTitles
   }
 
-  let server = 'http://' + req.headers.host
+  let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
 
   var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles)
 
@@ -2893,7 +2911,7 @@ app.get('/kodi.strm', async function(req, res) {
   try {
     session.requestlog('kodi.strm', req)
 
-    let server = 'http://' + req.headers.host
+    let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
 
     let video_url = '/stream.m3u8'
     let file_name = 'kodi'
@@ -2943,7 +2961,7 @@ app.get('/download.html', async function(req, res) {
       session.debuglog('force alternate audio', req)
     }
 
-    let server = 'http://' + req.headers.host
+    let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
 
     let video_url = '/stream.m3u8'
     if ( req.query.src ) {

@@ -52,6 +52,7 @@ services:
       #- page_password=
       #- content_protect=
       #- gamechanger_delay=0
+      #- http_root=/mlbserver
     ports:
       - 9999:9999
       - 10000:10000
@@ -111,6 +112,7 @@ Advanced command line or Docker environment options:
 --page_password (password to protect pages; default is no protection)
 --content_protect (specify the content protection key to include as a URL parameter, if page protection is enabled)
 --gamechanger_delay (specify extra delay for the gamechanger switches in 10 second increments, default is 0)
+--http_root (specify the alternative http webroot or initial path prefix, default is none)
 ```
 
 For multiview, the default software encoder is limited by your CPU. You may want to experiment with different ffmpeg hardware encoders. "h264_videotoolbox" is confirmed to work on supported Macs, and "h264_v4l2m2m" is confirmed to work on a Raspberry Pi 4 (and likely other Linux systems) when ffmpeg is compiled with this patch: https://www.raspberrypi.org/forums/viewtopic.php?p=1780625#p1780625
