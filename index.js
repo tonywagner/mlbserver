@@ -1285,8 +1285,11 @@ app.get('/', async function(req, res) {
       team_ids = session.getTeamIds()
       for (let i=0; i<session.credentials.fav_teams.length; i++) {
         if ( session.credentials.fav_teams[i] != '' ) {
-          level_ids = levels['All']
-          team_ids += ',' + session.getAffiliateTeamIds(session.credentials.fav_teams[i])
+          let affiliate_team_ids = session.getAffiliateTeamIds(session.credentials.fav_teams[i])
+          if ( affiliate_team_ids ) {
+            level_ids = levels['All']
+            team_ids += ',' + affiliate_team_ids
+          }
         }
       }
     }
