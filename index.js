@@ -198,7 +198,7 @@ var hls = new HLSServer(multiview_app, {
   path: '/' + hls_base,
   dir: session.get_multiview_directory()
 })
-function corsMiddleware (req, res, next) {
+function corsMiddleware(req, res, next) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     next()
 }
@@ -2753,7 +2753,7 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, park_audio
       //let audio_input = audio_present[i] + ':a:m:language:en?'
       let audio_input = audio_present[i] + ':a:'
       let video_url = streams[audio_present[i]]
-      if ( video_url.includes('audio_track=English') || !video_url.includes('audio_track=') ) {
+      if ( !video_url || video_url.includes('audio_track=English') || !video_url.includes('audio_track=') ) {
         audio_input += '0'
       } else {
         audio_input += '1'
@@ -2796,7 +2796,7 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, park_audio
       } else {
         audio_output = audio_present[i] + ':a:'
         let video_url = streams[audio_present[i]]
-        if ( video_url.includes('audio_track=English') || !video_url.includes('audio_track=') ) {
+        if ( !video_url || video_url.includes('audio_track=English') || !video_url.includes('audio_track=') ) {
           audio_output += '0'
         } else {
           audio_output += '1'

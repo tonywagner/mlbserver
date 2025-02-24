@@ -961,6 +961,9 @@ class sessionClass {
         this.save_credentials()
       }
     }
+    if ( (this.credentials.fav_teams != '') && !this.credentials.fav_teams.every(v => Object.keys(TEAM_IDS).includes(v)) ) {
+      this.log('warning: one or more fav_teams abbreviation is invalid')
+    }
 
     // Check if free account
     this.free = false
