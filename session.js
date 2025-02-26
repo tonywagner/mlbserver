@@ -1463,7 +1463,8 @@ class sessionClass {
       let curDate = new Date()
       console.log(curDate.toLocaleString() + ' stream video failed on url : ' + u)
       console.log(curDate.toLocaleString() + ' stream video failed with error : ' + e.message.toString())
-      if ( tries == 0 ) process.exit(1)
+      console.log(curDate.toLocaleString() + ' stream video failed with headers: ' + JSON.stringify(opts.headers))
+      if ( (tries == 0) && !u.startsWith('http://127.0.0.1') ) process.exit(1)
     })
   }
 
@@ -2728,7 +2729,8 @@ class sessionClass {
               //let logo = server + '/image.svg?teamId=MLB'
               //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
               let logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
-              let stream = server.replace(':' + this.data.port, ':' + this.data.multiviewPort) + this.data.multiviewStreamURLPath
+              let stream = server + '/stream.m3u8?src=' + encodeURIComponent('http://127.0.0.1:' + this.data.multiviewPort + this.data.multiviewStreamURLPath)
+              if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
               if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
               channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
 
@@ -2750,8 +2752,7 @@ class sessionClass {
 
                     // Multview calendar ICS
                     let prefix = 'Watch'
-                    let location = server + '/embed.html?src=' + encodeURIComponent(stream)
-                    if ( this.protection.content_protect ) location += '&content_protect=' + this.protection.content_protect
+                    let location = stream.replace('/stream.m3u8?src=', '/embed.html?msrc=')
                     calendar += await this.generate_ics_event(prefix, new Date(cache_data.dates[i].games[gameIndexes.firstGameIndex].gameDate), gameDate, title, description, location)
 
                     // Multview guide XML
