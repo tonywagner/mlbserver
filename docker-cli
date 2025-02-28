@@ -1,0 +1,8 @@
+docker run -d \
+  --name mlbserver \
+  --env TZ="America/New_York" \
+  --env account_username=your.account.email@example.com \
+  --env account_password=youraccountpassword \
+  -p 9999:9999 \
+  --volume /path/to/your/desired/local/mlbserver/persistent/data/directory:/mlbserver/data_directory \
+  tonywagner/mlbserver

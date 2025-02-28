@@ -21,4 +21,4 @@ RUN npm install
 COPY . .
 
 EXPOSE 9999 10000
-CMD [ "node", "index.js", "--env" ]
+CMD [ "node", "index.js", "--env", "--port", "9999", "--multiview_port", "10000", "--data_directory", "/mlbserver/data_directory" ]

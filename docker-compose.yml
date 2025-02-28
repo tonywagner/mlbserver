@@ -4,13 +4,11 @@ services:
     container_name: mlbserver
     environment:
       - TZ=America/New York
-      - data_directory=/mlbserver/data_directory
       - account_username=your.account.email@example.com
       - account_password=youraccountpassword
       #- fav_teams=AZ,BAL
+      #- http_root=/mlbserver
       #- debug=false
-      #- port=9999
-      #- multiview_port=10000
       #- multiview_path=
       #- ffmpeg_path=
       #- ffmpeg_encoder=
@@ -18,8 +16,9 @@ services:
       #- page_password=
       #- content_protect=
       #- gamechanger_delay=0
+      #- PUID=1000
+      #- PGID=1000
     ports:
       - 9999:9999
-      - 10000:10000
     volumes:
       - /path/to/your/desired/local/mlbserver/persistent/data/directory:/mlbserver/data_directory

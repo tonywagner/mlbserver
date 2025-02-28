@@ -106,7 +106,12 @@ var argv = minimist(process.argv, {
   string: ['account_username', 'account_password', 'fav_teams', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'data_directory', 'http_root']
 })
 
-if (argv.env) argv = process.env
+if (argv.env) {
+  process.env.port = argv.port
+  process.env.multiview_port = argv.multiview_port
+  process.env.data_directory = argv.data_directory
+  argv = process.env
+}
 
 // Version
 var version = require('./package').version
@@ -2994,7 +2999,7 @@ app.get('/download.html', async function(req, res) {
       session.debuglog('force alternate audio', req)
     }
 
-    let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
+    let server = 'http://127.0.0.1:' + session.data.port + http_root
 
     let video_url = '/stream.m3u8'
     if ( req.query.src ) {
@@ -3022,7 +3027,7 @@ app.get('/download.html', async function(req, res) {
     // Set input stream and minimize ffmpeg startup latency
     ffmpeg_command.input(video_url)
     .addInputOption('-fflags', 'nobuffer')
-    .addInputOption('-probesize', '32')
+    .addInputOption('-probesize', '1000000')
     .addInputOption('-analyzeduration', '0')
 
     // video
