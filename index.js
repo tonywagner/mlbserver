@@ -1844,7 +1844,7 @@ app.get('/', async function(req, res) {
         body += '><td>' + description + teams + pitchers + state + '</td>'
 
         // Check if Winter League / MiLB game first
-        if ( (cache_data.dates[0].games[j].teams['home'].team.sport.id != levels['MLB']) && (mediaType == 'MLBTV') ) {
+        if ( (cache_data.dates[0].games[j].teams['away'].team.sport.id != levels['MLB']) && (cache_data.dates[0].games[j].teams['home'].team.sport.id != levels['MLB']) && (mediaType == 'MLBTV') ) {
           body += "<td>"
           if ( cache_data.dates[0].games[j].broadcasts ) {
             let broadcastName = 'N/A'
