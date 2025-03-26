@@ -2893,7 +2893,7 @@ class sessionClass {
     try {
       this.debuglog('getBroadcastStart')
 
-      let variant_url = 'http://localhost:' + this.data.port + '/playlist?url=' + encodeURIComponent(streamURL.substr(0,streamURL.length-5) + '_5600K.m3u8')
+      let variant_url = 'http://localhost:' + this.data.port + '/playlist.m3u8?url=' + encodeURIComponent(streamURL.substr(0,streamURL.length-5) + '_5600K.m3u8')
       if ( streamURLToken ) {
         variant_url += '&streamURLToken=' + encodeURIComponent(streamURLToken)
       }
@@ -3583,25 +3583,27 @@ class sessionClass {
         let game = cache_data.results[j]
         let game_pk = game.gamePk
         this.debuglog('get_blackout_games checking game ' + game_pk)
-        if ( game.blackedOutVideo ) {
-          this.debuglog('get_blackout_games found blackout')
+        if ( game.blackedOutVideo || !game.entitledVideo ) {
+          this.debuglog('get_blackout_games found blackout or non-entitled video')
           let blackout_type = ''
-          // local/national blackout label disabled, as all were returning local
-          /*if ( game.videoStatusCodes.includes('2') ) {
+          if ( game.videoStatusCodes.includes(2) ) {
             this.debuglog('get_blackout_games found national blackout')
             blackout_type = 'National/International'
-          } else {
+          } else if ( game.videoStatusCodes.includes(1) ) {
             this.debuglog('get_blackout_games found local blackout')
             blackout_type = 'Local'
-          }*/
+          } else {
+            this.debuglog('get_blackout_games found non-entitled video')
+            blackout_type = 'Not entitled'
+          }
           blackouts[game_pk] = { blackout_type: blackout_type }
-        } else if ( !game.entitledVideo && (game.videoStatusCodes[0] == '3') ) {
+        } /*else if ( !game.entitledVideo && (game.videoStatusCodes[0] == '3') ) {
           this.debuglog('get_blackout_games found non-entitled MVPD required blackout')
           blackouts[game_pk] = { blackout_type: '' }
-        }
+        }*/
 
         // add blackout expiry, if requested
-        if ( blackouts[game_pk] && calculate_expiries && await this.check_game_time(game.gameData) ) {
+        if ( blackouts[game_pk] && (blackouts[game_pk].blackout_type != 'Not entitled') && calculate_expiries && await this.check_game_time(game.gameData) ) {
           this.debuglog('get_blackout_games calculating blackout expiry')
           let date_cache_data = await this.getDayData(gameDate)
           if ( date_cache_data.dates && date_cache_data.dates[0] && date_cache_data.dates[0].games && (date_cache_data.dates[0].games.length > 0) ) {

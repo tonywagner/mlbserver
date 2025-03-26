@@ -29,10 +29,10 @@ const VALID_CONTROLS = [ 'Show', 'Hide' ]
 const VALID_INNING_HALF = [ '', 'top', 'bottom' ]
 const VALID_INNING_NUMBER = [ '', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12' ]
 const VALID_SCORES = [ 'Hide', 'Show' ]
-const VALID_RESOLUTIONS = [ 'adaptive', '1080p60', '720p60', '720p', '540p', '504p', '360p', '288p', '214p', 'none' ]
+const VALID_RESOLUTIONS = [ 'adaptive', '1080p60', '720p60', '720p', '540p', '504p', '360p', '288p', '216p', '180p', 'none' ]
 const DEFAULT_MULTIVIEW_RESOLUTION = '504p'
 // Corresponding andwidths to display for above resolutions
-const DISPLAY_BANDWIDTHS = [ '', '9600k', '6600k', '4160k', '2950k', '2120k', '1400k', '1000k', '600k', '' ]
+const DISPLAY_BANDWIDTHS = [ '', '9600k', '6600k', '4160k', '2950k', '2120k', '1400k', '1000k', '600k', '300k', '' ]
 const VALID_AUDIO_TRACKS = [ 'all', 'English', 'Home Radio', 'Casa Radio', 'Away Radio', 'Visita Radio', 'Park', 'none' ]
 const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spa.', 'Away Rad.', 'Away Sp.', 'Park', 'none' ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
@@ -56,21 +56,42 @@ const GAMECHANGER_RESOLUTIONS = {
     'frame_rate': '29.97',
     'url_bandwidth': '1800',
     'bandwidth': '2120',
-    'codec': '4d001f'
+    'codec': '4d401f'
+  },
+  '180p': {
+    'resolution': '320x180',
+    'frame_rate': '29.97',
+    'url_bandwidth': '192',
+    'bandwidth': '600',
+    'codec': '4d401f'
+  },
+  '216p': {
+    'resolution': '384x216',
+    'frame_rate': '29.97',
+    'url_bandwidth': '450',
+    'bandwidth': '600',
+    'codec': '4d401f'
+  },
+  '288p': {
+    'resolution': '512x288',
+    'frame_rate': '29.97',
+    'url_bandwidth': '800',
+    'bandwidth': '1000',
+    'codec': '4d401f'
   },
   '360p': {
     'resolution': '640x360',
     'frame_rate': '29.97',
     'url_bandwidth': '1200',
     'bandwidth': '1400',
-    'codec': '4d001f'
+    'codec': '4d401f'
   },
   '540p': {
     'resolution': '960x540',
     'frame_rate': '29.97',
     'url_bandwidth': '2500',
     'bandwidth': '2950',
-    'codec': '4d001f'
+    'codec': '4d401f'
   },
   '720p': {
     'resolution': '1280x720',
@@ -84,7 +105,14 @@ const GAMECHANGER_RESOLUTIONS = {
     'frame_rate': '59.94',
     'url_bandwidth': '5600',
     'bandwidth': '6600',
-    'codec': '640028'
+    'codec': '640029'
+  },
+  '1080p60': {
+    'resolution': '1920x1080',
+    'frame_rate': '59.94',
+    'url_bandwidth': '7500',
+    'bandwidth': '9600',
+    'codec': '64002a'
   }
 }
 const GAMECHANGER_LIST_SIZE = 6
@@ -505,7 +533,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           return line
         } else if ( segment_found ) {
           segment_found = false
-          return http_root + '/ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect + referer_parameter + token_parameter
+          return http_root + '/segment.ts?url='+encodeURIComponent(url.resolve(streamURL, line.trim())) + content_protect + referer_parameter + token_parameter
         }
 
         // Omit keyframe tracks
@@ -567,7 +595,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
                 //var parsed = line.match(/URI="([^"]+)"?$/)
                 var parsed = line.match(',URI="([^"]+)"')
                 if ( parsed[1] ) {
-                  newurl = http_root + '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
+                  newurl = http_root + '/playlist.m3u8?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
                   if ( force_vod != VALID_FORCE_VOD[0] ) newurl += '&force_vod=on'
                   if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
                   if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
@@ -600,7 +628,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1] ) {
             return
           } else if ( resolution === VALID_RESOLUTIONS[0] ) {
-              return line
+            return line
           } else {
             if ( (video_track_found == false) && (line.indexOf(resolution+',FRAME-RATE='+frame_rate) > 0) ) {
               video_track_matched = true
@@ -621,7 +649,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="') ) {
           var parsed = line.match(',URI="([^"]+)"')
           if ( parsed[1] ) {
-            newurl = http_root + '/playlist?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim())) + content_protect + referer_parameter + token_parameter
+            newurl = http_root + '/playlist.m3u8?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim())) + content_protect + referer_parameter + token_parameter
             return '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="' + newurl + '"'
           }
           return
@@ -643,7 +671,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           if ( gamePk ) newurl += '&gamePk=' + gamePk
           if ( audio_track != VALID_AUDIO_TRACKS[0] ) newurl += '&audio_track=' + encodeURIComponent(audio_track)
           newurl += content_protect + referer_parameter + token_parameter
-          return http_root + '/playlist?url='+newurl
+          return http_root + '/playlist.m3u8?url='+newurl
         }
       })
       .filter(function(line) {
@@ -666,21 +694,21 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
 
 // Listen for playlist requests
-app.get('/playlist', async function(req, res) {
+app.get('/playlist.m3u8', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.requestlog('playlist', req, true)
+  session.requestlog('playlist.m3u8', req, true)
 
   delete req.headers.host
 
   var u = req.query.url
-  session.debuglog('playlist url : ' + u)
+  session.debuglog('playlist.m3u8 url : ' + u)
 
   var referer = false
   var referer_parameter = ''
   if ( req.query.referer ) {
     referer = decodeURIComponent(req.query.referer)
-    session.debuglog('found playlist referer : ' + referer)
+    session.debuglog('found playlist.m3u8 referer : ' + referer)
     referer_parameter = '&referer=' + encodeURIComponent(req.query.referer)
   }
 
@@ -815,9 +843,9 @@ app.get('/playlist', async function(req, res) {
 
         if (line[0] === '#') return line
 
-        let newline = http_root + '/ts'
+        let newline = http_root + '/segment.ts'
         if ( line.includes('.vtt') ) {
-          newline = http_root + '/vtt'
+          newline = http_root + '/subtitles.vtt'
         }
 
         newline += '?url='+encodeURIComponent(url.resolve(u, line.trim())) + content_protect + referer_parameter + token_parameter
@@ -825,7 +853,7 @@ app.get('/playlist', async function(req, res) {
 
         // if an alternate audio track is specified, force removal of embedded audio
         if ( (audio_track != VALID_AUDIO_TRACKS[0]) && (audio_track != VALID_AUDIO_TRACKS[1]) ) {
-          newline = 'download.html?audio_track=' + encodeURIComponent(audio_track) + '&src=' + encodeURIComponent('http://127.0.0.1:' + session.data.port + newline) + content_protect
+          newline = http_root + '/download.ts?audio_track=' + encodeURIComponent(audio_track) + '&src=' + encodeURIComponent('http://127.0.0.1:' + session.data.port + newline) + content_protect
         }
 
         return newline
@@ -869,20 +897,20 @@ app.get('/playlist', async function(req, res) {
 })
 
 // Listen for ts requests (video segments) and decode them
-app.get('/ts', async function(req, res) {
+app.get('/segment.ts', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.requestlog('ts', req, true)
+  session.requestlog('segment.ts', req, true)
 
   delete req.headers.host
 
   var u = req.query.url
-  session.debuglog('ts url : ' + u)
+  session.debuglog('segment.ts url : ' + u)
 
   var headers = {encoding:null}
 
   if ( req.query.referer ) {
-    session.debuglog('found segment referer : ' + req.query.referer)
+    session.debuglog('found segment.ts referer : ' + req.query.referer)
     referer = decodeURIComponent(req.query.referer)
     headers.referer = referer
     headers.origin = getOriginFromURL(referer)
@@ -931,20 +959,20 @@ app.get('/ts', async function(req, res) {
 
 
 // Listen for WebVTT subtitle requests
-app.get('/vtt', async function(req, res) {
+app.get('/subtitles.vtt', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.requestlog('vtt', req, true)
+  session.requestlog('subtitles.vtt', req, true)
 
   delete req.headers.host
 
   var u = req.query.url
-  session.debuglog('vtt url : ' + u)
+  session.debuglog('subtitles.vtt url : ' + u)
 
   var referer = false
   if ( req.query.referer ) {
     referer = decodeURIComponent(req.query.referer)
-    session.debuglog('found vtt referer : ' + referer)
+    session.debuglog('found subtitles.vtt referer : ' + referer)
   }
 
   var req = function () {
@@ -1173,7 +1201,7 @@ app.get('/gamechangerplaylist', async function(req, res) {
                 if ( session.temp_cache.gamechanger[id].segments[i].discontinuity ) {
                   session.temp_cache.gamechanger[id].playlist[resolution] += '#EXT-X-DISCONTINUITY' + '\n'
                 }
-                session.temp_cache.gamechanger[id].playlist[resolution] += session.temp_cache.gamechanger[id].segments[i].extinf + '\n' + '/ts?url=' + encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].ts) + '&streamURLToken='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].streamURLToken) + content_protect + '\n'
+                session.temp_cache.gamechanger[id].playlist[resolution] += session.temp_cache.gamechanger[id].segments[i].extinf + '\n' + '/segment.ts?url=' + encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].ts) + '&streamURLToken='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].streamURLToken) + content_protect + '\n'
               }
 
               session.debuglog(game_changer_title + 'playlist ' + session.temp_cache.gamechanger[id].playlist[resolution])
@@ -1523,6 +1551,8 @@ app.get('/', async function(req, res) {
     let link = linkType.toLowerCase() + '.html'
     if ( linkType == VALID_LINK_TYPES[1] ) {
       link = linkType.toLowerCase() + '.m3u8'
+    } else if ( linkType == VALID_LINK_TYPES[4] ) {
+      link = linkType.toLowerCase() + '.ts'
     } else {
       force_vod = VALID_FORCE_VOD[0]
     }
@@ -1574,7 +1604,7 @@ app.get('/', async function(req, res) {
         body += '</td></tr>' + "\n"
       }*/
 
-      if ( (gameDate >= today) && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
+      if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
         blackouts = await session.get_blackout_games(cache_data.dates[0].date, true)
       }
 
@@ -1686,6 +1716,7 @@ app.get('/', async function(req, res) {
         } else {
           teams += hometeam
         }
+        let filename_teams = awayteam + " @ " + hometeam
         let pitchers = ""
         let state = "<br/>"
 
@@ -1764,7 +1795,7 @@ app.get('/', async function(req, res) {
           state += "<br/>" + detailedState
         }
 
-        var filename = gameDate + ' ' + teams + ' '
+        var filename = gameDate + ' ' + filename_teams + ' '
 
         if ( cache_data.dates[0].games[j].doubleHeader != 'N'  ) {
           state += "<br/>Game " + cache_data.dates[0].games[j].gameNumber
@@ -1940,9 +1971,12 @@ app.get('/', async function(req, res) {
 
                     // display blackout tooltip, if necessary
                     if ( blackouts[gamePk] ) {
-                      body += '<span class="tooltip"><span class="blackout">' + teamabbr + '</span><span class="tooltiptext">' + blackouts[gamePk].blackout_type + ' video blackout until approx. 2.5 hours after the game'
-                      if ( blackouts[gamePk].blackoutExpiry ) {
-                        body += ' (~' + blackouts[gamePk].blackoutExpiry.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ')'
+                      body += '<span class="tooltip"><span class="blackout">' + teamabbr + '</span><span class="tooltiptext">' + blackouts[gamePk].blackout_type
+                      if ( blackouts[gamePk].blackout_type != 'Not entitled' ) {
+                        body += ' video blackout until approx. 2.5 hours after the game'
+                        if ( blackouts[gamePk].blackoutExpiry ) {
+                          body += ' (~' + blackouts[gamePk].blackoutExpiry.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ')'
+                        }
                       }
                       body += '</span></span>'
                     } else {
@@ -2059,7 +2093,7 @@ app.get('/', async function(req, res) {
     body += "</table>" + "\n"
 
     if ( (Object.keys(blackouts).length > 0) ) {
-      body += '<span class="tooltip tinytext"><span class="blackout">strikethrough</span> indicates a live blackout<span class="tooltiptext">Tap or hover over the team abbreviation to see an estimate of when the blackout will be lifted (officially ~90 minutes, but more likely ~150 minutes or ~2.5 hours after the game ends).</span></span>' + "\n"
+      body += '<span class="tooltip tinytext"><span class="blackout">strikethrough</span> indicates a live blackout or non-entitled video<span class="tooltiptext">Tap or hover over the team abbreviation to see an estimate of when the blackout will be lifted (officially ~90 minutes, but more likely ~150 minutes or ~2.5 hours after the game ends).</span></span>' + "\n"
       if ( argv.free ) {
         body += '<br/>'
       }
@@ -2132,7 +2166,7 @@ app.get('/', async function(req, res) {
         body += '<input type="checkbox" id="reencode"/> <span class="tooltip">Re-encode all audio<span class="tooltiptext">Uses more CPU. Generally only necessary if you need the multiview stream to continue after one of the individual streams has ended. (Any streams with sync adjustments above will automatically be re-encoded, regardless of this setting.)</span></span><br/>' + "\n"
         body += '<input type="checkbox" id="park_audio"/> <span class="tooltip">Park audio: filter out announcers<span class="tooltiptext">Implies re-encoding all audio. If this is enabled, an extra audio filter is applied to remove the announcer voices.</span></span><br/>' + "\n"
         body += '<hr><span class="tooltip">Alternate audio URL and sync<span class="tooltiptext">Optional: you can also include a separate audio-only URL as an additional alternate audio track. Archive games will likely require a very large negative sync value, as the radio broadcasts may not be trimmed like the video archives.</span></span>:<br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)"></textarea><input id="audio_url_seek" type="number" value="0" style="vertical-align:top;font-size:.8em;width:4em"/>'
-        body += '<hr>Watch: <a href="' + http_root + '/embed.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Embed</a> | <a href="' + http_root + '/stream.m3u8?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Stream</a> | <a href="' + http_root + '/chromecast.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Chromecast</a> | <a href="' + http_root + '/advanced.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Advanced</a> | <a href="' + http_root + '/download.html?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '&filename=' + gameDate + ' Multiview">Download</a><br/><span class="tinytext">Kodi STRM files: <a href="' + http_root + '/kodi.strm?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Matrix/19+</a> (<a href="' + http_root + '/kodi.strm?version=18&src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Leia/18</a>)</span>'
+        body += '<hr>Watch: <a href="' + http_root + '/embed.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Embed</a> | <a href="' + http_root + '/stream.m3u8?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Stream</a> | <a href="' + http_root + '/chromecast.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Chromecast</a> | <a href="' + http_root + '/advanced.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Advanced</a> | <a href="' + http_root + '/download.ts?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '&filename=' + gameDate + ' Multiview">Download</a><br/><span class="tinytext">Kodi STRM files: <a href="' + http_root + '/kodi.strm?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Matrix/19+</a> (<a href="' + http_root + '/kodi.strm?version=18&src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Leia/18</a>)</span>'
         body += '</td></tr></table><br/>' + "\n"
     }
 
@@ -2988,13 +3022,13 @@ app.get('/kodi.strm', async function(req, res) {
 })
 
 // Listen for download requests (either for actual downloads or just proxying stream through ffmpeg)
-app.get('/download.html', async function(req, res) {
+app.get('/download.ts', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   try {
     // we'll know it's an actual download request if it include a filename parameter
     if ( req.query.filename ) {
-      session.requestlog('download', req)
+      session.requestlog('download.ts', req)
     } else {
       session.debuglog('force alternate audio', req)
     }
@@ -3011,7 +3045,7 @@ app.get('/download.html', async function(req, res) {
       }
       video_url = server + video_url
     }
-    session.debuglog('download src : ' + video_url)
+    session.debuglog('download.ts src : ' + video_url)
 
     // force adaptive streams to just use a single video resolution/track
     if ( req.query.filename ) {
@@ -3033,7 +3067,7 @@ app.get('/download.html', async function(req, res) {
     // video
     if ( !req.query.resolution || (req.query.resolution != VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1]) ) {
       // copy first video track if available
-      ffmpeg_command.addOutputOption('-map', '0:v:0?')
+      ffmpeg_command.addOutputOption('-map', '0:v:0')
       .addOutputOption('-c:v', 'copy')
     } else {
       // suppress video is "none" resolution was specified
@@ -3058,13 +3092,6 @@ app.get('/download.html', async function(req, res) {
         ffmpeg_command.addOutputOption('-map', '[out0]')
         .addOutputOption('-c:a', 'aac')
         .addOutputOption('-ac:a:0', '1')
-
-        // if not downloading to a file, also copy source PTS values for continuous playback
-        if ( !req.query.filename ) {
-          ffmpeg_command.addOutputOption('-copyts')
-          .addOutputOption('-muxpreload', '0')
-          .addOutputOption('-muxdelay', '0')
-        }
       } else if ( (!req.query.filename && (req.query.audio_track != VALID_AUDIO_TRACKS[1])) || (req.query.audio_track == VALID_AUDIO_TRACKS[7]) ) {
         // if we're not downloading a file, and we requested an alternate audio track, then we want to suppress the embedded TV audio
         // or if the user requested no audio tracks in their download, we will suppress all
@@ -3076,22 +3103,29 @@ app.get('/download.html', async function(req, res) {
       }
     }
 
+    // if not downloading to a file, also copy source PTS values for continuous playback
+    if ( !req.query.filename ) {
+      ffmpeg_command.addOutputOption('-copyts')
+      .addOutputOption('-muxpreload', '0')
+      .addOutputOption('-muxdelay', '0')
+    }
+
     // output mpegts to response stream
     ffmpeg_command.addOutputOption('-f', 'mpegts')
     .output(res)
     .on('start', function(commandLine) {
-      session.debuglog('download command started')
+      session.debuglog('download.ts command started')
       if ( argv.debug || argv.ffmpeg_logging ) {
-        session.debuglog('download command: ' + commandLine)
+        session.debuglog('download.ts command: ' + commandLine)
       }
     })
     .on('error', function(err, stdout, stderr) {
-      session.debuglog('download command stopped: ' + err.message)
+      session.debuglog('download.ts command stopped: ' + err.message)
       if ( stdout ) session.log(stdout)
       if ( stderr ) session.log(stderr)
     })
     .on('end', function() {
-      session.debuglog('download command ended')
+      session.debuglog('download.ts command ended')
     })
 
     if ( argv.ffmpeg_logging ) {
@@ -3109,7 +3143,7 @@ app.get('/download.html', async function(req, res) {
 
     ffmpeg_command.run()
   } catch (e) {
-    session.log('download request error : ' + e.message)
+    session.log('download.ts request error : ' + e.message)
     res.end('')
   }
 })
