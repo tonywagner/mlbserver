@@ -42,6 +42,8 @@ const EVENT_START_PADDING = -3
 const PITCH_END_PADDING = -4
 const ACTION_END_PADDING = 7
 const MINIMUM_BREAK_DURATION = 5
+// extra padding for MLB events (2025)
+const MLB_PADDING = 39
 
 const LI_TABLE = {
     1: {
@@ -2892,8 +2894,14 @@ class sessionClass {
   async getBroadcastStart(streamURL, streamURLToken) {
     try {
       this.debuglog('getBroadcastStart')
+      
+      // MLB version
+      let variant = '_5600K'
+      if ( streamURL.includes('milb.com') ) {
+        variant = '_1280x720_59_5472K'
+      }
 
-      let variant_url = 'http://localhost:' + this.data.port + '/playlist.m3u8?url=' + encodeURIComponent(streamURL.substr(0,streamURL.length-5) + '_5600K.m3u8')
+      let variant_url = 'http://localhost:' + this.data.port + '/playlist.m3u8?url=' + encodeURIComponent(streamURL.substr(0,streamURL.length-5) + variant + '.m3u8')
       if ( streamURLToken ) {
         variant_url += '&streamURLToken=' + encodeURIComponent(streamURLToken)
       }
@@ -2929,6 +2937,15 @@ class sessionClass {
       this.debuglog('getSkipMarkers')
 
       if ( skip_adjust != 0 ) this.log('manual adjustment of ' + skip_adjust + ' seconds being applied')
+      
+      let event_start_padding = EVENT_START_PADDING
+      let pitch_end_padding = PITCH_END_PADDING
+      let action_end_padding = ACTION_END_PADDING
+      if ( !streamURL.includes('milb.com') ) {
+        event_start_padding += MLB_PADDING
+        pitch_end_padding += MLB_PADDING
+        action_end_padding += MLB_PADDING
+      }
 
       if ( !this.temp_cache[gamePk] ) {
         this.temp_cache[gamePk] = {}
@@ -2993,7 +3010,7 @@ class sessionClass {
             if ((current_inning > start_inning) || ((current_inning == start_inning) && ((current_inning_half == start_inning_half) || (current_inning_half == 'bottom')))) {
               // loop through events within each play
               for (var j=0; j < cache_data.liveData.plays.allPlays[i].playEvents.length; j++) {
-                let event_end_padding = ACTION_END_PADDING
+                let event_end_padding = action_end_padding
                 // always exclude break types
                 if (cache_data.liveData.plays.allPlays[i].playEvents[j].details && cache_data.liveData.plays.allPlays[i].playEvents[j].details.event && BREAK_TYPES.includes(cache_data.liveData.plays.allPlays[i].playEvents[j].details.event)) {
                   // if we're in the process of skipping inning breaks, treat the first break type we find as another inning break
@@ -3004,7 +3021,7 @@ class sessionClass {
                   continue
                 } else {
                   if ( (j < (cache_data.liveData.plays.allPlays[i].playEvents.length - 1)) && (!cache_data.liveData.plays.allPlays[i].playEvents[j].details || !cache_data.liveData.plays.allPlays[i].playEvents[j].details.event || !ACTION_TYPES.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.event.includes(v))) ) {
-                    event_end_padding = PITCH_END_PADDING
+                    event_end_padding = pitch_end_padding
                   }
                   let action_index
                   // skip type 1 (breaks) && 2 (idle time) will look at all plays with an endTime
@@ -3012,7 +3029,7 @@ class sessionClass {
                     action_index = j
                   } else if (skip_type == 3) {
                     // skip type 3 excludes non-action pitches (events that aren't last in the at-bat and don't fall under action types)
-                    if ( event_end_padding == PITCH_END_PADDING ) {
+                    if ( event_end_padding == pitch_end_padding ) {
                       continue
                     } else {
                       // if the action is associated with another play or the event doesn't have an end time, use the previous event instead
@@ -3026,7 +3043,7 @@ class sessionClass {
                   if (typeof action_index === 'undefined') {
                     continue
                   } else {
-                    let break_end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[action_index].startTime) - broadcast_start_timestamp) / 1000) + EVENT_START_PADDING
+                    let break_end = ((new Date(cache_data.liveData.plays.allPlays[i].playEvents[action_index].startTime) - broadcast_start_timestamp) / 1000) + event_start_padding
 
                     // attempt to fix erroneous timestamps, like NYY-SEA 2022-08-09, bottom 11
                     if ( break_end < break_start ) {
