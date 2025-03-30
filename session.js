@@ -46,6 +46,8 @@ const ACTION_END_PADDING = 7
 const MINIMUM_BREAK_DURATION = 5
 // extra padding for MLB events (2025)
 const MLB_PADDING = 39
+// extra Game Changer padding for MLB (2025)
+const MLB_GAMECHANGER_PADDING = 20
 
 const LI_TABLE = {
     1: {
@@ -4153,7 +4155,7 @@ class sessionClass {
 
           if ( !this.temp_cache.gamechanger[id].games ) this.temp_cache.gamechanger[id].games = []
           this.temp_cache.gamechanger[id].games.push(best_games)
-          let maxlength = (this.gamechanger_delay + 10) / 10
+          let maxlength = (this.gamechanger_delay + 10 + MLB_GAMECHANGER_PADDING) / 10
           while ( this.temp_cache.gamechanger[id].games.length > maxlength ) {
             this.temp_cache.gamechanger[id].games.shift()
           }

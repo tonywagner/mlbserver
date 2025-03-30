@@ -1041,7 +1041,7 @@ app.get('/gamechanger.m3u8', async function(req, res) {
 
   for ( gamechanger_resolution in GAMECHANGER_RESOLUTIONS ) {
     if ( resolution == gamechanger_resolution ) {
-      body += '#EXT-X-STREAM-INF:BANDWIDTH=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].bandwidth + '000,RESOLUTION=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].resolution + ',FRAME-RATE=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].frame_rate + ',CODECS="mp4a.40.2,avc1.' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].codec + '",CLOSED-CAPTIONS="cc",AUDIO="aac"' + '\n' + '/gamechangerplaylist?id=' + id + '&resolution=' + gamechanger_resolution + includeTeams + excludeTeams + content_protect + '\n'
+      body += '#EXT-X-STREAM-INF:BANDWIDTH=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].bandwidth + '000,RESOLUTION=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].resolution + ',FRAME-RATE=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].frame_rate + ',CODECS="mp4a.40.2,avc1.' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].codec + '",CLOSED-CAPTIONS="cc",AUDIO="aac"' + '\n' + '/gamechangerplaylist.m3u8?id=' + id + '&resolution=' + gamechanger_resolution + includeTeams + excludeTeams + content_protect + '\n'
       break
     }
   }
@@ -1055,10 +1055,10 @@ app.get('/gamechanger.m3u8', async function(req, res) {
 
 
 // Listen for gamechanger playlist requests
-app.get('/gamechangerplaylist', async function(req, res) {
+app.get('/gamechangerplaylist.m3u8', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
-  session.requestlog('gamechangerplaylist', req, true)
+  session.requestlog('gamechangerplaylist.m3u8', req, true)
 
   let gamechangerAccess = new Date()
 
@@ -1713,15 +1713,15 @@ app.get('/', async function(req, res) {
           compareEnd.setHours(compareEnd.getHours()+4)
           body += '<tr><td><span class="tooltip">' + compareStart.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + compareEnd.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to 720p60 resolution if not specified.</span></span></td><td>'
           if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
-            let streamURL = server + '/gamechanger.m3u8'
-            let multiviewquerystring = streamURL + '?resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
+            let streamURL = server + '/gamechanger.m3u8?'
+            let multiviewquerystring = streamURL + 'resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
             streamURL += content_protect_a
-            if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += '&resolution=' + resolution
+            if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += 'resolution=' + resolution + '&'
             if ( linkType != VALID_LINK_TYPES[1] ) {
-              streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b
+              streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + 'startFrom=' + VALID_START_FROM[1] + content_protect_b + '&'
             }
             if ( linkType == VALID_LINK_TYPES[4] ) {
-              streamURL += '&filename=' + gameDate + ' Game Changer'
+              streamURL += 'filename=' + gameDate + ' Game Changer' + '&'
             }
             body += '<a href="' + streamURL + '">Game Changer</a>'
             body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + multiviewquerystring + '" onclick="addmultiview(this, [], excludeTeams)">'
