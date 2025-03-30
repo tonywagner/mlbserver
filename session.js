@@ -38,8 +38,10 @@ const WINTER_LEAGUES = [AFL_ID, LIDOM_ID]
 const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
 // These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
 const ACTION_TYPES = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Error', 'Out', 'Balk', 'Defensive Indiff', 'Other Advance']
+// These are some idle events to skip
+const IDLE_TYPES = ['Mound Visit', 'Batter Timeout', 'Pitcher Step Off']
 const EVENT_START_PADDING = -3
-const PITCH_END_PADDING = -4
+const PITCH_END_PADDING = 2
 const ACTION_END_PADDING = 7
 const MINIMUM_BREAK_DURATION = 5
 // extra padding for MLB events (2025)
@@ -3024,8 +3026,11 @@ class sessionClass {
                     event_end_padding = pitch_end_padding
                   }
                   let action_index
-                  // skip type 1 (breaks) && 2 (idle time) will look at all plays with an endTime
-                  if ((skip_type <= 2) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime) {
+                  // skip type 1 (breaks) will look at all plays with an endTime
+                  if ((skip_type == 1) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime) {
+                    action_index = j
+                  // skip type 2 (idle time) will look at all non-idle plays with an endTime
+                  } else if ((skip_type == 2) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime && !IDLE_TYPES.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.description.includes(v))) {
                     action_index = j
                   } else if (skip_type == 3) {
                     // skip type 3 excludes non-action pitches (events that aren't last in the at-bat and don't fall under action types)
