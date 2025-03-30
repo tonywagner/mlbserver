@@ -39,7 +39,7 @@ const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substi
 // These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
 const ACTION_TYPES = ['Wild Pitch', 'Passed Ball', 'Stolen Base', 'Caught Stealing', 'Pickoff', 'Error', 'Out', 'Balk', 'Defensive Indiff', 'Other Advance']
 // These are some idle events to skip
-const IDLE_TYPES = ['Mound Visit', 'Batter Timeout', 'Pitcher Step Off']
+const IDLE_TYPES = ['Mound Visit', 'Batter Timeout', 'Pitcher Step Off', 'challenge']
 const EVENT_START_PADDING = -3
 const PITCH_END_PADDING = 2
 const ACTION_END_PADDING = 7
@@ -1613,18 +1613,22 @@ class sessionClass {
       var response = await this.httpPost(reqObj)
       if ( response ) {
         this.debuglog('getStreamURL response : ' + JSON.stringify(response))
-        if ( response.data && response.data.initPlaybackSession && response.data.initPlaybackSession.playback && response.data.initPlaybackSession.playback.url && response.data.initPlaybackSession.playback.token && response.data.initPlaybackSession.playback.expiration ) {
+        if ( response.data && response.data.initPlaybackSession && response.data.initPlaybackSession.playback && response.data.initPlaybackSession.playback.url ) {
           let rawStreamURL = response.data.initPlaybackSession.playback.url
           this.debuglog('getStreamURL rawStreamURL : ' + rawStreamURL)
-          let streamURL = rawStreamURL.replace(/[\/]([A-Za-z0-9_]+)[\/]/, '/')
-  				let streamURLToken = response.data.initPlaybackSession.playback.token
-  				let streamURLExpiration = response.data.initPlaybackSession.playback.expiration
-          this.debuglog('getStreamURL streamURL : ' + streamURL)
-          this.debuglog('getStreamURL token : ' + streamURLToken)
-          this.debuglog('getStreamURL expiration : ' + streamURLExpiration)
-          this.cacheStreamURL(mediaId, streamURL, streamURLToken, streamURLExpiration)
-          let streamInfo = {streamURL: streamURL, streamURLToken: streamURLToken}
-          return streamInfo
+          if ( response.data.initPlaybackSession.playback.token == null ) {
+            return rawStreamURL
+          } else if ( response.data.initPlaybackSession.playback.token && response.data.initPlaybackSession.playback.expiration ) {
+            let streamURL = rawStreamURL.replace(/[\/]([A-Za-z0-9_]+)[\/]/, '/')
+  			this.debuglog('getStreamURL streamURL : ' + streamURL)
+  			let streamURLToken = response.data.initPlaybackSession.playback.token
+  			this.debuglog('getStreamURL token : ' + streamURLToken)
+  			let streamURLExpiration = response.data.initPlaybackSession.playback.expiration
+  			this.debuglog('getStreamURL expiration : ' + streamURLExpiration)
+  			this.cacheStreamURL(mediaId, streamURL, streamURLToken, streamURLExpiration)
+  			let streamInfo = {streamURL: streamURL, streamURLToken: streamURLToken}
+  			return streamInfo
+  		  }
         } else {
           this.log('getStreamURL streamURL not found')
           return false
@@ -2590,9 +2594,10 @@ class sessionClass {
           channels = this.sortObj(channels)
           channels = Object.assign(channels, nationalChannels)
 
+          
+          let entitlements = await this.getEntitlements()
           // MLB Network live stream for eligible USA subscribers
           try {
-              let entitlements = await this.getEntitlements()
               if ( (entitlements.includes('MLBN') || entitlements.includes('EXECMLB') || entitlements.includes('MLBTVMLBNADOBEPASS')) ) {
                 if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
                   if ( (excludeTeams.length > 0) && excludeTeams.includes('MLBN') ) {
@@ -2622,6 +2627,70 @@ class sessionClass {
           } catch (e) {
             this.debuglog('getTVData MLB Network detect error : ' + e.message)
           }
+          
+          // SNLA live stream for entitled subscribers
+          try {
+              if ( (entitlements.includes('SNLA_119')) ) {
+                if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
+                  if ( (excludeTeams.length > 0) && excludeTeams.includes('SNLA') ) {
+                    // do nothing
+                  } else if ( (includeTeams.length == 0) || includeTeams.includes('SNLA') ) {
+                    this.debuglog('getTVData processing SNLA')
+                    let logo = 'https://img.mlbstatic.com/mlb-images/image/upload/t_w640/mlb/fnwk2k0kgn1j8r8vvx3d.png'
+                    let channelid = mediaType + '.SNLA'
+                    //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
+                    let stream = server + '/stream.m3u8?event=snla&mediaType=Video&resolution=' + resolution
+                    if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
+                    if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
+                    channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
+
+                    let title = 'SportsNet LA'
+                    let description = 'Live stream of SNLA'
+
+                    let start = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+                    let stop = this.convertDateToXMLTV(new Date(cache_data.dates[cache_data.dates.length-1].date + ' 00:00:00'))
+
+                    // SNLA guide XML
+                    programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(cache_data.dates[0].date))
+                    this.debuglog('getTVData completed SNLA')
+                  } // end includeTeams check
+                } // end mediaType check
+              } // end entitlements check
+          } catch (e) {
+            this.debuglog('getTVData SNLA detect error : ' + e.message)
+          }
+          
+          // SNY live stream for entitled subscribers
+          try {
+              if ( (entitlements.includes('SNY_121')) ) {
+                if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
+                  if ( (excludeTeams.length > 0) && excludeTeams.includes('SNY') ) {
+                    // do nothing
+                  } else if ( (includeTeams.length == 0) || includeTeams.includes('SNY') ) {
+                    this.debuglog('getTVData processing SNY')
+                    let logo = 'https://img.mlbstatic.com/mlb-images/image/upload/t_w640/mlb/le5jifzo6oylxtnuf0m1.png'
+                    let channelid = mediaType + '.SNY'
+                    //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
+                    let stream = server + '/stream.m3u8?event=sny&mediaType=Video&resolution=' + resolution
+                    if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
+                    if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
+                    channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
+
+                    let title = 'SNY'
+                    let description = 'Live stream of SNY'
+
+                    let start = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+                    let stop = this.convertDateToXMLTV(new Date(cache_data.dates[cache_data.dates.length-1].date + ' 00:00:00'))
+
+                    // SNLA guide XML
+                    programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(cache_data.dates[0].date))
+                    this.debuglog('getTVData completed SNY')
+                  } // end includeTeams check
+                } // end mediaType check
+              } // end entitlements check
+          } catch (e) {
+            this.debuglog('getTVData SNY detect error : ' + e.message)
+          }
 
           // Big Inning
           if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
@@ -2640,7 +2709,8 @@ class sessionClass {
               let title = 'MLB Big Inning'
               let description = 'Live look-ins and big moments from around the league'
 
-              for (var i = 0; i < cache_data.dates.length; i++) {
+              // disabled Big Inning schedule scraping March 2025
+              /*for (var i = 0; i < cache_data.dates.length; i++) {
                 // Scraped Big Inning schedule
                 if ( (cache_data.dates[i].date >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') ) {
                   await this.getBigInningSchedule()
@@ -2657,9 +2727,9 @@ class sessionClass {
                   let stop = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].end))
 
                   // Generated Big Inning schedule (disabled)
-                  /*let big_inning = await this.generateBigInningSchedule(gameDate)
-                  let start = this.convertDateToXMLTV(new Date(big_inning.start))
-                  let stop = this.convertDateToXMLTV(new Date(big_inning.end))*/
+                  //let big_inning = await this.generateBigInningSchedule(gameDate)
+                  //let start = this.convertDateToXMLTV(new Date(big_inning.start))
+                  //let stop = this.convertDateToXMLTV(new Date(big_inning.end))
 
                   // Big Inning calendar ICS
                   let prefix = 'Watch'
@@ -2671,7 +2741,13 @@ class sessionClass {
                   programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(new Date(this.cache.bigInningSchedule[gameDate].start)))
                 }
                 this.debuglog('getTVData completed Big Inning for date ' + cache_data.dates[i].date)
-              }
+              }*/
+              
+              // generic Big Inning guide XML
+              let start = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+              let stop = this.convertDateToXMLTV(new Date(cache_data.dates[cache_data.dates.length-1].date + ' 00:00:00'))
+              programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(cache_data.dates[0].date))
+              
               this.debuglog('getTVData completed Big Inning')
             }
           }
@@ -3030,7 +3106,7 @@ class sessionClass {
                   if ((skip_type == 1) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime) {
                     action_index = j
                   // skip type 2 (idle time) will look at all non-idle plays with an endTime
-                  } else if ((skip_type == 2) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime && !IDLE_TYPES.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.description.includes(v))) {
+                  } else if ((skip_type == 2) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime && (!cache_data.liveData.plays.allPlays[i].playEvents[j].details || !cache_data.liveData.plays.allPlays[i].playEvents[j].details.description || !IDLE_TYPES.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.description.includes(v)))) {
                     action_index = j
                   } else if (skip_type == 3) {
                     // skip type 3 excludes non-action pitches (events that aren't last in the at-bat and don't fall under action types)
@@ -3385,6 +3461,60 @@ class sessionClass {
     }
   }
 
+  // Get linear channel stream URL
+  async getLinearStreamURL(network) {
+    try {
+      this.debuglog('getLinearStreamURL')      
+      
+      let reqObj = {
+        url: GRAPHQL_URL,
+        simple: false,
+        headers: {
+          'accept': 'application/json, text/plain, */*',
+  		  'accept-encoding': 'gzip, deflate, br',
+  		  'accept-language': 'en-US,en;q=0.5',
+  		  'authorization': 'Bearer ' + await this.getLoginToken() || this.halt('missing loginToken'),
+  		  'connection': 'keep-alive',
+  		  'content-type': 'application/json',
+  		  'x-client-name': 'WEB',
+  		  'x-client-version': '7.8.1',
+          'origin': 'https://www.mlb.com',
+          'referer': 'https://www.mlb.com/',
+          'user-agent': USER_AGENT
+        },
+        body: {
+          'operationName': 'contentCollections',
+          'query': 'query contentCollections(\n        $categories: [ContentGroupCategory!]\n        $includeRestricted: Boolean = false\n        $includeSpoilers: Boolean = false\n        $limit: Int = 10,\n        $skip: Int = 0\n    ) {\n        contentCollections(\n            categories: $categories\n            includeRestricted: $includeRestricted\n            includeSpoilers: $includeSpoilers\n            limit: $limit\n            skip: $skip\n        ) {\n            title\n            category\n            contents {\n                assetTrackingKey\n                contentDate\n                contentId\n                contentRestrictions\n                description\n                duration\n                language\n                mediaId\n                officialDate\n                title\n                mediaState {\n                    state\n                    mediaType\n                }\n                thumbnails {\n                    thumbnailType\n                    templateUrl\n                    thumbnailUrl\n                }\n            }\n        }\n    }',
+          'variables': {
+            'categories': network,
+            'limit': '25'
+          }
+        },
+        json: true,
+        gzip: true
+      }
+      var response = await this.httpPost(reqObj)
+      if ( response ) {
+        this.debuglog('getLinearStreamURL response : ' + JSON.stringify(response))
+        if ( response.data && response.data.contentCollections && (response.data.contentCollections.length > 0) && response.data.contentCollections[0].contents ) {
+          for (var i=0; i<response.data.contentCollections[0].contents.length; i++) {
+            try {
+              let streamURL = this.getStreamURL(response.data.contentCollections[0].contents[i].mediaId)
+              if ( streamURL ) {
+                return streamURL
+              }
+            } catch(e) {
+              this.debuglog('getLinearStreamURL getStreamURL error : ' + e.message)
+            }
+          }
+          this.log('getLinearStreamURL stream url not found')
+        }
+      }
+    } catch(e) {
+      this.log('getLinearStreamURL error : ' + e.message)
+    }
+  }
+
   // Get Recap Rundown data
   async getRecapRundownData(dateString) {
     try {
@@ -3478,6 +3608,10 @@ class sessionClass {
           playbackURL = await this.getRecapRundownURL(dateString)
         } else if ( eventName.toUpperCase() == 'MLBN' ) {
           playbackURL = 'https://falcon.mlbinfra.com/api/v1/linear/mlbn'
+        } else if ( eventName.toUpperCase() == 'SNLA' ) {
+          playbackURL = await this.getLinearStreamURL('SNLA_LIVE')
+        } else if ( eventName.toUpperCase() == 'SNY' ) {
+          playbackURL = await this.getLinearStreamURL('SNY_LIVE')
         } else {
           playbackURL = await this.getEventURL(eventName)
         }

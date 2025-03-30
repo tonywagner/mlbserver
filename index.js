@@ -1562,11 +1562,11 @@ app.get('/', async function(req, res) {
 
     let currentDate = new Date()
 
+    let entitlements = await session.getEntitlements()
     // MLB Network live stream for eligible USA subscribers
     try {
-        let entitlements = await session.getEntitlements()
         if ( entitlements.includes('MLBN') || entitlements.includes('EXECMLB') || entitlements.includes('MLBTVMLBNADOBEPASS') ) {
-          body += '<tr><td><span class="tooltip">MLB Network<span class="tooltiptext">MLB Network live stream is now available in the USA for paid MLBTV subscribers or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://www.mlb.com/news/mlb-network-launches-direct-to-consumer-streaming-option">See here for more information</a>.</span></span></td><td>'
+          body += '<tr><td><span class="tooltip">MLB Network<span class="tooltiptext">MLB Network live stream is now available in the USA for paid MLBTV subscribers or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://support.mlb.com/s/article/MLB-Network-Streaming-FAQ">See here for more information</a>.</span></span></td><td>'
           let querystring = '?event=MLBN'
           let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
           if ( linkType == VALID_LINK_TYPES[0] ) {
@@ -1589,6 +1589,58 @@ app.get('/', async function(req, res) {
       session.debuglog('MLB Network detect error : ' + e.message)
     }
 
+    // SNLA live stream for entitled subscribers
+    try {
+        if ( entitlements.includes('SNLA_119') ) {
+          body += '<tr><td><span class="tooltip">SportsNet LA<span class="tooltiptext">SNLA live stream for entitled subscribers. <a href="https://support.mlb.com/s/article/SNLA-Plus-Subscription-Packages">See here for more information</a>.</span></span></td><td>'
+          let querystring = '?event=SNLA'
+          let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+          if ( linkType == VALID_LINK_TYPES[0] ) {
+            if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+            if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+          }
+          if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+          if ( linkType == VALID_LINK_TYPES[1] ) {
+            if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+          } else if ( linkType == VALID_LINK_TYPES[4] ) {
+            querystring += '&filename=' + gameDate + ' SNLA'
+          }
+          querystring += content_protect_b
+          multiviewquerystring += content_protect_b
+          body += '<a href="' + thislink + querystring + '">SNLA</a>'
+          body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+          body += '</td></tr>' + "\n"
+        } // end entitlements check
+    } catch (e) {
+      session.debuglog('SNLA detect error : ' + e.message)
+    }
+
+    // SNY live stream for entitled subscribers
+    try {
+        if ( entitlements.includes('SNY_121') ) {
+          body += '<tr><td><span class="tooltip">SNY<span class="tooltiptext">SNY live stream for entitled subscribers. <a href="https://support.mlb.com/s/article/SNY-In-Market-Offering">See here for more information</a>.</span></span></td><td>'
+          let querystring = '?event=SNY'
+          let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+          if ( linkType == VALID_LINK_TYPES[0] ) {
+            if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+            if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+          }
+          if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+          if ( linkType == VALID_LINK_TYPES[1] ) {
+            if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+          } else if ( linkType == VALID_LINK_TYPES[4] ) {
+            querystring += '&filename=' + gameDate + ' SNY'
+          }
+          querystring += content_protect_b
+          multiviewquerystring += content_protect_b
+          body += '<a href="' + thislink + querystring + '">SNY</a>'
+          body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+          body += '</td></tr>' + "\n"
+        } // end entitlements check
+    } catch (e) {
+      session.debuglog('SNY detect error : ' + e.message)
+    }
+
     if ( (mediaType == 'MLBTV') && ((level_ids == levels['MLB']) || level_ids.startsWith(levels['MLB'] + ',')) ) {
       // Recap Rundown beginning in 2023, disabled because it stopped working
       /*if ( (gameDate <= yesterday) && (gameDate >= '2023-03-31') && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
@@ -1609,7 +1661,8 @@ app.get('/', async function(req, res) {
       }
 
       // Big Inning
-      var big_inning
+      // disabled Big Inning schedule scraping (March 2025)
+      /*var big_inning
       if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
         // Scraped Big Inning schedule
         big_inning = await session.getBigInningSchedule(gameDate)
@@ -1618,12 +1671,13 @@ app.get('/', async function(req, res) {
         //big_inning = await session.generateBigInningSchedule(gameDate)
       }
       if ( big_inning && big_inning.start ) {
-        body += '<tr><td><span class="tooltip">' + new Date(big_inning.start).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + new Date(big_inning.end).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span></td><td>'
+        body += '<tr><td><span class="tooltip">' + new Date(big_inning.start).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + new Date(big_inning.end).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://support.mlb.com/s/article/What-Is-MLB-Big-Inning">See here for more information</a>.</span></span></td><td>'
         let compareStart = new Date(big_inning.start)
         compareStart.setMinutes(compareStart.getMinutes()-10)
         let compareEnd = new Date(big_inning.end)
         compareEnd.setHours(compareEnd.getHours()+1)
-        if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
+        if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {*/
+          body += '<tr><td><span class="tooltip">Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://support.mlb.com/s/article/What-Is-MLB-Big-Inning">See here for more information</a>.</span></span></td><td>'
           let querystring = '?event=biginning'
           let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
           if ( linkType == VALID_LINK_TYPES[0] ) {
@@ -1640,11 +1694,11 @@ app.get('/', async function(req, res) {
           multiviewquerystring += content_protect_b
           body += '<a href="' + thislink + querystring + '">Big Inning</a>'
           body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
-        } else {
+        /*} else {
           body += 'Big Inning'
-        }
+        }*/
         body += '</td></tr>' + "\n"
-      }
+      //}
 
       // Game Changer
       if ( (gameDate >= today) && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) ) {
@@ -2196,7 +2250,7 @@ app.get('/', async function(req, res) {
       resolution = 'best'
     }
 
-    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all live MLB broadcasts (all games plus MLB Network, Big Inning, Game Changer, and Multiview). If favorite team(s) have been provided, it will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + content_protect_b + '">calendar.ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all entitled live MLB broadcasts (games plus Big Inning, Game Changer, and Multiview, as well as MLB Network, SNLA, and/or SNY as appropriate). If favorite team(s) have been provided, it will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
     let include_teams = 'ath,national'
     if ( session.credentials.fav_teams.length > 0 ) {
@@ -2211,9 +2265,20 @@ app.get('/', async function(req, res) {
 
     body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">ics</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include (or exclude) MLB Network<span class="tooltiptext">MLB Network live stream is now available in the USA for paid MLBTV subscribers or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://www.mlb.com/news/mlb-network-launches-direct-to-consumer-streaming-option">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=mlbn' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=mlbn' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=mlb' + content_protect_b + '">ics</a></p>' + "\n"
+    if ( entitlements.includes('MLBN') || entitlements.includes('EXECMLB') || entitlements.includes('MLBTVMLBNADOBEPASS') ) {
+      body += '<p><span class="tooltip">Include (or exclude) MLB Network<span class="tooltiptext">MLB Network live stream is now available in the USA for paid MLBTV subscribers or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://support.mlb.com/s/article/MLB-Network-Streaming-FAQ">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=mlbn' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=mlbn' + content_protect_b + '">xml</a></p>' + "\n"
+    }
 
-    body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">ics</a></p>' + "\n"
+    if ( entitlements.includes('SNLA_119') ) {
+      body += '<p><span class="tooltip">Include (or exclude) SportsNet LA<span class="tooltiptext">SNLA live stream for entitled subscribers. <a href="https://support.mlb.com/s/article/SNLA-Plus-Subscription-Packages">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=snla' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=snla' + content_protect_b + '">xml</a></p>' + "\n"
+    }
+
+    if ( entitlements.includes('SNY_121') ) {
+      body += '<p><span class="tooltip">Include (or exclude) SNY<span class="tooltiptext">SNY live stream for entitled subscribers. <a href="https://support.mlb.com/s/article/SNLA-Plus-Subscription-Packages">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=sny' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=sny' + content_protect_b + '">xml</a></p>' + "\n"
+    }
+
+    // disabled Big Inning schedule scraping (March 2025)
+    body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">xml</a><!-- and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">ics</a>--></p>' + "\n"
 
     let gamechanger_resolution = resolution
     if ( gamechanger_resolution == VALID_RESOLUTIONS[0] ) {
