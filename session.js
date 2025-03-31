@@ -1273,7 +1273,7 @@ class sessionClass {
     this.save_cache_data()
   }
 
-  cacheStreamURL(mediaId, streamURL, streamURLToken='', streamURLExpiration='') {
+  cacheStreamURL(mediaId, streamURL, streamURLToken='', streamURLExpiration='', rawStreamURL='') {
     this.createMediaCache(mediaId)
     this.cache.media[mediaId].streamURL = streamURL
     if (streamURLToken != '') {
@@ -1286,6 +1286,7 @@ class sessionClass {
     } else {
       this.cache.media[mediaId].streamURLExpiry = new Date(streamURLExpiration)
     }
+    this.cache.media[mediaId].rawStreamURL = rawStreamURL
     this.save_cache_data()
   }
 
@@ -1576,6 +1577,9 @@ class sessionClass {
     if ( this.cache.media && this.cache.media[mediaId] && this.cache.media[mediaId].streamURL && this.cache.media[mediaId].streamURLToken && this.cache.media[mediaId].streamURLExpiry && (Date.parse(this.cache.media[mediaId].streamURLExpiry) > new Date()) ) {
       this.debuglog('using cached streamURL and token')
       let streamInfo = {streamURL: this.cache.media[mediaId].streamURL, streamURLToken: this.cache.media[mediaId].streamURLToken}
+      if ( this.cache.media[mediaId].rawStreamURL ) {
+        streamInfo['rawStreamURL'] = this.cache.media[mediaId].rawStreamURL
+      }
       return streamInfo
     } else if ( this.cache.media && this.cache.media[mediaId] && this.cache.media[mediaId].blackout && this.cache.media[mediaId].blackoutExpiry && (Date.parse(this.cache.media[mediaId].blackoutExpiry) > new Date()) ) {
       this.log('mediaId recently blacked out, skipping')
@@ -1618,19 +1622,15 @@ class sessionClass {
         if ( response.data && response.data.initPlaybackSession && response.data.initPlaybackSession.playback && response.data.initPlaybackSession.playback.url ) {
           let rawStreamURL = response.data.initPlaybackSession.playback.url
           this.debuglog('getStreamURL rawStreamURL : ' + rawStreamURL)
-          if ( response.data.initPlaybackSession.playback.token == null ) {
-            return rawStreamURL
-          } else if ( response.data.initPlaybackSession.playback.token && response.data.initPlaybackSession.playback.expiration ) {
-            let streamURL = rawStreamURL.replace(/[\/]([A-Za-z0-9_]+)[\/]/, '/')
-  			this.debuglog('getStreamURL streamURL : ' + streamURL)
-  			let streamURLToken = response.data.initPlaybackSession.playback.token
-  			this.debuglog('getStreamURL token : ' + streamURLToken)
-  			let streamURLExpiration = response.data.initPlaybackSession.playback.expiration
-  			this.debuglog('getStreamURL expiration : ' + streamURLExpiration)
-  			this.cacheStreamURL(mediaId, streamURL, streamURLToken, streamURLExpiration)
-  			let streamInfo = {streamURL: streamURL, streamURLToken: streamURLToken}
-  			return streamInfo
-  		  }
+          let streamURL = rawStreamURL.replace(/[\/]([A-Za-z0-9_]+)[\/]/, '/')
+  		  let streamURLToken = response.data.initPlaybackSession.playback.token
+  		  let streamURLExpiration = response.data.initPlaybackSession.playback.expiration
+          this.debuglog('getStreamURL streamURL : ' + streamURL)
+          this.debuglog('getStreamURL token : ' + streamURLToken)
+          this.debuglog('getStreamURL expiration : ' + streamURLExpiration)
+          this.cacheStreamURL(mediaId, streamURL, streamURLToken, streamURLExpiration, rawStreamURL)
+          let streamInfo = {streamURL: streamURL, streamURLToken: streamURLToken, rawStreamURL: rawStreamURL}
+          return streamInfo
         } else {
           this.log('getStreamURL streamURL not found')
           return false
@@ -3501,9 +3501,9 @@ class sessionClass {
         if ( response.data && response.data.contentCollections && (response.data.contentCollections.length > 0) && response.data.contentCollections[0].contents ) {
           for (var i=0; i<response.data.contentCollections[0].contents.length; i++) {
             try {
-              let streamURL = this.getStreamURL(response.data.contentCollections[0].contents[i].mediaId)
-              if ( streamURL ) {
-                return streamURL
+              let streamInfo = await this.getStreamURL(response.data.contentCollections[0].contents[i].mediaId)
+              if ( streamInfo.rawStreamURL ) {
+                return streamInfo.rawStreamURL
               }
             } catch(e) {
               this.debuglog('getLinearStreamURL getStreamURL error : ' + e.message)
@@ -3612,8 +3612,10 @@ class sessionClass {
           playbackURL = 'https://falcon.mlbinfra.com/api/v1/linear/mlbn'
         } else if ( eventName.toUpperCase() == 'SNLA' ) {
           playbackURL = await this.getLinearStreamURL('SNLA_LIVE')
+          return playbackURL
         } else if ( eventName.toUpperCase() == 'SNY' ) {
           playbackURL = await this.getLinearStreamURL('SNY_LIVE')
+          return playbackURL
         } else {
           playbackURL = await this.getEventURL(eventName)
         }
