@@ -44,7 +44,7 @@ const VALID_SCAN_MODES = [ 'off', 'on' ]
 
 const SAMPLE_STREAM_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
 
-const SECONDS_PER_SEGMENT = 5
+const SECONDS_PER_SEGMENT = 4
 
 // for favorites: text, then background, based on https://teamcolors.jim-nielsen.com/
 const TEAM_COLORS = { 'ATH': ['003831', 'EFB21E'], 'ATL': ['13274F', 'CE1141'], 'AZ': ['E3D4AD', 'A71930'], 'BAL': ['000000', 'DF4601'], 'BOS': ['0D2B56', 'BD3039'], 'CHC': ['CC3433', '0E3386'], 'CWS': ['000000', 'C4CED4'], 'CIN': ['FFFFFF', 'C6011F'], 'CLE': ['002B5C', 'E31937'], 'COL': ['C4CED4', '333366'], 'DET': ['0C2C56', 'FFFFFF'], 'HOU': ['002D62', 'EB6E1F'], 'KC': ['C09A5B', '004687'], 'LAA': ['FFFFFF', 'BA0021'], 'LAD': ['FFFFFF', '005A9C'], 'MIA': ['0077C8', 'FF6600'], 'MIL': ['0A2351', 'B6922E'], 'MIN': ['D31145', '002B5C'], 'NYM': ['002D72', 'FF5910'], 'NYY': ['FFFFFF', '003087'], 'OAK': ['003831', 'EFB21E'], 'PHI': ['284898', 'E81828'], 'PIT': ['000000', 'FDB827'], 'STL': ['FEDB00', 'C41E3A'], 'SD': ['FEC325', '7F411C'], 'SF': ['000000', 'FD5A1E'], 'SEA': ['C4CED4', '005C5C'], 'TB': ['092C5C', '8FBCE6'], 'TEX': ['003278', 'C0111F'], 'TOR': ['FFFFFF', '134A8E'], 'WSH': ['AB0003', '11225B'] }
@@ -863,26 +863,31 @@ app.get('/playlist.m3u8', async function(req, res) {
       })
       .join('\n')+'\n'
 
+      let end_tag = '#EXT-X-ENDLIST'
       if ( pad != VALID_PAD[0] ) {
         let body_array = body.trim().split('\n')
-        let last_segment_index = body_array.length-1
-        if ( body_array[last_segment_index] == '#EXT-X-ENDLIST' ) {
+        let segment_index = body_array.length-1
+        if ( body_array[segment_index] == end_tag ) {
           session.debuglog('padding archive stream with extra segments')
-          last_segment_index--
-          while ( !body_array[last_segment_index].startsWith('#EXTINF:') ) {
-            last_segment_index--
+          while ( body_array[segment_index].startsWith('#') ) {
+            segment_index--
           }
-          last_segment_inf = body_array[last_segment_index]
-          last_segment = body_array[last_segment_index+1]
-          let pad_lines = '#EXT-X-DISCONTINUITY' + '\n' + '#EXTINF:' + SECONDS_PER_SEGMENT + '\n' + last_segment + '\n'
-          session.debuglog(pad_lines)
+          let last_segment = body_array[segment_index]
+          body_array.pop()
           for (i=0; i<pad; i++) {
-            body += pad_lines
+            body_array.push('#EXT-X-DISCONTINUITY')
+            body_array.push('#EXTINF:' + SECONDS_PER_SEGMENT)
+            body_array.push(last_segment)
           }
-          body += '#EXT-X-ENDLIST' + '\n'
+          body_array.push(end_tag)
+          body = body_array.join('\n')
+        }
+      } else if ( force_vod != VALID_FORCE_VOD[0] ) {
+        let body_array = body.trim().split('\n')
+        if ( body_array[body_array.length-1] != end_tag ) {
+          body += end_tag + '\n'
         }
       }
-      if ( force_vod != VALID_FORCE_VOD[0] ) body += '#EXT-X-ENDLIST' + '\n'
       session.debuglog(body)
       respond(response, res, Buffer.from(body))
     })
