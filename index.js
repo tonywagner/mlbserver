@@ -1661,8 +1661,7 @@ app.get('/', async function(req, res) {
       }
 
       // Big Inning
-      // disabled Big Inning schedule scraping (March 2025)
-      /*var big_inning
+      var big_inning
       if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
         // Scraped Big Inning schedule
         big_inning = await session.getBigInningSchedule(gameDate)
@@ -1676,7 +1675,7 @@ app.get('/', async function(req, res) {
         compareStart.setMinutes(compareStart.getMinutes()-10)
         let compareEnd = new Date(big_inning.end)
         compareEnd.setHours(compareEnd.getHours()+1)
-        if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {*/
+        if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
           body += '<tr><td><span class="tooltip">Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://support.mlb.com/s/article/What-Is-MLB-Big-Inning">See here for more information</a>.</span></span></td><td>'
           let querystring = '?event=biginning'
           let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
@@ -1694,11 +1693,11 @@ app.get('/', async function(req, res) {
           multiviewquerystring += content_protect_b
           body += '<a href="' + thislink + querystring + '">Big Inning</a>'
           body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
-        /*} else {
+        } else {
           body += 'Big Inning'
-        }*/
+        }
         body += '</td></tr>' + "\n"
-      //}
+      }
 
       // Game Changer
       if ( (gameDate >= today) && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) ) {
@@ -2277,8 +2276,7 @@ app.get('/', async function(req, res) {
       body += '<p><span class="tooltip">Include (or exclude) SNY<span class="tooltiptext">SNY live stream for entitled subscribers. <a href="https://support.mlb.com/s/article/SNLA-Plus-Subscription-Packages">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=sny' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=sny' + content_protect_b + '">xml</a></p>' + "\n"
     }
 
-    // disabled Big Inning schedule scraping (March 2025)
-    body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">xml</a><!-- and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">ics</a>--></p>' + "\n"
+    body += '<p><span class="tooltip">Include (or exclude) Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://www.mlb.com/live-stream-games/big-inning">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=biginning' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=biginning' + content_protect_b + '">ics</a></p>' + "\n"
 
     let gamechanger_resolution = resolution
     if ( gamechanger_resolution == VALID_RESOLUTIONS[0] ) {

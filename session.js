@@ -2712,7 +2712,7 @@ class sessionClass {
               let description = 'Live look-ins and big moments from around the league'
 
               // disabled Big Inning schedule scraping March 2025
-              /*for (var i = 0; i < cache_data.dates.length; i++) {
+              for (var i = 0; i < cache_data.dates.length; i++) {
                 // Scraped Big Inning schedule
                 if ( (cache_data.dates[i].date >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') ) {
                   await this.getBigInningSchedule()
@@ -2743,12 +2743,12 @@ class sessionClass {
                   programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(new Date(this.cache.bigInningSchedule[gameDate].start)))
                 }
                 this.debuglog('getTVData completed Big Inning for date ' + cache_data.dates[i].date)
-              }*/
+              }
               
               // generic Big Inning guide XML
-              let start = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+              /*let start = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
               let stop = this.convertDateToXMLTV(new Date(cache_data.dates[cache_data.dates.length-1].date + ' 00:00:00'))
-              programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(cache_data.dates[0].date))
+              programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(cache_data.dates[0].date))*/
               
               this.debuglog('getTVData completed Big Inning')
             }
@@ -3199,17 +3199,15 @@ class sessionClass {
       this.debuglog('getBigInningSchedule')
 
       // temporarily disable Big Inning schedule checking until a new source URL is available
-      this.cache.bigInningSchedule = {}
-      return
+      /*this.cache.bigInningSchedule = {}
+      return*/
 
       let currentDate = new Date()
       if ( !this.cache || !this.cache.bigInningScheduleCacheExpiry || (currentDate > new Date(this.cache.bigInningScheduleCacheExpiry)) ) {
         if ( !this.cache.bigInningSchedule ) this.cache.bigInningSchedule = {}
         let reqObj = {
-          //url: 'https://www.mlb.com/live-stream-games/big-inning',
-          url: 'https://www.mlb.com/live-stream-games/help-center/subscription-access-big-inning',
+          url: 'https://www.fubo.tv/welcome/channel/mlb-big-inning',
           headers: {
-            'authority': 'www.mlb.com',
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'accept-language': 'en-US,en;q=0.9',
             'cache-control': 'no-cache',
@@ -3232,89 +3230,15 @@ class sessionClass {
         if ( response ) {
           // disabled because it's very big!
           //this.debuglog(response)
-          // break HTML into array based on table rows
-          var rows = response.split('<tr>')
-          // start iterating at 2 (after header row)
-          for (var i=2; i<rows.length; i++) {
-            // split HTML row into array with columns
-            let cols = rows[i].split('<td>')
-
-            // define some variables that persist for each row
-            let parts
-            let year
-            let month
-            let day
-            let this_datestring
-            let add_date = 0
-            let d
-
-            for (var j=1; j<cols.length; j++) {
-              // split on closing bracket to get column text at resulting array index 0
-              let col = cols[j].split('<')
-              switch(j){
-                // first column is date
-                case 1:
-                  // split date into array
-                  // old date format (January 1, 1970) (disabled)
-                  /*parts = col[0].split(' ')
-                  year = parts[2]
-                  // get month index, zero-based
-                  month = new Date(Date.parse(parts[0] +" 1, 2021")).getMonth()
-                  day = parts[1].substring(0,parts[1].length-3)*/
-                  // new date format (01/01/70)
-                  parts = col[0].split('/')
-                  year = parts[2]
-                  if ( year.length == 2 ) {
-                    year = '20' + parts[2]
-                  }
-                  // get month index, zero-based
-                  month = parseInt(parts[0]) - 1
-                  day = parts[1]
-                  this_datestring = new Date(year, month, day).toISOString().substring(0,10)
-                  this.cache.bigInningSchedule[this_datestring] = {}
-                  // increment month index (not zero-based)
-                  month += 1
-                  break
-                // remaining columns are times
-                default:
-                  let hour
-                  let minute = '00'
-                  let ampm
-                  // if time has colon, split into array on that to get hour and minute parts
-                  if ( col[0].indexOf(':') > 0 ) {
-                    parts = col[0].split(':')
-                    hour = parseInt(parts[0])
-                    minute = parts[1].substring(0,2)
-                  } else {
-                    hour = parseInt(col[0].substring(0,col[0].length-2))
-                  }
-                  ampm = col[0].substring(col[0].length-2,col[0].length)
-                  // convert hour to 24-hour format
-                  if ( (ampm == 'PM') || ((hour == 12) && (ampm == 'AM')) ) {
-                    hour += 12
-                  }
-                  // these times are EDT so add 4 for UTC
-                  hour += 4
-                  // if hour is beyond 23, note we will have to add 1 day
-                  if ( hour > 23 ) {
-                    add_date = 1
-                    hour -= 24
-                  }
-
-                  d = new Date(this_datestring + 'T' + hour.toString().padStart(2, '0') + ':' + minute.toString().padStart(2, '0') + ':00.000+00:00')
-                  d.setDate(d.getDate()+add_date)
-                  switch(j){
-                    // 2nd column is start time
-                    case 2:
-                      this.cache.bigInningSchedule[this_datestring].start = d
-                      break
-                    // 3rd column is end time
-                    case 3:
-                      this.cache.bigInningSchedule[this_datestring].end = d
-                      break
-                  }
-                  break
-              }
+          
+          let obj = JSON.parse(response.replace(/\\"/g, '"').match('(?<="channelPrograms":{"live":)(.+?(,"totalPages":1}))')[0])
+          for (var i=0; i < obj.data.length; i++) {
+            let est_date = new Date(obj.data[i].airings[0].start).toLocaleString("en-US", {timeZone: 'America/New_York'})
+            let date_array = est_date.split(',')[0].split('/')
+            let this_datestring = date_array[2] + '-' + date_array[0].padStart(2, '0') + '-' + date_array[1].padStart(2, '0')
+            this.cache.bigInningSchedule[this_datestring] = {
+              start: obj.data[i].airings[0].start, 
+              end: obj.data[i].airings[0].end
             }
           }
           this.debuglog(JSON.stringify(this.cache.bigInningSchedule))
