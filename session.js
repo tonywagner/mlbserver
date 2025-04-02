@@ -2715,7 +2715,6 @@ class sessionClass {
               let title = 'MLB Big Inning'
               let description = 'Live look-ins and big moments from around the league'
 
-              // disabled Big Inning schedule scraping March 2025
               for (var i = 0; i < cache_data.dates.length; i++) {
                 // Scraped Big Inning schedule
                 if ( (cache_data.dates[i].date >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') ) {
@@ -2723,19 +2722,11 @@ class sessionClass {
                 }
                 this.debuglog('getTVData processing Big Inning for date ' + cache_data.dates[i].date)
                 let gameDate = cache_data.dates[i].date
-                // Disabled Big Inning specific schedule scraping
-                //if ( this.cache.bigInningSchedule && this.cache.bigInningSchedule[gameDate] && this.cache.bigInningSchedule[gameDate].start ) {
-                //if ( (gameDate >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') ) {
                 if ( (gameDate >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') && this.cache.bigInningSchedule[gameDate] ) {
                   this.debuglog('getTVData Big Inning active for date ' + cache_data.dates[i].date)
                   // Scraped Big Inning schedule
                   let start = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].start))
                   let stop = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].end))
-
-                  // Generated Big Inning schedule (disabled)
-                  //let big_inning = await this.generateBigInningSchedule(gameDate)
-                  //let start = this.convertDateToXMLTV(new Date(big_inning.start))
-                  //let stop = this.convertDateToXMLTV(new Date(big_inning.end))
 
                   // Big Inning calendar ICS
                   let prefix = 'Watch'
@@ -3210,7 +3201,7 @@ class sessionClass {
       if ( !this.cache || !this.cache.bigInningScheduleCacheExpiry || (currentDate > new Date(this.cache.bigInningScheduleCacheExpiry)) ) {
         if ( !this.cache.bigInningSchedule ) this.cache.bigInningSchedule = {}
         let reqObj = {
-          url: 'https://www.fubo.tv/welcome/channel/mlb-big-inning',
+          url: 'https://api.fubo.tv/gg/series/123881219/live-programs?limit=14&languages=en&countrySlugs=USA',
           headers: {
             'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'accept-language': 'en-US,en;q=0.9',
@@ -3228,21 +3219,24 @@ class sessionClass {
             'upgrade-insecure-requests': '1',
             'user-agent': USER_AGENT
           },
+          json: true,
           gzip: true
         }
         var response = await this.httpGet(reqObj, false)
         if ( response ) {
-          // disabled because it's very big!
-          //this.debuglog(response)
+          this.debuglog(JSON.stringify(response))
           
-          let obj = JSON.parse(response.replace(/\\"/g, '"').match('(?<="channelPrograms":{"live":)(.+?(,"totalPages":1}))')[0])
-          for (var i=0; i < obj.data.length; i++) {
-            let est_date = new Date(obj.data[i].airings[0].start).toLocaleString("en-US", {timeZone: 'America/New_York'})
-            let date_array = est_date.split(',')[0].split('/')
-            let this_datestring = date_array[2] + '-' + date_array[0].padStart(2, '0') + '-' + date_array[1].padStart(2, '0')
-            this.cache.bigInningSchedule[this_datestring] = {
-              start: obj.data[i].airings[0].start, 
-              end: obj.data[i].airings[0].end
+          if ( response.data ) {
+            for (var i=0; i < response.data.length; i++) {
+              if ( response.data[i].airings && (response.data[i].airings.length > 0) && response.data[i].airings[0] && response.data[i].airings[0].accessRights && response.data[i].airings[0].accessRights.live ) {
+                let est_date = new Date(response.data[i].airings[0].accessRights.live.startTime).toLocaleString("en-US", {timeZone: 'America/New_York'})
+                let date_array = est_date.split(',')[0].split('/')
+                let this_datestring = date_array[2] + '-' + date_array[0].padStart(2, '0') + '-' + date_array[1].padStart(2, '0')
+                this.cache.bigInningSchedule[this_datestring] = {
+                  start: response.data[i].airings[0].accessRights.live.startTime, 
+                  end: response.data[i].airings[0].accessRights.live.endTime
+                }
+              }
             }
           }
           this.debuglog(JSON.stringify(this.cache.bigInningSchedule))
