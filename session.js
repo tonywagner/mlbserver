@@ -3049,6 +3049,21 @@ class sessionClass {
         // make sure we have play data
         if (cache_data && cache_data.liveData && cache_data.liveData.plays && cache_data.liveData.plays.allPlays) {
 
+          // make sure start inning is valid
+          if (start_inning > 0) {
+            let last_play_index = cache_data.liveData.plays.allPlays.length - 1
+            let final_inning = cache_data.liveData.plays.allPlays[last_play_index].about.inning
+            if (start_inning >= final_inning) {
+              if (start_inning > final_inning) {
+                start_inning = final_inning
+                let final_inning_half = json_source['liveData']['plays']['allPlays'][last_play_index]['about']['halfInning']
+                if ((start_inning_half == 'bottom') && (final_inning_half == 'top')) {
+                  start_inning_half = final_inning_half
+                }
+              }
+            }
+          }
+
           // keep track of inning, if skipping inning breaks only
           let previous_inning = 0
           let previous_inning_half = ''
@@ -3058,21 +3073,6 @@ class sessionClass {
 
           // Loop through all plays
           for (var i=0; i < cache_data.liveData.plays.allPlays.length; i++) {
-
-            // make sure start inning is valid
-            if (start_inning > 0) {
-              let last_play_index = cache_data.liveData.plays.allPlays.length - 1
-              let final_inning = cache_data.liveData.plays.allPlays[last_play_index].about.inning
-              if (start_inning >= final_inning) {
-                if (start_inning > final_inning) {
-                  start_inning = final_inning
-                  let final_inning_half = json_source['liveData']['plays']['allPlays'][last_play_index]['about']['halfInning']
-                  if ((start_inning_half == 'bottom') && (final_inning_half == 'top')) {
-                    start_inning_half = final_inning_half
-                  }
-                }
-              }
-            }
 
             // exit loop after found inning, if not skipping any breaks
             if ((skip_type == 0) && (skip_markers.length == 1)) {
@@ -3099,8 +3099,8 @@ class sessionClass {
                     event_end_padding = pitch_end_padding
                   }
                   let action_index
-                  // skip type 1 (breaks) will look at all plays with an endTime
-                  if ((skip_type == 1) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime) {
+                  // skip type 0 (none, inning start) and 1 (breaks) will look at all plays with an endTime
+                  if ((skip_type <= 1) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime) {
                     action_index = j
                   // skip type 2 (idle time) will look at all non-idle plays with an endTime
                   } else if ((skip_type == 2) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime && (!cache_data.liveData.plays.allPlays[i].playEvents[j].details || !cache_data.liveData.plays.allPlays[i].playEvents[j].details.description || !IDLE_TYPES.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.description.includes(v)))) {
