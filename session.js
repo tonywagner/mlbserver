@@ -1311,7 +1311,11 @@ class sessionClass {
   requestlog(type, req, debug=false) {
     if ( req.url ) {
       let msg = type + ' request : ' + req.url
-      if ( req.connection && req.connection.remoteAddress ) msg += ' from: ' + req.connection.remoteAddress
+      if ( req.headers && req.headers['x-forwarded-for'] ) {
+        msg += ' from: ' + req.headers['x-forwarded-for']
+      } else if ( req.connection && req.connection.remoteAddress ) {
+        msg += ' from: ' + req.connection.remoteAddress
+      }
       if ( req.headers && req.headers['user-agent'] ) msg += ' using: ' + req.headers['user-agent']
       if (!debug || this.debug) this.log(msg)
     }
