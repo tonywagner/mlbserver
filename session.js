@@ -2247,6 +2247,8 @@ class sessionClass {
 
           let blackouts = {}
           if ( includeBlackouts == 'false' ) blackouts = await this.get_blackout_games()
+          
+          let pre_post_shows = await this.get_pre_post_shows()
 
           for (var i = 0; i < cache_data.dates.length; i++) {
             this.debuglog('getTVData processing date ' + cache_data.dates[i].date)
@@ -2583,7 +2585,33 @@ class sessionClass {
                             calendar += await this.generate_ics_event(prefix, calendar_start, calendar_stop, subtitle, description, location)
 
                             // MLB guide XML
-                            programs += await this.generate_xml_program(channelid, start, stop, title, description, icon, this.convertDateToAirDate(gameDate), subtitle, seriesId, cache_data.dates[i].games[j].gamePk, away_team, home_team)
+                            programs += await this.generate_xml_program(channelid, start, stop, title, description, icon, this.convertDateToAirDate(new Date(cache_data.dates[i].games[j].gameDate)), subtitle, seriesId, cache_data.dates[i].games[j].gamePk, away_team, home_team)
+                            
+                            // pre- and post-game shows
+                            if ( pre_post_shows.pregame_shows[broadcast.mediaId] || pre_post_shows.postgame_shows[broadcast.mediaId] ) {
+                              if ( (pre_post_shows.pregame_shows[broadcast.mediaId] && (pre_post_shows.pregame_shows[broadcast.mediaId].team == 'home')) || (pre_post_shows.postgame_shows[broadcast.mediaId] && (pre_post_shows.postgame_shows[broadcast.mediaId].team == 'home')) ) {
+                               away_team = false
+                              } else {
+                               home_team = false
+                              }
+                              // pre-game
+                              if ( pre_post_shows.pregame_shows[broadcast.mediaId] ) {
+                                let pre_start = this.convertDateToXMLTV(new Date(pre_post_shows.pregame_shows[broadcast.mediaId].start))
+                                title = cache_data.dates[i].games[j].teams[pre_post_shows.pregame_shows[broadcast.mediaId].team].team.teamName + ' Pregame'
+                                let preSeriesId = seriesId + '1'
+                                programs += await this.generate_xml_program(channelid, pre_start, start, title, '', icon, this.convertDateToAirDate(new Date(pre_post_shows.pregame_shows[broadcast.mediaId].start)), '', preSeriesId, cache_data.dates[i].games[j].gamePk, away_team, home_team)
+                              }
+                              // post-game
+                              if ( pre_post_shows.postgame_shows[broadcast.mediaId] ) {
+                                let postgameMinutes = 30
+                                let startDate = stopDate
+                                stopDate.setMinutes(stopDate.getMinutes()+postgameMinutes)
+                                let post_stop = this.convertDateToXMLTV(stopDate)
+                                title = cache_data.dates[i].games[j].teams[pre_post_shows.postgame_shows[broadcast.mediaId].team].team.teamName + ' Postgame'
+                                let postSeriesId = seriesId + '2'
+                                programs += await this.generate_xml_program(channelid, stop, post_stop, title, '', icon, this.convertDateToAirDate(startDate), '', postSeriesId, cache_data.dates[i].games[j].gamePk, away_team, home_team)
+                              }
+                            }
                           }
                         }
                       }
@@ -2748,7 +2776,7 @@ class sessionClass {
           }
 
           // Game Changer
-          if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
+          if ( (entitlements.length > 0) && (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
             if ( (excludeTeams.length > 0) && excludeTeams.includes('GAMECHANGER') ) {
               // do nothing
             } else if ( (includeTeams.length == 0) || includeTeams.includes('GAMECHANGER') ) {
@@ -2795,7 +2823,7 @@ class sessionClass {
           }
 
           // Multiview
-          if ( (mediaType == 'MLBTV') && (typeof this.data.multiviewStreamURLPath !== 'undefined') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
+          if ( (entitlements.length > 0) && (mediaType == 'MLBTV') && (typeof this.data.multiviewStreamURLPath !== 'undefined') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
             if ( (excludeTeams.length > 0) && excludeTeams.includes('MULTIVIEW') ) {
               // do nothing
             } else if ( (includeTeams.length == 0) || includeTeams.includes('MULTIVIEW') ) {
@@ -2839,7 +2867,7 @@ class sessionClass {
               this.debuglog('getTVData completed Multiview')
             }
           }
-      }
+        }
       } catch(e) {
         this.log('getTVData processing error : ' + e.message)
       }
@@ -3719,6 +3747,45 @@ class sessionClass {
     }
 
     return blackouts
+  }
+
+  // get all pre- and post-game for a date
+  async get_pre_post_shows(gameDate='guide') {
+    this.debuglog('get_pre_post_shows')
+    let pregame_shows = {}
+    let postgame_shows = {}
+
+    let cache_data
+    cache_data = await this.getBlackoutsData(gameDate)
+    
+    let teamTypes = ['home', 'away']
+    let showTypes = ['preGame', 'postGame']
+
+    if ( cache_data && cache_data.results && (cache_data.results.length > 0) ) {
+      for (var i = 0; i < cache_data.results.length; i++) {
+        let game = cache_data.results[i]
+        if ( game.prePostShows ) {
+          for (var j = 0; j < teamTypes.length; j++) {
+            let teamType = teamTypes[j]
+            if ( game.prePostShows[teamType] ) {
+              for (var k = 0; k < showTypes.length; k++) {
+                let showType = showTypes[k]
+                if ( game.prePostShows[teamType][showType] && game.prePostShows[teamType][showType].hasShow ) {
+                  this.debuglog('get_pre_post_shows found ' + teamType + ' ' + showType + ' ' + game.prePostShows[teamType].contentId)
+                  if ( game.prePostShows[teamType][showType].startTime ) {
+                    pregame_shows[game.prePostShows[teamType].contentId] = { team: teamType, start: game.prePostShows[teamType][showType].startTime }
+                  } else {
+                    postgame_shows[game.prePostShows[teamType].contentId] = { team: teamType }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return { pregame_shows, postgame_shows }
   }
 
   async resetGameChanger(id, includeTeams, excludeTeams) {

@@ -1564,6 +1564,7 @@ app.get('/', async function(req, res) {
     var thislink = http_root + '/' + link
 
     let blackouts = {}
+    let pre_post_shows = {}
 
     let currentDate = new Date()
 
@@ -1648,6 +1649,9 @@ app.get('/', async function(req, res) {
 
     if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
       blackouts = await session.get_blackout_games(cache_data.dates[0].date, true)
+      if ( gameDate >= today ) {
+        pre_post_shows = await session.get_pre_post_shows(cache_data.dates[0].date)
+      }
     }
 
     if ( (mediaType == 'MLBTV') && ((level_ids == levels['MLB']) || level_ids.startsWith(levels['MLB'] + ',')) ) {
@@ -2026,6 +2030,13 @@ app.get('/', async function(req, res) {
                       }
                     }
                     let station = broadcast.callSign
+                    
+                    if ( pre_post_shows.pregame_shows && pre_post_shows.pregame_shows[broadcast.mediaId] ) {
+                      station = '/' + station
+                    }
+                    if ( pre_post_shows.postgame_shows && pre_post_shows.postgame_shows[broadcast.mediaId] ) {
+                      station += '/'
+                    }
 
                     // display blackout tooltip, if necessary
                     if ( blackouts[gamePk] && blackouts[gamePk].blackout_feeds && blackouts[gamePk].blackout_feeds.includes(broadcast.mediaId) ) {
@@ -2152,6 +2163,13 @@ app.get('/', async function(req, res) {
 
     if ( (Object.keys(blackouts).length > 0) ) {
       body += '<span class="tooltip tinytext"><span class="blackout">strikethrough</span> indicates a live blackout or non-entitled content<span class="tooltiptext">Tap or hover over the team abbreviation to see an estimate of when the blackout will be lifted (officially ~90 minutes, but more likely ~150 minutes or ~2.5 hours after the game ends).</span></span>' + "\n"
+      if ( (Object.keys(pre_post_shows).length > 0) ) {
+        body += '<br/>'
+      }
+    }
+
+    if ( (pre_post_shows.pregame_shows && (Object.keys(pre_post_shows.pregame_shows).length > 0)) || (pre_post_shows.postgame_shows && (Object.keys(pre_post_shows.postgame_shows).length > 0)) ) {
+      body += '<span class="tooltip tinytext">/slash/ indicates a live pre- or post-game show<span class="tooltiptext">A /slash before the station indicates a pre-game show; a slash/ after the station indicates a post-game show. Pre- and post-game shows are only available live.</span></span>' + "\n"
       if ( argv.free ) {
         body += '<br/>'
       }
@@ -2257,7 +2275,7 @@ app.get('/', async function(req, res) {
     body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all entitled live MLB broadcasts (games plus Big Inning, Game Changer, and Multiview, as well as MLB Network, SNLA, and/or SNY as appropriate). If favorite team(s) have been provided, it will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
     let include_teams = 'ath,national'
-    if ( session.credentials.fav_teams.length > 0 ) {
+    if ( (session.credentials.fav_teams.length > 0) && (session.credentials.fav_teams[0].length > 0) ) {
       include_teams = session.credentials.fav_teams.toString()
     }
     body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. It will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">calendar.ics</a></p>' + "\n"
@@ -2348,12 +2366,13 @@ app.get('/', async function(req, res) {
     }
     body += '</p>' + "\n"
 
+    include_teams = 'ath,atl'
     body += '<p><span class="tooltip">Game Changer by team examples<span class="tooltiptext">Game Changer supports specifying certain teams to include or exclude. Useful for following a group of teams.</span></span>:</p>' + "\n"
     body += '<p>' + "\n"
     let gamechanger_streamURL = server + '/gamechanger.m3u8?resolution=best' + content_protect_b
     let gamechanger_types = ['in', 'ex']
     for (var i=0; i<gamechanger_types.length; i++) {
-      let example_streamURL = gamechanger_streamURL + '&' + gamechanger_types[i] + 'cludeTeams=ath'
+      let example_streamURL = gamechanger_streamURL + '&' + gamechanger_types[i] + 'cludeTeams=' + include_teams
       body += '&bull; ' + gamechanger_types[i] + 'clude: <a href="' + http_root + '/embed.html?src=' + encodeURIComponent(example_streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b + '">Embed</a> | <a href="' + example_streamURL + '">Stream</a> | <a href="' + http_root + '/chromecast.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Chromecast</a> | <a href="' + http_root + '/advanced.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Advanced</a> | <a href="' + http_root + '/kodi.strm?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Kodi</a><br/>' + "\n"
     }
 
