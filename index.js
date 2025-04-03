@@ -1646,6 +1646,10 @@ app.get('/', async function(req, res) {
       session.debuglog('SNY detect error : ' + e.message)
     }
 
+    if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
+      blackouts = await session.get_blackout_games(cache_data.dates[0].date, true)
+    }
+
     if ( (mediaType == 'MLBTV') && ((level_ids == levels['MLB']) || level_ids.startsWith(levels['MLB'] + ',')) ) {
       // Recap Rundown beginning in 2023, disabled because it stopped working
       /*if ( (gameDate <= yesterday) && (gameDate >= '2023-03-31') && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
@@ -1661,13 +1665,9 @@ app.get('/', async function(req, res) {
         body += '</td></tr>' + "\n"
       }*/
 
-      if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
-        blackouts = await session.get_blackout_games(cache_data.dates[0].date, true)
-      }
-
       // Big Inning
       var big_inning
-      if ( cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
+      if ( (entitlements.length > 0) && cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
         // Scraped Big Inning schedule
         big_inning = await session.getBigInningSchedule(gameDate)
 
@@ -2028,7 +2028,7 @@ app.get('/', async function(req, res) {
                     let station = broadcast.callSign
 
                     // display blackout tooltip, if necessary
-                    if ( blackouts[gamePk] ) {
+                    if ( blackouts[gamePk] && blackouts[gamePk].blackout_feeds && blackouts[gamePk].blackout_feeds.includes(broadcast.mediaId) ) {
                       body += '<span class="tooltip"><span class="blackout">' + teamabbr + '</span><span class="tooltiptext">' + blackouts[gamePk].blackout_type
                       if ( blackouts[gamePk].blackout_type != 'Not entitled' ) {
                         body += ' video blackout until approx. 2.5 hours after the game'
@@ -2083,7 +2083,7 @@ app.get('/', async function(req, res) {
                         multiviewquerystring += content_protect_b
                         stationlink = '<a' + fav_style + ' href="' + thislink + querystring + '">' + station + '</a>'
 
-                        if ( blackouts[gamePk] ) {
+                        if ( blackouts[gamePk] && blackouts[gamePk].blackout_feeds && blackouts[gamePk].blackout_feeds.includes(broadcast.mediaId) ) {
                           body += '<span class="blackout">' + stationlink + '</span>'
                         } else {
                           body += stationlink
@@ -2124,7 +2124,7 @@ app.get('/', async function(req, res) {
                         body += '<a' + fav_style + ' href="https://www.youtube.com/watch?v=' + cache_data.dates[0].games[j].content.media.epg[k].items[x].youtube.videoId + '" target="_blank">' + station + '&UpperRightArrow;</a>'
                       }*/
                     } else {
-                      if ( blackouts[gamePk] ) {
+                      if ( blackouts[gamePk] && blackouts[gamePk].blackout_feeds && blackouts[gamePk].blackout_feeds.includes(broadcast.mediaId) ) {
                         body += '<s>' + station + '</s>'
                       } else {
                         body += station
@@ -2151,7 +2151,7 @@ app.get('/', async function(req, res) {
     body += "</table>" + "\n"
 
     if ( (Object.keys(blackouts).length > 0) ) {
-      body += '<span class="tooltip tinytext"><span class="blackout">strikethrough</span> indicates a live blackout or non-entitled video<span class="tooltiptext">Tap or hover over the team abbreviation to see an estimate of when the blackout will be lifted (officially ~90 minutes, but more likely ~150 minutes or ~2.5 hours after the game ends).</span></span>' + "\n"
+      body += '<span class="tooltip tinytext"><span class="blackout">strikethrough</span> indicates a live blackout or non-entitled content<span class="tooltiptext">Tap or hover over the team abbreviation to see an estimate of when the blackout will be lifted (officially ~90 minutes, but more likely ~150 minutes or ~2.5 hours after the game ends).</span></span>' + "\n"
       if ( argv.free ) {
         body += '<br/>'
       }

@@ -2389,12 +2389,6 @@ class sessionClass {
                   }
               } else {
                 // Begin MLB games
-                // check blackout status, if necessary
-                let gamePk = cache_data.dates[i].games[j].gamePk.toString()
-                if ( (mediaType == 'MLBTV') && (includeBlackouts == 'false') && blackouts[gamePk] ) {
-                  continue
-                }
-
                 if ( cache_data.dates[i].games[j].broadcasts ) {
                   // initial loop will count number of broadcasts
                   let broadcast_count = await this.count_broadcasts(cache_data.dates[i].games[j].broadcasts, mediaType, language)
@@ -2404,10 +2398,14 @@ class sessionClass {
                       let mediaTitle = 'Audio'
                       if ( broadcast.type == 'TV' ) {
                         mediaTitle = 'MLBTV'
-                      } else if ( broadcast.language == 'es' ) {
-                        mediaTitle = 'Spanish'
                       }
                       if ( mediaType == mediaTitle ) {
+                      
+                        // check blackout or non-entitlement status, if necessary
+                        let gamePk = cache_data.dates[i].games[j].gamePk.toString()
+                        if ( (includeBlackouts == 'false') && blackouts[gamePk] && blackouts[gamePk].blackout_feeds && blackouts[gamePk].blackout_feeds.includes(broadcast.mediaId) ) {
+                          continue
+                        }
 
                         if ( (broadcast.type == 'TV') || ((mediaType == 'Audio') && (broadcast.language == language)) ) {
                           let teamType = broadcast.homeAway
@@ -2699,7 +2697,7 @@ class sessionClass {
           }
 
           // Big Inning
-          if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
+          if ( (entitlements.length > 0) && (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
             if ( (excludeTeams.length > 0) && excludeTeams.includes('BIGINNING') ) {
               // do nothing
             } else if ( (includeTeams.length == 0) || includeTeams.includes('BIGINNING') ) {
@@ -3659,40 +3657,57 @@ class sessionClass {
 
     let cache_data
     cache_data = await this.getBlackoutsData(gameDate)
+    
+    let feedTypes = ['videoFeeds', 'audioFeeds']
 
     if ( cache_data && cache_data.results && (cache_data.results.length > 0) ) {
-      for (var j = 0; j < cache_data.results.length; j++) {
-        let game = cache_data.results[j]
+      for (var i = 0; i < cache_data.results.length; i++) {
+        let game = cache_data.results[i]
         let game_pk = game.gamePk
         this.debuglog('get_blackout_games checking game ' + game_pk)
-        if ( game.blackedOutVideo || !game.entitledVideo ) {
-          this.debuglog('get_blackout_games found blackout or non-entitled video')
-          let blackout_type = ''
-          if ( game.videoStatusCodes.includes(2) ) {
-            this.debuglog('get_blackout_games found national blackout')
-            blackout_type = 'National/International'
-          } else if ( game.videoStatusCodes.includes(1) ) {
-            this.debuglog('get_blackout_games found local blackout')
-            blackout_type = 'Local'
-          } else {
-            this.debuglog('get_blackout_games found non-entitled video')
+        let blackout_type = ''
+        if ( game.blackedOutVideo || !game.entitledVideo || !game.entitledAudio ) {
+          if ( !game.entitledVideo || !game.entitledAudio ) {
+            this.debuglog('get_blackout_games found non-entitled game ' + game_pk)
             blackout_type = 'Not entitled'
+          } else {
+            this.debuglog('get_blackout_games found blackout game ' + game_pk)
           }
-          blackouts[game_pk] = { blackout_type: blackout_type }
-        } /*else if ( !game.entitledVideo && (game.videoStatusCodes[0] == '3') ) {
-          this.debuglog('get_blackout_games found non-entitled MVPD required blackout')
-          blackouts[game_pk] = { blackout_type: '' }
-        }*/
-
+          blackouts[game_pk] = { blackout_type: blackout_type }       
+        }
+        
+        let blackout_feeds = []
+        for (var j = 0; j < feedTypes.length; j++) {
+          let feedType = feedTypes[j]
+          for (var k = 0; k < game[feedType].length; k++) {
+            let feed = game[feedType][k]
+            if ( !feed.entitled || ((j == 0) && feed.blackedOut) ) {
+              blackout_feeds.push(feed['mediaId'])
+              if ( !feed['entitled'] ) {
+                this.debuglog('get_blackout_games found non-entitled feed ' + feed.callLetters)
+                blackout_type = 'Not entitled'
+              } else {
+                this.debuglog('get_blackout_games found blackout feed ' + feed.callLetters)
+              }
+            }
+          }
+        }
+        if ( blackout_feeds.length > 0 ) {
+          if ( !blackouts[game_pk] ) {
+            blackouts[game_pk] = { blackout_type: blackout_type }
+          }
+          blackouts[game_pk].blackout_feeds = blackout_feeds   
+        }
+        
         // add blackout expiry, if requested
         if ( blackouts[game_pk] && (blackouts[game_pk].blackout_type != 'Not entitled') && calculate_expiries && await this.check_game_time(game.gameData) ) {
           this.debuglog('get_blackout_games calculating blackout expiry')
           let date_cache_data = await this.getDayData(gameDate)
           if ( date_cache_data.dates && date_cache_data.dates[0] && date_cache_data.dates[0].games && (date_cache_data.dates[0].games.length > 0) ) {
-            for (var k = 0; k < date_cache_data.dates[0].games.length; k++) {
-              if ( game_pk == date_cache_data.dates[0].games[k].gamePk ) {
+            for (var j = 0; j < date_cache_data.dates[0].games.length; j++) {
+              if ( game_pk == date_cache_data.dates[0].games[j].gamePk ) {
                 this.debuglog('get_blackout_games found matching game')
-                let blackoutExpiry = await this.get_blackout_expiry(date_cache_data.dates[0].games[k])
+                let blackoutExpiry = await this.get_blackout_expiry(date_cache_data.dates[0].games[j])
                 this.debuglog('get_blackout_games calculated blackout expiry as ' + blackoutExpiry)
                 blackouts[game_pk].blackoutExpiry = blackoutExpiry
                 break
@@ -3835,7 +3850,12 @@ class sessionClass {
               }
 
               // Game is not broadcast
-              if ( !cache_data.dates[0].games[i].broadcasts || (cache_data.dates[0].games[i].broadcasts.length == 0) || (await this.count_broadcasts(cache_data.dates[0].games[i].broadcasts, 'MLBTV') == 0) ) {
+              if ( !cache_data.dates[0].games[i].broadcasts || (cache_data.dates[0].games[i].broadcasts.length == 0) ) {
+                omitted_games.no_broadcast.push(teams)
+                continue
+              }
+              let broadcast_count = await this.count_broadcasts(cache_data.dates[0].games[i].broadcasts, 'MLBTV')
+              if ( broadcast_count == 0 ) {
                 omitted_games.no_broadcast.push(teams)
                 continue
               }
@@ -3852,8 +3872,8 @@ class sessionClass {
                 continue
               }
 
-              // Game is blacked out
-              if ( this.temp_cache.gamechanger.blackouts[game_pk] ) {
+              // All feeds are blacked out or not entitled
+              if ( this.temp_cache.gamechanger.blackouts[game_pk] && this.temp_cache.gamechanger.blackouts[game_pk].blackout_feeds && (this.temp_cache.gamechanger.blackouts[game_pk].blackout_feeds.length == broadcast_count) ) {
                 omitted_games.blackout.push(teams)
                 continue
               }
@@ -4150,6 +4170,10 @@ class sessionClass {
                         for (var y = 0; y < broadcasts.length; y++) {
                           let broadcast = broadcasts[y]
                           if ( (broadcast.availableForStreaming == true) && (broadcast.type == 'TV') && broadcast.mediaState && broadcast.mediaState.mediaStateCode && (broadcast.mediaState.mediaStateCode == 'MEDIA_ON') ) {
+                            // skip blackout feeds
+                            if ( this.temp_cache.gamechanger.blackouts[curr_game.game_pk] && this.temp_cache.gamechanger.blackouts[curr_game.game_pk].blackout_feeds && this.temp_cache.gamechanger.blackouts[curr_game.game_pk].blackout_feeds.includes(broadcast.mediaId) ) {
+                              continue
+                            }
                             // prefer fav team broadcasts
                             if ( this.credentials.fav_teams.length > 0 ) {
                               for (var z = 0; z < this.credentials.fav_teams.length; z++) {
