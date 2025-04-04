@@ -4547,7 +4547,7 @@ class sessionClass {
         }
         let offAirTitle = 'Off Air'
         let offAirSubtitle = ''
-        let day = new Date(gameDate + ' 00:00:00').toLocaleString('en-US', { weekday: 'long' }
+        let day = new Date(gameDate + ' 00:00:00').toLocaleString('en-US', { weekday: 'long' })
         if ( gameDate == today ) {
           day = 'Today'
         }

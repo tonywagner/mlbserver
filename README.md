@@ -43,7 +43,7 @@ After launching the server or Docker container, you can access it at http://loca
 Basic command line or Docker environment options:
 
 ```
---port or -p (primary port to run on; defaults to 9999 if not specified)
+--port or -p (primary port to run on; defaults to 9999 in Docker or if not specified)
 --debug or -d (false if not specified)
 --version or -v (returns package version number)
 --logout or -l (logs out and clears session)
@@ -74,7 +74,7 @@ Advanced command line or Docker environment options:
 
 Supports [SWAG](https://docs.linuxserver.io/general/swag/#preset-proxy-confs) using the custom [mlbserver.subfolder.conf](https://github.com/tonywagner/mlbserver/blob/master/mlbserver.subfolder.conf) file.
 
-For multiview, the default software encoder is limited by your CPU. You may want to experiment with different ffmpeg hardware encoders. "h264_videotoolbox" is confirmed to work on supported Macs, and "h264_v4l2m2m" is confirmed to work on a Raspberry Pi 4 (and likely other Linux systems) when ffmpeg is compiled with this patch: https://www.raspberrypi.org/forums/viewtopic.php?p=1780625#p1780625
+For multiview, the default software video encoder is limited by your CPU. You may want to experiment with different ffmpeg hardware video encoders. "h264_videotoolbox" is confirmed to work on supported Macs, and "h264_v4l2m2m" is confirmed to work on a Raspberry Pi 4 (and likely other Linux systems) when ffmpeg is compiled with this patch: https://www.raspberrypi.org/forums/viewtopic.php?p=1780625#p1780625
 
 More potential hardware encoders are described at https://stackoverflow.com/a/50703794
 
