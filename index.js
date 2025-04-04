@@ -2197,7 +2197,7 @@ app.get('/', async function(req, res) {
         }
         body += '</p>' + "\n"
 
-        body += '<p><span class="tooltip">Audio<span class="tooltiptext">For video streams only: you can manually specifiy which audio track to include. Some media players can accept them all and let you choose. Not all tracks are available for all games, and injected tracks (away radio for national games, for example) may not work with skip options below.<br/><br/>If you select "none" for video above, picking an audio track here will make it an audio-only feed that supports the inning start and skip breaks options.</span></span>: '
+        body += '<p><span class="tooltip">Audio<span class="tooltiptext">For video streams only: you can manually specifiy which audio track to include. Some media players can accept them all and let you choose. Not all tracks are available for all games, and injected tracks may not work with skip options below.<br/><br/>If you select "none" for video above, picking an audio track here will make it an audio-only feed that supports the inning start and skip breaks options.</span></span>: '
         for (var i = 0; i < VALID_AUDIO_TRACKS.length; i++) {
           body += '<button '
           if ( audio_track == VALID_AUDIO_TRACKS[i] ) body += 'class="default" '
@@ -2274,7 +2274,7 @@ app.get('/', async function(req, res) {
 
     body += '<p><span class="tooltip">All<span class="tooltiptext">Will include all entitled live MLB broadcasts (games plus Big Inning, Game Changer, and Multiview, as well as MLB Network, SNLA, and/or SNY as appropriate). If favorite team(s) have been provided, it will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
-    let include_teams = 'ath,national'
+    let include_teams = 'ath,atl'
     if ( (session.credentials.fav_teams.length > 0) && (session.credentials.fav_teams[0].length > 0) ) {
       include_teams = session.credentials.fav_teams.toString()
     }
@@ -2282,8 +2282,8 @@ app.get('/', async function(req, res) {
 
     body += '<p><span class="tooltip">Include blackouts<span class="tooltiptext">An optional parameter added to the URL will include channels/games subject to blackout (although you may not be able to play those games).</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
-    let exclude_teams = 'ath,national'
-    body += '<p><span class="tooltip">Exclude a team + national<span class="tooltiptext">Excluding a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. National refers to <a href="https://www.mlb.com/live-stream-games/national-blackout">USA national TV broadcasts</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">ics</a></p>' + "\n"
+    let exclude_teams = 'ath,atl'
+    body += '<p><span class="tooltip">Exclude a team<span class="tooltiptext">Excluding a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. Note that blackouts are already excluded without the need to specify this parameter.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">ics</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">ics</a></p>' + "\n"
 
@@ -2319,6 +2319,8 @@ app.get('/', async function(req, res) {
 
     body += '<p><span class="tooltip">Include teams in titles<span class="tooltiptext">An optional parameter added to the URL will include team names in the ICS/XML titles.</span></span>: <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeTeamsInTitles=true' + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeTeamsInTitles=true' + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
+    body += '<p><span class="tooltip">Create Off Air events between games<span class="tooltiptext">An optional parameter added to the URL will create "Off Air" events in the XML guide, listing the time of the next event on that channel.</span></span>: <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&offAir=true' + content_protect_b + '">guide.xml</a></p>' + "\n"
+
     body += '</td></tr></table><br/>' + "\n"
 
     body += '<table><tr><td>' + "\n"
@@ -2337,10 +2339,7 @@ app.get('/', async function(req, res) {
       ['Team live radio', '?team=' + example_team + '&mediaType=Audio'],
       ['Catch-up/condensed', '?team=' + example_team + '&resolution=best&skip=pitches&date=today'],
       ['Condensed yesterday', '?team=' + example_team + '&resolution=best&skip=pitches&date=yesterday'],
-      ['Same but DH game 2', '?team=' + example_team + '&resolution=best&skip=pitches&date=yesterday&game=2'],
-      ['Nat\'l game 1 today', '?team=NATIONAL.1&resolution=best&date=today'],
-      ['Same but incl. blackouts', '?team=NATIONAL.1&resolution=best&includeBlackouts=true'],
-      ['Nat\'l game 2 yesterday', '?team=NATIONAL.2&resolution=best&date=yesterday']
+      ['Same but DH game 2', '?team=' + example_team + '&resolution=best&skip=pitches&date=yesterday&game=2']
     ]
 
     if ( argv.free ) {
@@ -2590,7 +2589,7 @@ app.get('/channels.m3u', async function(req, res) {
     includeOrgs = req.query.includeOrgs.toUpperCase().split(',')
   }
 
-  var body = await session.getTVData('channels', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, 'false', resolution, pipe, startingChannelNumber)
+  var body = await session.getTVData('channels', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, 'false', 'false', resolution, pipe, startingChannelNumber)
 
   res.writeHead(200, {'Content-Type': 'audio/x-mpegurl'})
   res.end(body)
@@ -2690,9 +2689,14 @@ app.get('/guide.xml', async function(req, res) {
     includeTeamsInTitles = req.query.includeTeamsInTitles
   }
 
+  let offAir = 'false'
+  if ( req.query.offAir ) {
+    offAir = req.query.offAir
+  }
+
   let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
 
-  var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles)
+  var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles, offAir)
 
   res.end(body)
 })

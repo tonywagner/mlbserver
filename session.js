@@ -44,10 +44,10 @@ const EVENT_START_PADDING = -3
 const PITCH_END_PADDING = 2
 const ACTION_END_PADDING = 7
 const MINIMUM_BREAK_DURATION = 5
-// extra padding for MLB events (2025)
-const MLB_PADDING = 39
-// extra Game Changer padding for MLB (2025)
-const MLB_GAMECHANGER_PADDING = 20
+// hardcode extra padding for MLB events (39 seconds for opening day 2025, back to 0 by April 2)
+const MLB_PADDING = 0
+// hardcode extra Game Changer padding for MLB (20 seconds for opening day 2025, back to 0 by April 2?)
+const MLB_GAMECHANGER_PADDING = 0
 
 const LI_TABLE = {
     1: {
@@ -2158,7 +2158,7 @@ class sessionClass {
   }
 
   // get TV data (channels or guide)
-  async getTVData(dataType, mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles='false', resolution='best', pipe='false', startingChannelNumber=1) {
+  async getTVData(dataType, mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles='false', offAir='false', resolution='best', pipe='false', startingChannelNumber=1) {
     try {
       this.debuglog('getTVData for ' + dataType)
 
@@ -2303,7 +2303,9 @@ class sessionClass {
                       stream += '&resolution=' + resolution
                       if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
                       if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
-                      channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
+                      if ( !channels[channelid] ) {
+                        channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
+                      }
 
                       let title = 'Minor League Baseball'
                       if ( WINTER_LEAGUES.includes(league_id.toString()) ) {
@@ -2370,6 +2372,9 @@ class sessionClass {
                       } else if ( cache_data.dates[i].games[j].status.startTimeTBD == true ) {
                         continue
                       }
+                      if ( cache_data.dates[i].games[j].teams['away'].team.parentOrgName ) {
+                        description += away_team + ' (' + cache_data.dates[i].games[j].teams['away'].team.parentOrgName + ') at ' + home_team + ' (' + cache_data.dates[i].games[j].teams['home'].team.parentOrgName + '). '
+                      }
                       let start = this.convertDateToXMLTV(gameDate)
                       let calendar_start = gameDate
                       let stopDate = gameDate
@@ -2382,9 +2387,18 @@ class sessionClass {
                       let location = server + '/embed.html?team=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
                       if ( this.protection.content_protect ) location += '&content_protect=' + this.protection.content_protect
                       calendar += await this.generate_ics_event(prefix, calendar_start, calendar_stop, subtitle, description, location)
+                      
+                      if ( offAir == 'true' ) {
+                        if ( !channels[channelid].stop ) {
+                          channels[channelid].stop = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+                        }
+                        let offAirSubtitle = 'next ' + cache_data.dates[i].games[j].teams['away'].team.shortName + ' at ' + cache_data.dates[i].games[j].teams['home'].team.shortName + ', ' + new Date(cache_data.dates[i].games[j].gameDate).toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: true })
+                        programs += await this.generate_xml_program(channelid, channels[channelid].stop, start, 'Off Air', '', logo, '', offAirSubtitle)
+                        channels[channelid].stop = stop
+                      }
 
                       // MILB guide XML
-                      programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(gameDate), subtitle, team_id, cache_data.dates[i].games[j].gamePk, away_team, home_team)
+                      programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(new Date(cache_data.dates[i].games[j].gameDate)), subtitle, team_id, cache_data.dates[i].games[j].gamePk, away_team, home_team)
 
                       //break
                     //}
@@ -2486,13 +2500,17 @@ class sessionClass {
                               //logo += '/image.svg?teamId=MLB'
                               //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
                               logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
-                              nationalChannels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
+                              if ( !nationalChannels[channelid] ) {
+                                nationalChannels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
+                              }
                             } else {
                               seriesId = cache_data.dates[i].games[j].teams[teamType].team.id
                               //logo += '/image.svg?teamId=' + cache_data.dates[i].games[j].teams[teamType].team.id
                               //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
                               logo = 'https://www.mlbstatic.com/team-logos/share/' + cache_data.dates[i].games[j].teams[teamType].team.id + '.jpg'
-                              channels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
+                              if ( !channels[channelid] ) {
+                                channels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
+                              }
                             }
 
                             let title = 'MLB Baseball'
@@ -2600,6 +2618,7 @@ class sessionClass {
                                 title = cache_data.dates[i].games[j].teams[pre_post_shows.pregame_shows[broadcast.mediaId].team].team.teamName + ' Pregame'
                                 let preSeriesId = seriesId + '1'
                                 programs += await this.generate_xml_program(channelid, pre_start, start, title, '', icon, this.convertDateToAirDate(new Date(pre_post_shows.pregame_shows[broadcast.mediaId].start)), '', preSeriesId, cache_data.dates[i].games[j].gamePk, away_team, home_team)
+                                start = pre_start
                               }
                               // post-game
                               if ( pre_post_shows.postgame_shows[broadcast.mediaId] ) {
@@ -2610,7 +2629,17 @@ class sessionClass {
                                 title = cache_data.dates[i].games[j].teams[pre_post_shows.postgame_shows[broadcast.mediaId].team].team.teamName + ' Postgame'
                                 let postSeriesId = seriesId + '2'
                                 programs += await this.generate_xml_program(channelid, stop, post_stop, title, '', icon, this.convertDateToAirDate(startDate), '', postSeriesId, cache_data.dates[i].games[j].gamePk, away_team, home_team)
+                                stop = post_stop
                               }
+                            }
+                            
+                            if ( offAir == 'true' ) {
+                              if ( !channels[channelid].stop ) {
+                                channels[channelid].stop = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+                              }
+                              let offAirSubtitle = 'next ' + cache_data.dates[i].games[j].teams['away'].team.teamName + ' at ' + cache_data.dates[i].games[j].teams['home'].team.teamName + ', ' + new Date(cache_data.dates[i].games[j].gameDate).toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: true })
+                              programs += await this.generate_xml_program(channelid, channels[channelid].stop, start, 'Off Air', '', logo, '', offAirSubtitle)
+                              channels[channelid].stop = stop
                             }
                           }
                         }
@@ -2759,6 +2788,15 @@ class sessionClass {
                   let location = server + '/embed.html?event=biginning&mediaType=Video&resolution=' + resolution
                   if ( this.protection.content_protect ) location += '&content_protect=' + this.protection.content_protect
                   calendar += await this.generate_ics_event(prefix, new Date(this.cache.bigInningSchedule[gameDate].start), new Date(this.cache.bigInningSchedule[gameDate].end), title, description, location)
+                  
+                  if ( offAir == 'true' ) {
+                    if ( !channels[channelid].stop ) {
+                      channels[channelid].stop = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+                    }
+                    let offAirSubtitle = 'next ' + new Date(this.cache.bigInningSchedule[gameDate].start).toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: true })
+                    programs += await this.generate_xml_program(channelid, channels[channelid].stop, start, 'Off Air', '', logo, '', offAirSubtitle)
+                    channels[channelid].stop = stop
+                  }
 
                   // Big Inning guide XML
                   programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(new Date(this.cache.bigInningSchedule[gameDate].start)))
@@ -2811,6 +2849,15 @@ class sessionClass {
                     let location = server + '/embed.html?src=' + encodeURIComponent(stream)
                     if ( this.protection.content_protect ) location += '&content_protect=' + this.protection.content_protect
                     calendar += await this.generate_ics_event(prefix, new Date(cache_data.dates[i].games[gameIndexes.firstGameIndex].gameDate), gameDate, title, description, location)
+                    
+                    if ( offAir == 'true' ) {
+                      if ( !channels[channelid].stop ) {
+                        channels[channelid].stop = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+                      }
+                      let offAirSubtitle = 'next ' + gameDate.toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: true })
+                      programs += await this.generate_xml_program(channelid, channels[channelid].stop, start, 'Off Air', '', logo, '', offAirSubtitle)
+                      channels[channelid].stop = stop
+                    }
 
                     // Game Changer guide XML
                     programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(gameDate))
@@ -2857,6 +2904,15 @@ class sessionClass {
                     let prefix = 'Watch'
                     let location = stream.replace('/stream.m3u8?src=', '/embed.html?msrc=')
                     calendar += await this.generate_ics_event(prefix, new Date(cache_data.dates[i].games[gameIndexes.firstGameIndex].gameDate), gameDate, title, description, location)
+                    
+                    if ( offAir == 'true' ) {
+                      if ( !channels[channelid].stop ) {
+                        channels[channelid].stop = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+                      }
+                      let offAirSubtitle = 'next ' + gameDate.toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: true })
+                      programs += await this.generate_xml_program(channelid, channels[channelid].stop, start, 'Off Air', '', logo, '', offAirSubtitle)
+                      channels[channelid].stop = stop
+                    }
 
                     // Multview guide XML
                     programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(gameDate))
