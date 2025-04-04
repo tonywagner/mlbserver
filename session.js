@@ -34,6 +34,8 @@ const AFL_ID = '119'
 const LIDOM_ID = '131'
 const WINTER_LEAGUES = [AFL_ID, LIDOM_ID]
 
+const OFF_AIR_LOGO = 'https://lh3.googleusercontent.com/uVJBX-jpgwHsDY_o6-po2JU5-cDZuoq_CsCcqJ0-T7996z8NbOzeQCfQaAG0DB2hbkxv2VvtZ2E'
+
 // These are the events to ignore, if we're skipping breaks
 const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
 // These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
@@ -2312,22 +2314,26 @@ class sessionClass {
                         title = cache_data.dates[i].games[j].teams['home'].team.league.name
                       }
 
-                      let away_team = cache_data.dates[i].games[j].teams['away'].team.name
-                      let home_team = cache_data.dates[i].games[j].teams['home'].team.name
+                      let away_team = cache_data.dates[i].games[j].teams['away'].team.shortName
+                      let home_team = cache_data.dates[i].games[j].teams['home'].team.shortName
                       let subtitle = away_team + ' at ' + home_team
-
-                      if (includeTeamsInTitles == 'true') {
-                        if ( league_id == AFL_ID ) {
-                          title = 'AFL'
-                        } else if ( league_id == LIDOM_ID ) {
-                          title = 'LIDOM'
+                      
+                      if ( includeTeamsInTitles != 'false' ) {
+                        if ( includeTeamsInTitles == 'channels' ) {
+                          title = this.channelsFormattedTitle(subtitle, cache_data.dates[i].games[j].gameDate)
                         } else {
-                          title = 'MiLB'
+                          if ( league_id == AFL_ID ) {
+                            title = 'AFL'
+                          } else if ( league_id == LIDOM_ID ) {
+                            title = 'LIDOM'
+                          } else {
+                            title = 'MiLB'
+                          }
+                          title += ': ' + subtitle
                         }
-                        title += ': ' + subtitle
                       }
 
-                      let description = cache_data.dates[i].games[j].teams['home'].team.league.name + '. '
+                      let description = cache_data.dates[i].games[j].teams['home'].team.sport.name + ' ' + cache_data.dates[i].games[j].teams['home'].team.league.name + '. '
                       if ( cache_data.dates[i].games[j].seriesDescription != 'Regular Season' ) {
                         description += cache_data.dates[i].games[j].seriesDescription + '. '
                       }
@@ -2337,6 +2343,9 @@ class sessionClass {
                       var scheduledInnings = await this.get_scheduled_innings(cache_data.dates[0].games[j])
                       if ( scheduledInnings != '9' ) {
                         description += scheduledInnings + '-inning game. '
+                      }
+                      if ( cache_data.dates[i].games[j].teams['away'].team.parentOrgName && cache_data.dates[i].games[j].teams['home'].team.parentOrgName ) {
+                        description += cache_data.dates[i].games[j].teams['away'].team.name + ' (' + this.getParent(cache_data.dates[i].games[j].teams['away'].team.parentOrgName) + ') at ' + cache_data.dates[i].games[j].teams['home'].team.name + ' (' + this.getParent(cache_data.dates[i].games[j].teams['home'].team.parentOrgName) + '). '
                       }
                       if ( (cache_data.dates[i].games[j].teams['away'].probablePitcher && cache_data.dates[i].games[j].teams['away'].probablePitcher.fullName) || (cache_data.dates[i].games[j].teams['home'].probablePitcher && cache_data.dates[i].games[j].teams['home'].probablePitcher.fullName) ) {
                         if ( cache_data.dates[i].games[j].teams['away'].probablePitcher && cache_data.dates[i].games[j].teams['away'].probablePitcher.fullName ) {
@@ -2372,9 +2381,6 @@ class sessionClass {
                       } else if ( cache_data.dates[i].games[j].status.startTimeTBD == true ) {
                         continue
                       }
-                      if ( cache_data.dates[i].games[j].teams['away'].team.parentOrgName ) {
-                        description += away_team + ' (' + cache_data.dates[i].games[j].teams['away'].team.parentOrgName + ') at ' + home_team + ' (' + cache_data.dates[i].games[j].teams['home'].team.parentOrgName + '). '
-                      }
                       let start = this.convertDateToXMLTV(gameDate)
                       let calendar_start = gameDate
                       let stopDate = gameDate
@@ -2388,12 +2394,10 @@ class sessionClass {
                       if ( this.protection.content_protect ) location += '&content_protect=' + this.protection.content_protect
                       calendar += await this.generate_ics_event(prefix, calendar_start, calendar_stop, subtitle, description, location)
                       
-                      if ( offAir == 'true' ) {
-                        if ( !channels[channelid].stop ) {
-                          channels[channelid].stop = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
-                        }
-                        let offAirSubtitle = 'next ' + cache_data.dates[i].games[j].teams['away'].team.shortName + ' at ' + cache_data.dates[i].games[j].teams['home'].team.shortName + ', ' + new Date(cache_data.dates[i].games[j].gameDate).toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: true })
-                        programs += await this.generate_xml_program(channelid, channels[channelid].stop, start, 'Off Air', '', logo, '', offAirSubtitle)
+                      // Off Air if necessary
+                      let off_air_event = await this.generate_off_air_event(offAir, channelid, cache_data.dates[i].date, channels[channelid].stop, cache_data.dates[i].games[j].gameDate, cache_data.dates[i].games[j].teams['away'].team.shortName + ' at ' + cache_data.dates[i].games[j].teams['home'].team.shortName)
+                      if ( off_air_event ) {
+                        programs += off_air_event
                         channels[channelid].stop = stop
                       }
 
@@ -2519,15 +2523,19 @@ class sessionClass {
                             let home_team = cache_data.dates[i].games[j].teams['home'].team.teamName
                             let subtitle = away_team + ' at ' + home_team
 
-                            if (includeTeamsInTitles == 'true') {
-                              title = 'MLB: ' + subtitle + ' (' + station
-                              if ( language == 'es' ) {
-                                title += ' Spanish'
+                            if (includeTeamsInTitles != 'false') {
+                              if ( includeTeamsInTitles == 'channels' ) {
+                                title = this.channelsFormattedTitle(subtitle, cache_data.dates[i].games[j].gameDate)
+                              } else {
+                                title = 'MLB: ' + subtitle + ' (' + station
+                                if ( language == 'es' ) {
+                                  title += ' Spanish'
+                                }
+                                if ( mediaType == 'Audio' ) {
+                                  title += ' Radio'
+                                }
+                                title += ')'
                               }
-                              if ( mediaType == 'Audio' ) {
-                                title += ' Radio'
-                              }
-                              title += ')'
                             }
 
                             let description = station
@@ -2633,12 +2641,10 @@ class sessionClass {
                               }
                             }
                             
-                            if ( offAir == 'true' ) {
-                              if ( !channels[channelid].stop ) {
-                                channels[channelid].stop = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
-                              }
-                              let offAirSubtitle = 'next ' + cache_data.dates[i].games[j].teams['away'].team.teamName + ' at ' + cache_data.dates[i].games[j].teams['home'].team.teamName + ', ' + new Date(cache_data.dates[i].games[j].gameDate).toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: true })
-                              programs += await this.generate_xml_program(channelid, channels[channelid].stop, start, 'Off Air', '', logo, '', offAirSubtitle)
+                            // Off Air if necessary
+                            let off_air_event = await this.generate_off_air_event(offAir, channelid, cache_data.dates[i].date, channels[channelid].stop, cache_data.dates[i].games[j].gameDate, subtitle)
+                            if ( off_air_event ) {
+                              programs += off_air_event
                               channels[channelid].stop = stop
                             }
                           }
@@ -2654,7 +2660,6 @@ class sessionClass {
           }
           channels = this.sortObj(channels)
           channels = Object.assign(channels, nationalChannels)
-
           
           let entitlements = await this.getEntitlements()
           // MLB Network live stream for eligible USA subscribers
@@ -2789,12 +2794,10 @@ class sessionClass {
                   if ( this.protection.content_protect ) location += '&content_protect=' + this.protection.content_protect
                   calendar += await this.generate_ics_event(prefix, new Date(this.cache.bigInningSchedule[gameDate].start), new Date(this.cache.bigInningSchedule[gameDate].end), title, description, location)
                   
-                  if ( offAir == 'true' ) {
-                    if ( !channels[channelid].stop ) {
-                      channels[channelid].stop = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
-                    }
-                    let offAirSubtitle = 'next ' + new Date(this.cache.bigInningSchedule[gameDate].start).toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: true })
-                    programs += await this.generate_xml_program(channelid, channels[channelid].stop, start, 'Off Air', '', logo, '', offAirSubtitle)
+                  // Off Air if necessary
+                  let off_air_event = await this.generate_off_air_event(offAir, channelid, gameDate, channels[channelid].stop, this.cache.bigInningSchedule[gameDate].start, title)
+                  if ( off_air_event ) {
+                    programs += off_air_event
                     channels[channelid].stop = stop
                   }
 
@@ -2850,12 +2853,10 @@ class sessionClass {
                     if ( this.protection.content_protect ) location += '&content_protect=' + this.protection.content_protect
                     calendar += await this.generate_ics_event(prefix, new Date(cache_data.dates[i].games[gameIndexes.firstGameIndex].gameDate), gameDate, title, description, location)
                     
-                    if ( offAir == 'true' ) {
-                      if ( !channels[channelid].stop ) {
-                        channels[channelid].stop = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
-                      }
-                      let offAirSubtitle = 'next ' + gameDate.toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: true })
-                      programs += await this.generate_xml_program(channelid, channels[channelid].stop, start, 'Off Air', '', logo, '', offAirSubtitle)
+                    // Off Air if necessary
+                    let off_air_event = await this.generate_off_air_event(offAir, channelid, cache_data.dates[i].date, channels[channelid].stop, cache_data.dates[i].games[gameIndexes.firstGameIndex].gameDate, title)
+                    if ( off_air_event ) {
+                      programs += off_air_event
                       channels[channelid].stop = stop
                     }
 
@@ -2905,12 +2906,10 @@ class sessionClass {
                     let location = stream.replace('/stream.m3u8?src=', '/embed.html?msrc=')
                     calendar += await this.generate_ics_event(prefix, new Date(cache_data.dates[i].games[gameIndexes.firstGameIndex].gameDate), gameDate, title, description, location)
                     
-                    if ( offAir == 'true' ) {
-                      if ( !channels[channelid].stop ) {
-                        channels[channelid].stop = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
-                      }
-                      let offAirSubtitle = 'next ' + gameDate.toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: true })
-                      programs += await this.generate_xml_program(channelid, channels[channelid].stop, start, 'Off Air', '', logo, '', offAirSubtitle)
+                    // Off Air if necessary
+                    let off_air_event = await this.generate_off_air_event(offAir, channelid, cache_data.dates[i].date, channels[channelid].stop, cache_data.dates[i].games[gameIndexes.firstGameIndex].gameDate, title)
+                    if ( off_air_event ) {
+                      programs += off_air_event
                       channels[channelid].stop = stop
                     }
 
@@ -4535,7 +4534,47 @@ class sessionClass {
     channel_object.mediatype = channelMediaType
     return channel_object
   }
-
+  
+  async generate_off_air_event(offAir, channelid, gameDate, start, stop, title) {
+    try {
+      if ( offAir != 'false' ) {
+        let today = this.liveDate()
+        let nextWeek = new Date(today)
+        nextWeek.setDate(nextWeek.getDate()+6)
+        nextWeek = nextWeek.toISOString().substring(0,10)
+        if ( !start ) {
+          start = this.convertDateToXMLTV(new Date(today + ' 00:00:00'))
+        }
+        let offAirTitle = 'Off Air'
+        let offAirSubtitle = ''
+        let day = new Date(gameDate + ' 00:00:00').toLocaleString('en-US', { weekday: 'long' }
+        if ( gameDate == today ) {
+          day = 'Today'
+        }
+        if ( gameDate > nextWeek ) {
+          day += ' ' + this.channelsFormattedDate(stop)
+        }
+        let time = new Date(stop).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true })
+        if ( offAir == 'channels' ) {
+          offAirTitle = 'Upcoming: ' + time + ' ' + day + ', ' + title
+          offAirSubtitle = ''
+        } else {
+          offAirSubtitle = 'next ' + day + ' ' + time
+        }
+        return await this.generate_xml_program(channelid, start, this.convertDateToXMLTV(new Date(stop)), offAirTitle, '', OFF_AIR_LOGO, '', offAirSubtitle)
+      }
+    } catch(e) {
+      this.log('generate_off_air_event error : ' + e.message)
+    }
+  }
+  
+  channelsFormattedTitle(subtitle, date) {
+    return subtitle + ' *Live* ' + this.channelsFormattedDate(date)
+  }
+  
+  channelsFormattedDate(date) {
+    return new Date(date).toLocaleString('en-us', { month: 'short', day: 'numeric' })
+  }
 }
 
 module.exports = sessionClass
