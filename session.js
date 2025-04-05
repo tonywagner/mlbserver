@@ -46,9 +46,9 @@ const EVENT_START_PADDING = -3
 const PITCH_END_PADDING = 2
 const ACTION_END_PADDING = 7
 const MINIMUM_BREAK_DURATION = 5
-// hardcode extra padding for MLB events (39 seconds for opening day 2025, back to 0 by April 2)
-const MLB_PADDING = 0
-// hardcode extra Game Changer padding for MLB (20 seconds for opening day 2025, back to 0 by April 2?)
+// hardcode extra padding for MLB events
+const MLB_PADDING = 2
+// hardcode extra Game Changer padding for MLB, in 10-second increments as needed
 const MLB_GAMECHANGER_PADDING = 0
 
 const LI_TABLE = {
@@ -4497,21 +4497,23 @@ class sessionClass {
     if ( subtitle ) {
       xml_output += '      <sub-title lang="en">' + subtitle + '</sub-title>' + "\n"
     }
-    xml_output += '      <desc lang="en">' + description.trim() + '</desc>' + "\n" +
-    '      <category lang="en">Sports</category>' + "\n" +
-    '      <category lang="en">Baseball</category>' + "\n" +
-    '      <category lang="en">Sports event</category>' + "\n" +
-    '      <icon src="' + icon + '"></icon>' + "\n"
+    xml_output += '      <icon src="' + icon + '"></icon>' + "\n"
+    if ( icon != OFF_AIR_LOGO ) {
+      xml_output += '      <desc lang="en">' + description.trim() + '</desc>' + "\n" +
+      '      <category lang="en">Sports</category>' + "\n" +
+      '      <category lang="en">Baseball</category>' + "\n" +
+      '      <category lang="en">Sports event</category>' + "\n" + 
+      '      <episode-num system="original-air-date">' + date + '</episode-num>' + "\n" + 
+      '      <new/>' + "\n" +
+      '      <live/>' + "\n" +
+      '      <sport>Baseball</sport>' + "\n"
+    }
     if ( teamId ) {
       xml_output += '      <series-id system="team-id">' + teamId + '</series-id>' + "\n"
     }
-    xml_output += '      <episode-num system="original-air-date">' + date + '</episode-num>' + "\n"
     if ( gamePk ) {
       xml_output += '      <episode-num system="game-id">' + gamePk + '</episode-num>' + "\n"
     }
-    xml_output += '      <new/>' + "\n" +
-    '      <live/>' + "\n" +
-    '      <sport>Baseball</sport>' + "\n"
     if ( away_team ) {
       xml_output += '      <team lang="en">' + away_team + '</team>' + "\n"
     }
