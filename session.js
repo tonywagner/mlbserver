@@ -1757,11 +1757,6 @@ class sessionClass {
       }
 
       if ( gameDate <= today ) {
-        // no blackouts on previous days
-        if ( gameDate < today ) {
-          includeBlackouts = 'true'
-        }
-
         let mediaInfo = {}
 
         let cache_data
@@ -1819,14 +1814,6 @@ class sessionClass {
 
                 // MLB games
                 if ( cache_data.dates[0].games[j].broadcasts ) {
-                  // check blackout status, if necessary
-                  if ( (mediaType == 'MLBTV') && (includeBlackouts == 'false') && blackouts[gamePk] ) {
-                    if ( !blackouts[gamePk].blackoutExpiry || (currentDate < blackouts[gamePk].blackoutExpiry) ) {
-                      this.debuglog('getMediaId requested game is blacked out')
-                      continue
-                    }
-                  }
-
                   let teamType
                   // initial loop will count number of broadcasts
                   let broadcast_count = await this.count_broadcasts(cache_data.dates[0].games[j].broadcasts, mediaType, language)
@@ -1834,6 +1821,9 @@ class sessionClass {
                     if ( mediaInfo.mediaId ) break
                     let broadcast = cache_data.dates[0].games[j].broadcasts[k]
                     if ( broadcast.availableForStreaming == false ) continue
+                    if ( blackouts[gamePk] && blackouts[gamePk].blackout_feeds && blackouts[gamePk].blackout_feeds.includes(broadcast.mediaId) ) {
+                      continue
+                    }
                     let mediaTitle = 'Audio'
                     if ( broadcast.type == 'TV' ) {
                       mediaTitle = 'MLBTV'
