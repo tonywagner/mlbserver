@@ -2066,7 +2066,12 @@ app.get('/', async function(req, res) {
                         let querystring
                         querystring = '?mediaId=' + mediaId
 
-                        let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + '&audio_track=' + DEFAULT_MULTIVIEW_AUDIO_TRACK
+                        let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+                        if ( audio_track != VALID_AUDIO_TRACKS[0] ) {
+                          multiviewquerystring += '&audio_track=' + encodeURIComponent(audio_track)
+                        } else {
+                          multiviewquerystring += '&audio_track=' + encodeURIComponent(DEFAULT_MULTIVIEW_AUDIO_TRACK)
+                        }
                         if ( linkType == VALID_LINK_TYPES[0] ) {
                           if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
                           if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
@@ -2948,13 +2953,14 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, park_audio
       if ( audio_reencoded.indexOf(audio_present[i]) > -1 ) {
         audio_output = '[out' + i + ']'
       } else {
-        audio_output = audio_present[i] + ':a:'
-        let video_url = streams[audio_present[i]]
+        audio_output = audio_present[i] + ':a:0'
+        // audio track indexing disabled, since we can now assume it is 0 regardless
+        /*let video_url = streams[audio_present[i]]
         if ( !video_url || video_url.includes('audio_track=English') || !video_url.includes('audio_track=') ) {
           audio_output += '0'
         } else {
           audio_output += '1'
-        }
+        }*/
       }
       ffmpeg_command.addOutputOption('-map', audio_output)
       var_stream_map += ' a:' + i + ',agroup:aac,language:ENG'
