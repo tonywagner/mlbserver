@@ -416,6 +416,7 @@ var respond = function(proxy, res, body) {
   delete proxy.headers['content-md5']
   delete proxy.headers['connection']
   delete proxy.headers['access-control-allow-credentials']
+  delete proxy.headers['content-encoding']
 
   proxy.headers['content-length'] = body.length
   proxy.headers['access-control-allow-origin'] = '*'
@@ -461,6 +462,8 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
       headers['x-cdn-token'] = options.streamURLToken
       token_parameter = '&streamURLToken=' + encodeURIComponent(options.streamURLToken)
     }
+    headers.gzip = true
+    
     requestRetry(streamURL, headers, function(err, response) {
       if (err) return res.error(err)
 
@@ -737,6 +740,7 @@ app.get('/playlist.m3u8', async function(req, res) {
     if ( token ) {
       headers['x-cdn-token'] = token
     }
+    headers.gzip = true
 
     requestRetry(u, headers, function(err, response) {
       if (err) return res.error(err)
