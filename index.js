@@ -2196,7 +2196,7 @@ app.get('/', async function(req, res) {
         }
         body += '</p>' + "\n"
 
-        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove all breaks, idle time, non-action pitches, or only commercial breaks from the stream (useful to make your own "condensed games").<br/><br/>NOTE: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream. Also, consider combining this with the inning start "top 1" options to remove any pregame.</span></span>: '
+        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove all breaks, idle time, non-action pitches, or only commercial breaks from the stream (useful to make your own "condensed games").<br/><br/>NOTE: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream.</span></span>: '
         for (var i = 0; i < VALID_SKIP.length; i++) {
           body += '<button '
           if ( skip == VALID_SKIP[i] ) body += 'class="default" '
