@@ -365,10 +365,8 @@ app.get('/stream.m3u8', async function(req, res) {
           let skip_adjust = parseInt(req.query.skip_adjust) || DEFAULT_SKIP_ADJUST
 
           let skip_type = VALID_SKIP.indexOf(options.skip)
-          // for skip other than commercial skip, look up markers
-          if ( skip_type != 4 ) {
-            await session.getSkipMarkers(gamePk, skip_type, options.inning_number, options.inning_half, streamURL, streamURLToken, skip_adjust)
-          }
+          // look up markers
+          await session.getSkipMarkers(gamePk, skip_type, options.inning_number, options.inning_half, streamURL, streamURLToken, skip_adjust)
         }
       }
 
@@ -768,23 +766,7 @@ app.get('/playlist.m3u8', async function(req, res) {
         content_protect = '&content_protect=' + session.protection.content_protect
       }
 
-      // if skipping commercials, filter the playlist to remove ad insertion domains
-      if ( skip == 'commercials' ) {
-        session.debuglog('filtering commercial breaks')
-        let new_body = []
-        let break_active = false
-        for (var i=0; i<body.length; i++) {
-          if ( (break_active == false) && body[i].startsWith('#EXT-OATCLS-SCTE35:') ) {
-            break_active = true
-            new_body.push('#EXT-X-DISCONTINUITY')
-          } else if ( (break_active == true) && body[i].startsWith('#EXT-X-CUE-IN') ) {
-            break_active = false
-          } else if ( break_active == false ) {
-            new_body.push(body[i])
-          }
-        }
-        body = new_body
-      } else if ( (gamePk) && ((inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0])) && (typeof session.temp_cache[gamePk] !== 'undefined') && (typeof session.temp_cache[gamePk].skip_markers !== 'undefined') ) {
+      if ( (gamePk) && ((inning_half != VALID_INNING_HALF[0]) || (inning_number != VALID_INNING_NUMBER[0]) || (skip != VALID_SKIP[0])) && (typeof session.temp_cache[gamePk] !== 'undefined') && (typeof session.temp_cache[gamePk].skip_markers !== 'undefined') ) {
         session.debuglog('pulling skip markers from temporary cache')
         skip_markers = session.temp_cache[gamePk].skip_markers
       } else {
@@ -2214,7 +2196,7 @@ app.get('/', async function(req, res) {
         }
         body += '</p>' + "\n"
 
-        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove all breaks, idle time, non-action pitches, or only commercial breaks from the stream (useful to make your own "condensed games").<br/><br/>NOTE: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream. Also, commercial break skipping will ignore inning start options (it will always start from the beginning).</span></span>: '
+        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove all breaks, idle time, non-action pitches, or only commercial breaks from the stream (useful to make your own "condensed games").<br/><br/>NOTE: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream. Also, consider combining this with the inning start "top 1" options to remove any pregame.</span></span>: '
         for (var i = 0; i < VALID_SKIP.length; i++) {
           body += '<button '
           if ( skip == VALID_SKIP[i] ) body += 'class="default" '

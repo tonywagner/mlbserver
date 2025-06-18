@@ -3036,10 +3036,10 @@ class sessionClass {
     }
   }
 
-  // Get broadcast start timestamp
-  async getBroadcastStart(streamURL, streamURLToken) {
+  // Get variant playlist
+  async getVariantPlaylist(streamURL, streamURLToken) {
     try {
-      this.debuglog('getBroadcastStart')
+      this.debuglog('getVariantPlaylist')
       
       // MLB version
       let variant = '_5600K'
@@ -3059,6 +3059,19 @@ class sessionClass {
       }
       var response = await this.httpGet(reqObj, false)
       var body = response.replace(/^\s+|\s+$/g, '').split('\n')
+      
+      return body
+    } catch(e) {
+      this.log('getVariantPlaylist error : ' + e.message)
+    }
+  }
+
+  // Get broadcast start timestamp
+  async getBroadcastStart(variantPlaylist) {
+    try {
+      this.debuglog('getBroadcastStart')
+      
+      var body = variantPlaylist
 
       // check if HLS
       if ( body[0] != '#EXTM3U' ) {
@@ -3103,7 +3116,8 @@ class sessionClass {
       let break_start = 0
 
       // Get the broadcast start time first -- event times will be relative to this
-      let broadcast_start_timestamp = await this.getBroadcastStart(streamURL, streamURLToken)
+      let variantPlaylist = await this.getVariantPlaylist(streamURL, streamURLToken)
+      let broadcast_start_timestamp = await this.getBroadcastStart(variantPlaylist)
 
       if ( broadcast_start_timestamp ) {
         this.debuglog('getSkipMarkers broadcast start detected as ' + broadcast_start_timestamp)
@@ -3145,8 +3159,8 @@ class sessionClass {
           // Loop through all plays
           for (var i=0; i < cache_data.liveData.plays.allPlays.length; i++) {
 
-            // exit loop after found inning, if not skipping any breaks
-            if ((skip_type == 0) && (skip_markers.length == 1)) {
+            // exit loop after found inning, if not skipping any play-defined breaks
+            if ( ((skip_type == 0) || (skip_type == 4)) && (skip_markers.length == 1) ) {
               break
             }
 
@@ -3170,8 +3184,8 @@ class sessionClass {
                     event_end_padding = pitch_end_padding
                   }
                   let action_index
-                  // skip type 0 (none, inning start) and 1 (breaks) will look at all plays with an endTime
-                  if ((skip_type <= 1) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime) {
+                  // skip type 0 (none, inning start), 1 (breaks), and 4 (commercials) will look at all plays with an endTime
+                  if ( ((skip_type <= 1) || (skip_type == 4)) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime ) {
                     action_index = j
                   // skip type 2 (idle time) will look at all non-idle plays with an endTime
                   } else if ((skip_type == 2) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime && (!cache_data.liveData.plays.allPlays[i].playEvents[j].details || !cache_data.liveData.plays.allPlays[i].playEvents[j].details.description || !IDLE_TYPES.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.description.includes(v)))) {
@@ -3217,8 +3231,8 @@ class sessionClass {
                       total_skip_time += break_end - break_start
                       previous_inning = current_inning
                       previous_inning_half = current_inning_half
-                      // exit loop after found inning, if not skipping breaks
-                      if (skip_type == 0) {
+                      // exit loop after found inning, if not skipping play-defined breaks
+                      if ( (skip_type == 0) || (skip_type == 4)) {
                         break
                       }
                     }
@@ -3240,6 +3254,32 @@ class sessionClass {
                     }
                   }
                 }
+              }
+            }
+          }
+          
+          // if skipping commercials, look at the variant playlist to detect insertions
+          if ( skip_type == 4 ) {
+            this.debuglog('detecting commercial breaks')
+            let body = variantPlaylist
+            let break_active = false
+            let break_end = 0
+            let time_counter = 0
+            if ( skip_markers.length > 0 ) {
+              break_end = skip_markers[skip_markers.length-1].break_end
+            }
+            for (var i=0; i<body.length; i++) {
+              if ( body[i].startsWith('#EXTINF:') ) {
+                time_counter += parseFloat(body[i].substring(8, body[i].length-1))
+              }
+              if ( (time_counter > break_end) && (break_active == false) && body[i].startsWith('#EXT-OATCLS-SCTE35:') ) {
+                break_active = true
+                break_start = time_counter
+              } else if ( (break_active == true) && body[i].startsWith('#EXT-X-CUE-IN') ) {
+                break_end = time_counter
+                break_active = false
+                skip_markers.push({'break_start': break_start, 'break_end': break_end})
+                total_skip_time += break_end - break_start
               }
             }
           }
