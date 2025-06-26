@@ -1677,7 +1677,6 @@ app.get('/', async function(req, res) {
         let compareEnd = new Date(big_inning.end)
         compareEnd.setHours(compareEnd.getHours()+1)
         if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
-          body += '<tr><td><span class="tooltip">Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://support.mlb.com/s/article/What-Is-MLB-Big-Inning">See here for more information</a>.</span></span></td><td>'
           let querystring = '?event=biginning'
           let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
           if ( linkType == VALID_LINK_TYPES[0] ) {
@@ -1713,8 +1712,8 @@ app.get('/', async function(req, res) {
           compareEnd.setHours(compareEnd.getHours()+4)
           body += '<tr><td><span class="tooltip">' + compareStart.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + compareEnd.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to 720p60 resolution if not specified.</span></span></td><td>'
           if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
-            let streamURL = server + '/gamechanger.m3u8?'
-            let multiviewquerystring = streamURL + 'resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
+            let streamURL = server + '/gamechanger.m3u8'
+            let multiviewquerystring = '/gamechanger.m3u8?resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
             streamURL += content_protect_a
             if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += 'resolution=' + resolution + '&'
             if ( linkType != VALID_LINK_TYPES[1] ) {
