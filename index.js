@@ -547,11 +547,6 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           return
         }
 
-        // Omit subtitles when skipping
-        if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES') && (skip != 'none') ) {
-          return
-        }
-
         // Parse audio tracks to only include matching one, if specified
         if ( line.startsWith('#EXT-X-MEDIA:TYPE=AUDIO') ) {
           // if we've already returned our desired audio track, we can skip subsequent ones
@@ -647,11 +642,19 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         }
 
         // Pass through any remaining caption tracks
-        if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="') ) {
+        if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES,') ) {
           var parsed = line.match(',URI="([^"]+)"')
           if ( parsed[1] ) {
-            newurl = http_root + '/playlist.m3u8?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim())) + content_protect + referer_parameter + token_parameter
-            return '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="' + newurl + '"'
+            newurl = http_root + '/playlist.m3u8?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
+            if ( force_vod != VALID_FORCE_VOD[0] ) newurl += '&force_vod=on'
+            if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
+            if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
+            if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
+            if ( skip_adjust != DEFAULT_SKIP_ADJUST ) newurl += '&skip_adjust=' + skip_adjust
+            if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
+            if ( gamePk ) newurl += '&gamePk=' + gamePk
+            newurl += content_protect + referer_parameter + token_parameter
+            return line.replace(parsed[1], newurl)
           }
           return
         }
@@ -960,19 +963,22 @@ app.get('/subtitles.vtt', async function(req, res) {
   var u = req.query.url
   session.debuglog('subtitles.vtt url : ' + u)
 
+  var headers = {}
+
   var referer = false
   if ( req.query.referer ) {
+    session.debuglog('found subtitles.vtt referer : ' + req.query.referer)
     referer = decodeURIComponent(req.query.referer)
-    session.debuglog('found subtitles.vtt referer : ' + referer)
+    headers.referer = referer
+    headers.origin = getOriginFromURL(referer)
+  }
+
+  if ( req.query.streamURLToken ) {
+    token = decodeURIComponent(req.query.streamURLToken)
+    headers['x-cdn-token'] = token
   }
 
   var req = function () {
-    var headers = {}
-    if ( referer ) {
-      headers.referer = referer
-      headers.origin = getOriginFromURL(referer)
-    }
-
     requestRetry(u, headers, function(err, response) {
       if (err) return res.error(err)
 
