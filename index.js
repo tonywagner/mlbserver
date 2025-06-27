@@ -2147,7 +2147,7 @@ app.get('/', async function(req, res) {
             }
             //if ( (mediaType == 'MLBTV') && (game_started) && cache_data.dates[0].games[j].content && cache_data.dates[0].games[j].content.summary && cache_data.dates[0].games[j].content.summary.hasHighlightsVideo ) {
             if ( (mediaType == 'MLBTV') && (game_started) ) {
-              body += '<br/><a' + fav_style + ' href="javascript:showhighlights(\'' + cache_data.dates[0].games[j].gamePk + '\',\'' + gameDate + '\')">Highlights</a>'
+              body += '<br/><a' + fav_style + ' href="#" onclick="showhighlights(\'' + cache_data.dates[0].games[j].gamePk + '\',\'' + gameDate + '\'); return false;">Highlights</a>'
             }
           }
           body += "</td>"
