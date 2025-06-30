@@ -547,11 +547,6 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           return
         }
 
-        // Omit subtitles when skipping
-        if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES') && (skip != 'none') ) {
-          return
-        }
-
         // Parse audio tracks to only include matching one, if specified
         if ( line.startsWith('#EXT-X-MEDIA:TYPE=AUDIO') ) {
           // if we've already returned our desired audio track, we can skip subsequent ones
@@ -647,11 +642,19 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         }
 
         // Pass through any remaining caption tracks
-        if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="') ) {
+        if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES,') ) {
           var parsed = line.match(',URI="([^"]+)"')
           if ( parsed[1] ) {
-            newurl = http_root + '/playlist.m3u8?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim())) + content_protect + referer_parameter + token_parameter
-            return '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE="eng",URI="' + newurl + '"'
+            newurl = http_root + '/playlist.m3u8?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
+            if ( force_vod != VALID_FORCE_VOD[0] ) newurl += '&force_vod=on'
+            if ( inning_half != VALID_INNING_HALF[0] ) newurl += '&inning_half=' + inning_half
+            if ( inning_number != VALID_INNING_NUMBER[0] ) newurl += '&inning_number=' + inning_number
+            if ( skip != VALID_SKIP[0] ) newurl += '&skip=' + skip
+            if ( skip_adjust != DEFAULT_SKIP_ADJUST ) newurl += '&skip_adjust=' + skip_adjust
+            if ( pad != VALID_PAD[0] ) newurl += '&pad=' + pad
+            if ( gamePk ) newurl += '&gamePk=' + gamePk
+            newurl += content_protect + referer_parameter + token_parameter
+            return line.replace(parsed[1], newurl)
           }
           return
         }
@@ -960,19 +963,22 @@ app.get('/subtitles.vtt', async function(req, res) {
   var u = req.query.url
   session.debuglog('subtitles.vtt url : ' + u)
 
+  var headers = {}
+
   var referer = false
   if ( req.query.referer ) {
+    session.debuglog('found subtitles.vtt referer : ' + req.query.referer)
     referer = decodeURIComponent(req.query.referer)
-    session.debuglog('found subtitles.vtt referer : ' + referer)
+    headers.referer = referer
+    headers.origin = getOriginFromURL(referer)
+  }
+
+  if ( req.query.streamURLToken ) {
+    token = decodeURIComponent(req.query.streamURLToken)
+    headers['x-cdn-token'] = token
   }
 
   var req = function () {
-    var headers = {}
-    if ( referer ) {
-      headers.referer = referer
-      headers.origin = getOriginFromURL(referer)
-    }
-
     requestRetry(u, headers, function(err, response) {
       if (err) return res.error(err)
 
@@ -1671,7 +1677,6 @@ app.get('/', async function(req, res) {
         let compareEnd = new Date(big_inning.end)
         compareEnd.setHours(compareEnd.getHours()+1)
         if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
-          body += '<tr><td><span class="tooltip">Big Inning<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://support.mlb.com/s/article/What-Is-MLB-Big-Inning">See here for more information</a>.</span></span></td><td>'
           let querystring = '?event=biginning'
           let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
           if ( linkType == VALID_LINK_TYPES[0] ) {
@@ -1707,8 +1712,8 @@ app.get('/', async function(req, res) {
           compareEnd.setHours(compareEnd.getHours()+4)
           body += '<tr><td><span class="tooltip">' + compareStart.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + compareEnd.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to 720p60 resolution if not specified.</span></span></td><td>'
           if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
-            let streamURL = server + '/gamechanger.m3u8?'
-            let multiviewquerystring = streamURL + 'resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
+            let streamURL = server + '/gamechanger.m3u8'
+            let multiviewquerystring = '/gamechanger.m3u8?resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
             streamURL += content_protect_a
             if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += 'resolution=' + resolution + '&'
             if ( linkType != VALID_LINK_TYPES[1] ) {
