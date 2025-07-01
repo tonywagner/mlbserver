@@ -1715,12 +1715,12 @@ app.get('/', async function(req, res) {
             let streamURL = server + '/gamechanger.m3u8'
             let multiviewquerystring = '/gamechanger.m3u8?resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
             streamURL += content_protect_a
-            if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += 'resolution=' + resolution + '&'
+            if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += '&resolution=' + resolution
             if ( linkType != VALID_LINK_TYPES[1] ) {
-              streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + 'startFrom=' + VALID_START_FROM[1] + content_protect_b + '&'
+              streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b 
             }
             if ( linkType == VALID_LINK_TYPES[4] ) {
-              streamURL += 'filename=' + gameDate + ' Game Changer' + '&'
+              streamURL += '&filename=' + gameDate + ' Game Changer'
             }
             body += '<a href="' + streamURL + '">Game Changer</a>'
             body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + multiviewquerystring + '" onclick="addmultiview(this, [], excludeTeams)">'
