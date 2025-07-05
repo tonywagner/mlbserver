@@ -1,5 +1,7 @@
 FROM node:16-alpine
 
+LABEL org.opencontainers.image.source="https://github.com/tonywagner/mlbserver"
+
 RUN apk update && apk add tzdata
 
 # Create app directory
