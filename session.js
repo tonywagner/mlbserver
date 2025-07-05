@@ -2214,7 +2214,7 @@ class sessionClass {
               }
             }
             if ( includeTeams.includes('LIDOM') ) {
-              team_ids += this.getLidomTeamIds()
+              team_ids += ',' + this.getLidomTeamIds()
             }
           } else {
             team_ids = this.getTeamIds()
@@ -2224,7 +2224,7 @@ class sessionClass {
               }
             }
             if ( (excludeTeams.length == 0) || !excludeTeams.includes('LIDOM') ) {
-              team_ids += this.getLidomTeamIds()
+              team_ids += ',' + this.getLidomTeamIds()
             }
           }
         }
