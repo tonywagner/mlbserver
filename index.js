@@ -1017,6 +1017,12 @@ app.get('/gamechanger.m3u8', async function(req, res) {
     resolution = VALID_RESOLUTIONS[2]
   }
 
+  var streamFinder = ''
+  if ( req.query.streamFinder ) {
+    streamFinder = '&streamFinder=' + req.query.streamFinder.toLowerCase()
+    session.debuglog('Game changer Stream Finder ' + streamFinder)
+  }
+
   var includeTeams = ''
   if ( req.query.includeTeams ) {
     includeTeams = '&includeTeams=' + req.query.includeTeams.toUpperCase()
@@ -1038,7 +1044,7 @@ app.get('/gamechanger.m3u8', async function(req, res) {
 
   for ( gamechanger_resolution in GAMECHANGER_RESOLUTIONS ) {
     if ( resolution == gamechanger_resolution ) {
-      body += '#EXT-X-STREAM-INF:BANDWIDTH=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].bandwidth + '000,RESOLUTION=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].resolution + ',FRAME-RATE=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].frame_rate + ',CODECS="mp4a.40.2,avc1.' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].codec + '",CLOSED-CAPTIONS="cc",AUDIO="aac"' + '\n' + '/gamechangerplaylist.m3u8?id=' + id + '&resolution=' + gamechanger_resolution + includeTeams + excludeTeams + content_protect + '\n'
+      body += '#EXT-X-STREAM-INF:BANDWIDTH=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].bandwidth + '000,RESOLUTION=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].resolution + ',FRAME-RATE=' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].frame_rate + ',CODECS="mp4a.40.2,avc1.' + GAMECHANGER_RESOLUTIONS[gamechanger_resolution].codec + '",CLOSED-CAPTIONS="cc",AUDIO="aac"' + '\n' + '/gamechangerplaylist.m3u8?id=' + id + '&resolution=' + gamechanger_resolution + streamFinder + includeTeams + excludeTeams + content_protect + '\n'
       break
     }
   }
@@ -1070,6 +1076,11 @@ app.get('/gamechangerplaylist.m3u8', async function(req, res) {
 
     var resolution = req.query.resolution || VALID_RESOLUTIONS[2]
 
+    var streamFinder = req.query.streamFinder || 'off'
+    if ( streamFinder == 'on' ) {
+      game_changer_title += ' stream finder '
+    }
+
     var includeTeams = req.query.includeTeams || []
     if ( includeTeams.length > 0 ) includeTeams = includeTeams.split(',')
 
@@ -1088,6 +1099,10 @@ app.get('/gamechangerplaylist.m3u8', async function(req, res) {
       if ( !session.temp_cache.gamechanger || !session.temp_cache.gamechanger[id] || !session.temp_cache.gamechanger[id].segments || (session.temp_cache.gamechanger[id].segments.length == 0) || !session.temp_cache.gamechanger[id].lastAccess || (gamechangerAccess >= (new Date(new Date(session.temp_cache.gamechanger[id].lastAccess).getTime() + 30000))) ) {
         session.log(game_changer_title + 'starting/resetting gamechanger')
         await session.resetGameChanger(id, includeTeams, excludeTeams)
+        
+        if (streamFinder == 'on') {
+          await session.getStreamFinderData(id)
+        }
       }
       session.temp_cache.gamechanger[id].lastAccess = gamechangerAccess
 
@@ -1098,7 +1113,12 @@ app.get('/gamechangerplaylist.m3u8', async function(req, res) {
         let streamURL
         let streamURLToken
         let discontinuity = false
-        let streamInfo = await session.getBestGame(id)
+        let streamInfo
+        if (streamFinder == 'on') {
+          streamInfo = await session.getStreamFinderGame(id)
+        } else {
+          streamInfo = await session.getBestGame(id)
+        }
         if ( streamInfo && streamInfo.streamURL && streamInfo.streamURLToken && (streamInfo.streamURL != session.temp_cache.gamechanger[id].streamURL) ) {
           session.log(game_changer_title + 'game changed')
           streamURL = streamInfo.streamURL
@@ -1699,7 +1719,7 @@ app.get('/', async function(req, res) {
         body += '</td></tr>' + "\n"
       }
 
-      // Game Changer
+      // Game Changer and Stream Finder
       if ( (gameDate >= today) && cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) ) {
         let gameIndexes = await session.get_first_and_last_games(cache_data.dates[0].games, blackouts)
         if ( (typeof gameIndexes.firstGameIndex !== 'undefined') && (typeof gameIndexes.lastGameIndex !== 'undefined') && (gameIndexes.firstGameIndex !== gameIndexes.lastGameIndex) ) {
@@ -1726,6 +1746,25 @@ app.get('/', async function(req, res) {
             body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + multiviewquerystring + '" onclick="addmultiview(this, [], excludeTeams)">'
           } else {
             body += 'Game Changer'
+          }
+          body += '</td></tr>' + "\n"
+          
+          body += '<tr><td><span class="tooltip">' + compareStart.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + compareEnd.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">The stream finder stream will automatically switch between games according to your uploaded preferences. This stream is not affiliated with Baseball Reference, do not contact them for support. Visit <a href="http://bit.ly/bbrefsf">http://bit.ly/bbrefsf</a> to create and export your preferences, then upload and save them to mlbserver <a href="#streamfinder">below</a>. Does not support adaptive bitrate switching, will default to 720p60 resolution if not specified.</span></span></td><td>'
+          if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
+            let streamURL = server + '/gamechanger.m3u8?streamFinder=on'
+            let multiviewquerystring = '/gamechanger.m3u8?streamFinder=on&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
+            streamURL += content_protect_b
+            if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += '&resolution=' + resolution
+            if ( linkType != VALID_LINK_TYPES[1] ) {
+              streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b 
+            }
+            if ( linkType == VALID_LINK_TYPES[4] ) {
+              streamURL += '&filename=' + gameDate + ' Stream Finder'
+            }
+            body += '<a href="' + streamURL + '">Stream Finder</a>'
+            body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + multiviewquerystring + '" onclick="addmultiview(this, [], excludeTeams)">'
+          } else {
+            body += 'Stream Finder'
           }
           body += '</td></tr>' + "\n"
         }
@@ -2221,6 +2260,16 @@ app.get('/', async function(req, res) {
       }
       body += '</p>' + "\n"
 
+      if ( (linkType == VALID_LINK_TYPES[1]) && (gameDate == today) ) {
+        body += '<p><span class="tooltip">Force VOD<span class="tooltiptext">For streams only: if your client does not support seeking in mlbserver live streams, turning this on will make the stream look like a VOD stream instead, allowing the client to start at the beginning and allowing the user to seek within it. You will need to reload the stream to watch/view past the current time, though.</span></span>: '
+        for (var i = 0; i < VALID_FORCE_VOD.length; i++) {
+          body += '<button '
+          if ( force_vod == VALID_FORCE_VOD[i] ) body += 'class="default" '
+          body += 'onclick="force_vod=\'' + VALID_FORCE_VOD[i] + '\';reload()">' + VALID_FORCE_VOD[i] + '</button> '
+        }
+        body += '<span class="tinytext">(if client does not support seeking in live streams)</span></p>' + "\n"
+      }
+
       if ( mediaType == VALID_MEDIA_TYPES[0] ) {
         body += '<table><tr><td><table><tr><td>1</td><td>2</tr><tr><td>3</td><td>4</td></tr></table><td><span class="tooltip">Multiview / Alternate Audio / Sync<span class="tooltiptext">For video streams only: create a new live stream combining 1-4 separate video streams, using the layout shown at left (if more than 1 video stream is selected). Check the boxes next to feeds above to add/remove them, then click "Start" when ready, "Stop" when done watching, or "Restart" to stop and start with the currently selected streams. May take up to 15 seconds after starting before it is ready to play.<br/><br/>No video scaling is performed: defaults to 540p video for each stream, which can combine to make one 1080p stream. Audio defaults to English (TV) audio. If you specify a different audio track instead, you can use the box after each URL below to adjust the sync in seconds (use positive values if audio is early and the audio stream needs to be padded with silence at the beginning to line up with the video; negative values if audio is late, and audio needs to be trimmed from the beginning.)<br/><br/>TIP #1: You can enter just 1 video stream here, at any resolution, to take advantage of the audio sync or alternate audio features without using multiview -- a single video stream will not be re-encoded and will be presented at its full resolution.<br/><br/>TIP #2: You can also manually enter streams from other sources like <a href="https://www.npmjs.com/package/milbserver" target="_blank">milbserver</a> in the boxes below. Make sure any manually entered streams have the desired resolution.<br/><br/>WARNING #1: if the mlbserver process dies or restarts while multiview is active, the ffmpeg encoding process will be orphaned and must be killed manually.<br/><br/>WARNING #2: If you did not specify a hardware encoder for ffmpeg on the command line, this will use your server CPU for encoding. Either way, your system may not be able to keep up with processing 4 video streams at once. Try fewer streams if you have perisistent trouble.</span></span>: <a id="startmultiview" href="" onclick="startmultiview(this);return false">Start'
         if ( ffmpeg_status ) body += 'ed'
@@ -2240,16 +2289,8 @@ app.get('/', async function(req, res) {
         body += '<hr><span class="tooltip">Alternate audio URL and sync<span class="tooltiptext">Optional: you can also include a separate audio-only URL as an additional alternate audio track. Archive games will likely require a very large negative sync value, as the radio broadcasts may not be trimmed like the video archives.</span></span>:<br/><textarea id="audio_url" rows=2 cols=60 oninput="this.value=stream_substitution(this.value)"></textarea><input id="audio_url_seek" type="number" value="0" style="vertical-align:top;font-size:.8em;width:4em"/>'
         body += '<hr>Watch: <a href="' + http_root + '/embed.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Embed</a> | <a href="' + http_root + '/stream.m3u8?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Stream</a> | <a href="' + http_root + '/chromecast.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Chromecast</a> | <a href="' + http_root + '/advanced.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Advanced</a> | <a href="' + http_root + '/download.ts?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '&filename=' + gameDate + ' Multiview">Download</a><br/><span class="tinytext">Kodi STRM files: <a href="' + http_root + '/kodi.strm?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Matrix/19+</a> (<a href="' + http_root + '/kodi.strm?version=18&src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Leia/18</a>)</span>'
         body += '</td></tr></table><br/>' + "\n"
-    }
-
-    if ( (linkType == VALID_LINK_TYPES[1]) && (gameDate == today) ) {
-      body += '<p><span class="tooltip">Force VOD<span class="tooltiptext">For streams only: if your client does not support seeking in mlbserver live streams, turning this on will make the stream look like a VOD stream instead, allowing the client to start at the beginning and allowing the user to seek within it. You will need to reload the stream to watch/view past the current time, though.</span></span>: '
-      for (var i = 0; i < VALID_FORCE_VOD.length; i++) {
-        body += '<button '
-        if ( force_vod == VALID_FORCE_VOD[i] ) body += 'class="default" '
-        body += 'onclick="force_vod=\'' + VALID_FORCE_VOD[i] + '\';reload()">' + VALID_FORCE_VOD[i] + '</button> '
-      }
-      body += '<span class="tinytext">(if client does not support seeking in live streams)</span></p>' + "\n"
+    
+        body += '<table><tr><td><p><a name="streamfinder"/><span class="tooltip">Stream Finder Settings<span class="tooltiptext">Automatically switches between games according to your preferences. This program is not affiliated with Baseball Reference, do not contact them for support.</span></span></p><p><a download="mlbserverStreamFinder.txt" href="' + http_root + '/downloadsettings' + content_protect_a + '">Click to Download Currently Stored Settings</a></p><p><b><u>Step 1</b></u><br/>Export and download your desired Stream Finder settings at this link:<br/><a href="https://www.baseball-reference.com/stream-finder.shtml" target="_blank">https://www.baseball-reference.com/stream-finder.shtml</a></p><form method="POST" enctype="multipart/form-data" action="' + http_root + '/upload' + content_protect_a + '"><p><b><u>Step 2</b></u><br/>Click this button and select the settings file you just downloaded:<br/><input name="file" type="file"/></p><p><p><b><u>Step 3</b></u><br/>Click this button to upload the selected settings file to mlbserver:<br/><input type="submit" value="Upload"/></p></form></td></tr></table><br/>' + "\n"
     }
 
     body += '<table><tr><td>' + "\n"
@@ -2302,6 +2343,8 @@ app.get('/', async function(req, res) {
       gamechanger_resolution = 'best'
     }
     body += '<p><span class="tooltip">Include (or exclude) Game Changer<span class="tooltiptext">The game changer stream will automatically switch between the highest leverage active live non-blackout games, and should be available whenever there are such games available. Does not support adaptive bitrate switching, will default to best resolution if not specified.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + gamechanger_resolution + '&includeTeams=gamechanger' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=gamechanger' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=gamechanger' + content_protect_b + '">ics</a></p>' + "\n"
+    
+    body += '<p><span class="tooltip">Include (or exclude) Stream Finder<span class="tooltiptext">The stream finder stream will automatically switch between games according to your uploaded preferences. This stream is not affiliated with Baseball Reference, do not contact them for support. Visit <a href="http://bit.ly/bbrefsf">http://bit.ly/bbrefsf</a> to create and export your preferences, then upload and save them to mlbserver <a href="#streamfinder">above</a>. Does not support adaptive bitrate switching, will default to best resolution if not specified.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + gamechanger_resolution + '&includeTeams=streamfinder' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=streamfinder' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=streamfinder' + content_protect_b + '">ics</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include (or exclude) Multiview<span class="tooltiptext">Requires starting and stopping the multiview stream from the web interface.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=multiview' + content_protect_b + '">ics</a></p>' + "\n"
 
@@ -3233,5 +3276,62 @@ app.get('/download.ts', async function(req, res) {
   } catch (e) {
     session.log('download.ts request error : ' + e.message)
     res.end('')
+  }
+})
+
+// Process Stream Finder settings upload requests
+app.post('/upload', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  try {
+    session.requestlog('upload', req)
+    
+    req.on('body', function(body) {
+      session.parse_stream_finder_settings(body)
+      let response = '<p><b>SUCCESS!</b></p><p>Your Stream Finder settings have been saved in mlbserver.</p><p>Select the Stream Finder stream to use them, or <a href="/upload">click here</a> to replace them with new settings.</p>'
+      res.end(response)
+    })
+  } catch (e) {
+    session.log('upload error : ' + e.message)
+    res.end('upload error, check log')
+  }
+})
+
+// Listen for Stream Finder settings download requests
+app.get('/downloadsettings', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  try {
+    session.requestlog('downloadsettings', req)
+
+    var file_name = 'mlbserverStreamFinder.txt'
+    var body = JSON.stringify(session.stream_finder_settings)
+
+    var download_headers = {
+      'Content-Disposition': 'attachment; filename="' + file_name + '"'
+    }
+    res.writeHead(200, download_headers)
+
+    res.end(body)
+  } catch (e) {
+    session.log('downloadsettings request error : ' + e.message)
+    res.end('downloadsettings request error, check log')
+  }
+})
+
+// Listen for Stream Finder icon requests
+app.get('/stream_finder_icon.png', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  try {
+    session.requestlog('stream_finder_icon.png', req)
+    
+    var body = await session.getPNGImage('stream_finder_icon')
+    
+    res.writeHead(200, {'Content-Type': 'image/png'})
+    res.end(body)
+  } catch (e) {
+    session.log('stream_finder_icon.png request error : ' + e.message)
+    res.end('stream_finder_icon.png request error, check log')
   }
 })
