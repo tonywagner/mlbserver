@@ -2275,7 +2275,6 @@ class sessionClass {
         let cache_data = await this.getWeeksData(level_ids, team_ids)
         if (cache_data) {
           let today = this.liveDate()
-          var nationalChannels = {}
           let prevDateIndex = {MLBTV:-1,Free:-1,Audio:-1}
 
           let gameIndexes_obj = {}
@@ -2493,6 +2492,8 @@ class sessionClass {
                             if ( (broadcast_count == 1) && !includeTeams.includes(team) && includeTeams.includes(opponent_team) ) {
                               team = opponent_team
                             }
+                            let logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
+                            let seriesId = 'MLB'
                             if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
                               team = teamType + '.' + gameCounter[mediaTitle]
                             } else if ( includeTeams.includes('FREE') && (broadcast.freeGame == true) ) {
@@ -2503,6 +2504,9 @@ class sessionClass {
                                 gameCounter['Free'] += 1
                               }
                               team = 'FREE.' + gameCounter['Free']
+                            } else {
+                              seriesId = cache_data.dates[i].games[j].teams[teamType].team.id
+                              logo = 'https://www.mlbstatic.com/team-logos/share/' + cache_data.dates[i].games[j].teams[teamType].team.id + '.jpg'
                             }
 
                             let icon = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
@@ -2531,23 +2535,8 @@ class sessionClass {
                             if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
                             if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
 
-                            let logo = server
-                            let seriesId = 'MLB'
-                            if ( (teamType == 'NATIONAL') && ((includeTeams.length == 0) || ((includeTeams.length > 0) && includeTeams.includes(teamType))) ) {
-                              //logo += '/image.svg?teamId=MLB'
-                              //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
-                              logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
-                              if ( !nationalChannels[channelid] ) {
-                                nationalChannels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
-                              }
-                            } else {
-                              seriesId = cache_data.dates[i].games[j].teams[teamType].team.id
-                              //logo += '/image.svg?teamId=' + cache_data.dates[i].games[j].teams[teamType].team.id
-                              //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
-                              logo = 'https://www.mlbstatic.com/team-logos/share/' + cache_data.dates[i].games[j].teams[teamType].team.id + '.jpg'
-                              if ( !channels[channelid] ) {
-                                channels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
-                              }
+                            if ( !channels[channelid] ) {
+                              channels[channelid] = await this.create_channel_object(channelid, logo, stream, channelMediaType)
                             }
 
                             let title = 'MLB Baseball'
@@ -2692,7 +2681,6 @@ class sessionClass {
             this.debuglog('getTVData completed date ' + cache_data.dates[i].date)
           }
           channels = this.sortObj(channels)
-          channels = Object.assign(channels, nationalChannels)
           
           let entitlements = await this.getEntitlements()
           // MLB Network live stream for eligible USA subscribers
