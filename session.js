@@ -4046,7 +4046,7 @@ class sessionClass {
         //this.debuglog(response)
         this.temp_cache.gamechanger[id].streamFinderData.team_data = JSON.parse(response.match(/var team_data\s*=\s*([{][^;]+);/)[1])
         this.temp_cache.gamechanger[id].streamFinderData.posPlayers = JSON.parse(response.match(/var posPlayers\s*=\s*([{][^}]+[}])/)[1])
-        this.temp_cache.gamechanger[id].streamFinderData.games_CLI = JSON.parse(response.match(/var games_CLI\s+=\s+([{][^}]+[}])/)[1])
+        this.temp_cache.gamechanger[id].streamFinderData.games_CLI = JSON.parse(response.match(/var games_CLI\s+=\s+([{][^}]*[}])/)[1])
         this.temp_cache.gamechanger[id].streamFinderData.LI_table = JSON.parse(response.match(/var LI\s+=\s+([{][^;]+);/)[1])
       } else {
         this.log('error : invalid response from url ' + reqObj.url)
