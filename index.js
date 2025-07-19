@@ -1736,7 +1736,11 @@ app.get('/', async function(req, res) {
             let multiviewquerystring = '/gamechanger.m3u8?resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
             streamURL += content_protect_a
             if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += '&resolution=' + resolution
-            if ( linkType != VALID_LINK_TYPES[1] ) {
+            // force Video.js embed player for Game Changer
+            if ( linkType == VALID_LINK_TYPES[0] ) {
+              let mylink = http_root + '/embed-videojs.html'
+              streamURL = mylink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b 
+            } else if ( linkType != VALID_LINK_TYPES[1] ) {
               streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b 
             }
             if ( linkType == VALID_LINK_TYPES[4] ) {
@@ -1755,7 +1759,11 @@ app.get('/', async function(req, res) {
             let multiviewquerystring = '/gamechanger.m3u8?streamFinder=on&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION + content_protect_b
             streamURL += content_protect_b
             if ( resolution != VALID_RESOLUTIONS[0] ) streamURL += '&resolution=' + resolution
-            if ( linkType != VALID_LINK_TYPES[1] ) {
+            // force Video.js embed player for Stream Finder
+            if ( linkType == VALID_LINK_TYPES[0] ) {
+              let mylink = http_root + '/embed-videojs.html'
+              streamURL = mylink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b 
+            } else if ( linkType != VALID_LINK_TYPES[1] ) {
               streamURL = thislink + '?src=' + encodeURIComponent(streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b 
             }
             if ( linkType == VALID_LINK_TYPES[4] ) {
@@ -2462,7 +2470,142 @@ app.options('*', function(req, res) {
   return
 })
 
+// Listen for Video.js embed request, respond with embedded Video.js player
+// used for Game Changer and Stream Finder
+app.get('/embed-videojs.html', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  session.requestlog('embed-videojs.html', req)
+
+  let startFrom = VALID_START_FROM[0]
+  if ( req.query.startFrom ) {
+    startFrom = req.query.startFrom
+  }
+  let controls = VALID_CONTROLS[0]
+  if ( req.query.controls ) {
+    controls = req.query.controls
+  }
+
+  let video_url = http_root + '/stream.m3u8'
+  if ( req.query.src ) {
+    video_url = req.query.src
+  } else if ( req.query.msrc ) {
+    video_url += '?'
+    if ( req.query.content_protect ) {
+      video_url += 'content_protect=' + req.query.content_protect + '&'
+    }
+    video_url += 'src=' + req.query.msrc
+  } else {
+    let urlArray = req.url.split('?')
+    if ( (urlArray.length == 2) ) {
+      video_url += '?' + urlArray[1]
+    }
+  }
+  session.debuglog('embed-videojs src : ' + video_url)
+
+  let content_protect = ''
+  if ( session.protection.content_protect ) {
+    content_protect = '?content_protect=' + session.protection.content_protect
+  }
+
+  var body = `<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+<title>` + appname + ` player</title>
+<link rel="icon" href="favicon.svg` + content_protect + `">
+<style type="text/css">
+body {
+  background-color:black;
+  color:lightgrey;
+  font-family:Arial,Helvetica,sans-serif;
+}
+.video-wrapper {
+  height: 94vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+button {
+  color:lightgray;
+  background-color:black;
+}
+</style>
+<script>
+function goBack() {
+  var prevPage=window.location.href;
+  window.history.go(-1);
+  setTimeout(function(){if(window.location.href==prevPage){window.location.href="` + http_root + '/' + content_protect + `"}}, 500);
+}
+</script>
+<link href="https://vjs.zencdn.net/8.23.3/video-js.css" rel="stylesheet" />
+</head>
+<body onkeydown="myKeyPress(event)">
+<div class="video-wrapper">
+<video id="video" class="video-js vjs-fill"`
+  if ( controls == VALID_CONTROLS[0] ) {
+    body += ' controls'
+  }
+  body += ` muted>
+  <source
+     src="` + video_url + `"
+     type="application/x-mpegURL">
+</video>
+</div>
+<script src="https://vjs.zencdn.net/8.23.3/video.min.js"></script>
+<script>
+var player = videojs('video', {
+  "liveui": true,
+  "playbackRates": [0.5, 1, 1.25, 1.5, 2]
+});
+function changeTime(skipAmount) {
+  player.currentTime(player.currentTime() + parseInt(skipAmount));
+}
+var skipAmounts = ['-30s', '-10s', '+10s', '+30s', '+90s', '+120s'];
+for (var i=0; i<skipAmounts.length; i++) {
+  player.getChild('ControlBar').addChild('button', {
+    controlText: skipAmounts[i],
+    className: 'vjs-visible-text',
+    clickHandler: function(event) {
+      changeTime(this.controlText());
+    }
+  });
+}
+player.ready(function() {
+  `;
+
+if ( startFrom != VALID_START_FROM[1] ) {
+  body += `this.currentTime(0);
+  `;
+}
+
+body += `this.play();
+});
+function changeRate(x) {
+  let newrate = parseFloat((player.playbackRate() + x).toFixed(1));
+  player.playbackRate(newrate);
+}
+function myKeyPress(e) {
+  if (e.key=="ArrowRight") {
+    changeTime(10);
+  } else if (e.key=="ArrowLeft") {
+    changeTime(-10);
+  } else if (e.key=="ArrowUp") {
+    changeRate(0.1);
+  } else if (e.key=="ArrowDown") {
+    changeRate(-0.1);
+  }
+}
+</script>
+<p><button onclick="goBack()">Back</button></p>
+</body>
+</html>`
+  res.end(body)
+})
+
 // Listen for embed request, respond with embedded hls.js player
+// used for everything except Game Changer and Stream Finder
 app.get('/embed.html', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
