@@ -194,8 +194,19 @@ if (argv.http_root) {
       req.url = req.url.substr(http_root.length, (req.url.length - http_root.length))
       app.route(req, res);
     } catch (e) {
-      session.log('http_root request error : ' + e.message)
-      res.end('http_root request error, check log')
+      session.log('http_root get request error : ' + e.message)
+      res.end('http_root get request error, check log')
+    }
+  })
+  app.post(http_root + '/*', async function(req, res) {
+    if ( ! (await protect(req, res)) ) return
+
+    try {
+      req.url = req.url.substr(http_root.length, (req.url.length - http_root.length))
+      app.route(req, res);
+    } catch (e) {
+      session.log('http_root post request error : ' + e.message)
+      res.end('http_root post request error, check log')
     }
   })
 }
@@ -3431,7 +3442,7 @@ app.post('/upload', async function(req, res) {
     
     req.on('body', function(body) {
       session.parse_stream_finder_settings(body)
-      let response = '<p><b>SUCCESS!</b></p><p>Your Stream Finder settings have been saved in mlbserver.</p><p>Select the Stream Finder stream to use them, or <a href="/upload">click here</a> to replace them with new settings.</p>'
+      let response = '<p><b>SUCCESS!</b></p><p>Your Stream Finder settings have been saved in mlbserver.</p><p>Select the Stream Finder stream to use them, or <a href="' + http_root + '/#streamfinder">click here</a> to replace them with new settings.</p>'
       res.end(response)
     })
   } catch (e) {

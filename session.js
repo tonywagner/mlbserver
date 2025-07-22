@@ -4074,9 +4074,9 @@ class sessionClass {
   
   setCurrentGame(cur_game_pk, game, team_data, game_changer_title, priority) {
     if ( cur_game_pk != game.game_pk ) {
-      this.debuglog(game_changer_title + ' set current game to ' + this.getCurrentGame(game, team_data) + ' due to ' + priority.type + ' ' + priority.data)
-      return {'game_pk': game.game_pk, 'cur_batter': game.batter}
+      this.debuglog(game_changer_title + 'set current game to ' + this.getCurrentGame(game, team_data) + ' due to ' + priority.type + ' ' + priority.data)
     }
+    return {'game_pk': game.game_pk, 'cur_batter': game.batter}
   }
   
   sleep(ms) {
@@ -4133,11 +4133,7 @@ class sessionClass {
           for (var i=0; i<cache_data.dates[0].games.length; i++) {
             let game = cache_data.dates[0].games[i]
             
-            let gamePk = game.gamePk.toString()            
-            let broadcast_count = await this.count_broadcasts(game.broadcasts, 'MLBTV')
-            if ( this.temp_cache.gamechanger.blackouts[gamePk] && this.temp_cache.gamechanger.blackouts[gamePk].blackout_feeds && (this.temp_cache.gamechanger.blackouts[gamePk].blackout_feeds.length == broadcast_count) ) {
-              continue
-            }
+            let gamePk = game.gamePk.toString()
             
             if (!game.linescore) {
               continue
@@ -4163,9 +4159,12 @@ class sessionClass {
             if (game.linescore.outs) {
               outs = game.linescore.outs
             }
-            let status = 'scheduled'
-            if ( game.status && game.status.detailedState && (game.status.detailedState == 'In Progress') ) {
-              status = 'active'
+            let status = 'unknown'            
+            let broadcast_count = await this.count_broadcasts(game.broadcasts, 'MLBTV')
+            if ( this.temp_cache.gamechanger.blackouts[gamePk] && this.temp_cache.gamechanger.blackouts[gamePk].blackout_feeds && (this.temp_cache.gamechanger.blackouts[gamePk].blackout_feeds.length == broadcast_count) ) {
+              status = 'blackout'
+            } else if ( game.status && game.status.detailedState ) {
+              status = game.status.detailedState
             }
             let half = 1
             if ( game.linescore.inningHalf && (game.linescore.inningHalf == 'Bottom') ) {
@@ -4283,6 +4282,8 @@ class sessionClass {
               }
             })
           }
+		  
+          this.debuglog(game_changer_title + 'games ' + JSON.stringify(games))
           
           let active_games = []
           let same_batter = 'N'
@@ -4299,18 +4300,22 @@ class sessionClass {
             let gamePk = game.gamePk.toString()
             
             if ( !team_data[game.teams.away.team.id.toString()] || !team_data[game.teams.home.team.id.toString()] ) {
+              this.debuglog(game_changer_title + 'invalid team(s) in game ' + gamePk)
               continue
             }
             
             if ( game.linescore.outs == 3 ) {
+              this.debuglog(game_changer_title + 'end of half inning in game ' + gamePk)
               continue
             }
             
             if ( game.linescore.inningState && !['Top', 'Bottom'].includes(game.linescore.inningState) ) {
+              this.debuglog(game_changer_title + 'between innings in game ' + gamePk)
               continue
             }
             
-            if ( !game.status || (game.status != 'active') ) {
+            if ( !game.status || (game.status != 'In Progress') ) {
+              this.debuglog(game_changer_title + 'non-active game ' + gamePk)
               continue
             }
             
@@ -4319,6 +4324,7 @@ class sessionClass {
               for (var j=0; j<this.stream_finder_settings.ignore.length; j++) {
                 let ignore_team = this.stream_finder_settings.ignore[j]
                 if ( (ignore_team == game.teams.away.team.id.toString()) || (ignore_team == game.teams.home.team.id.toString()) ) {
+                  this.debuglog(game_changer_title + 'ignoring team in game ' + gamePk)
                   ignore = true
                   break
                 }
@@ -4330,10 +4336,10 @@ class sessionClass {
             
             if ( this.temp_cache.gamechanger[id].break_expiries[gamePk] ) {
               if ( this.temp_cache.gamechanger[id].break_expiries[gamePk] > now ) {
-                this.debuglog(game_changer_title + ' pitching change in progress in game ' + gamePk)
+                this.debuglog(game_changer_title + 'pitching change in progress in game ' + gamePk)
                 continue
               } else {
-                this.debuglog(game_changer_title + ' pitching change complete in game ' + gamePk)
+                this.debuglog(game_changer_title + 'pitching change complete in game ' + gamePk)
                 this.removeBreakExpiry(id, gamePk)
               }
             }
@@ -4351,14 +4357,13 @@ class sessionClass {
                 this.temp_cache.gamechanger[id].cur_pitchers[gamePk] = {}
               }
               if ( !this.temp_cache.gamechanger[id].cur_pitchers[gamePk][pitching_team_id] ) {
+                this.debuglog(game_changer_title + 'storing pitcher ' + game.linescore.defense.pitcher.id + ' for team ' + pitching_team_id + ' in game ' + gamePk)
                 this.temp_cache.gamechanger[id].cur_pitchers[gamePk][pitching_team_id] = game.linescore.defense.pitcher.id
-              } else {
-                if ( game.linescore.defense.pitcher.id != this.temp_cache.gamechanger[id].cur_pitchers[gamePk][pitching_team_id] ) {
-                  this.debuglog(game_changer_title + ' pitching change begun in game ' + gamePk)
-                  this.setBreakExpiry(id, gamePk)
-                  this.temp_cache.gamechanger[id].cur_pitchers[gamePk][pitching_team_id] = game.linescore.defense.pitcher.id
-                  continue
-                }
+              } else if ( game.linescore.defense.pitcher.id != this.temp_cache.gamechanger[id].cur_pitchers[gamePk][pitching_team_id] ) {
+                this.debuglog(game_changer_title + 'pitching change begun in game ' + gamePk)
+                this.setBreakExpiry(id, gamePk)
+                this.temp_cache.gamechanger[id].cur_pitchers[gamePk][pitching_team_id] = game.linescore.defense.pitcher.id
+                continue
               }
             }
             
@@ -4391,6 +4396,7 @@ class sessionClass {
             
             // Flag to stay on current game if same batter is still at bat
             if ( (game.gamePk == this.temp_cache.gamechanger[id].cur_game_pk) && (game.linescore.offense.batter.id == this.temp_cache.gamechanger[id].cur_batter) && (game.linescore.outs < 3) && ((game.linescore.balls && ![0,4].includes(game.linescore.balls)) || (game.linescore.strikes && ![0,3].includes(game.linescore.strikes))) ) {
+              this.debuglog(game_changer_title + 'same batter is up in current game ' + gamePk)
               same_batter = 'Y'
             }
             
@@ -4425,7 +4431,7 @@ class sessionClass {
           }
           
           if ( !this.temp_cache.gamechanger[id].cur_game_pk && (active_games.length == 0) ) {
-            this.debuglog(game_changer_title + ' no active games')
+            this.debuglog(game_changer_title + 'no active games')
             return
           }
           
@@ -4438,14 +4444,16 @@ class sessionClass {
             return b.LI - a.LI;
           })
           
-          this.debuglog(game_changer_title + ' active games ' + JSON.stringify(games))
-          this.debuglog(game_changer_title + ' current pitchers ' + JSON.stringify(this.temp_cache.gamechanger[id].cur_pitchers))
-          this.debuglog(game_changer_title + ' pitching changes ' + JSON.stringify(this.temp_cache.gamechanger[id].break_expiries))
+          this.debuglog(game_changer_title + 'active games ' + JSON.stringify(games))
+          this.debuglog(game_changer_title + 'current pitchers ' + JSON.stringify(this.temp_cache.gamechanger[id].cur_pitchers))
+          this.debuglog(game_changer_title + 'pitching changes ' + JSON.stringify(this.temp_cache.gamechanger[id].break_expiries))
+          this.debuglog(game_changer_title + 'same batter? ' + same_batter)
           
           let game_pk = null
           let game_info = null
           if ( this.stream_finder_settings.priority ) {
             for (const [key, priority] of Object.entries(this.stream_finder_settings.priority)) {
+              this.debuglog(game_changer_title + 'checking priority ' + JSON.stringify(priority))
               if ( (same_batter == 'N') || (priority.immediate == 'Y') ) {
                 for (var i=0; i<games.length; i++) {
                   let game = games[i]
@@ -4564,7 +4572,7 @@ class sessionClass {
           if (game_pk != this.temp_cache.gamechanger[id].cur_game_pk) {
             // delay untested, disabled
             /*if ( this.temp_cache.gamechanger[id].cur_game_pk && this.stream_finder_settings.delay && (parseInt(this.stream_finder_settings.delay) > 0) ) {
-              this.debuglog(game_changer_title + ' delaying switch by ' + this.stream_finder_settings.delay)
+              this.debuglog(game_changer_title + 'delaying switch by ' + this.stream_finder_settings.delay)
               await this.sleep(this.stream_finder_settings.delay)
             }*/
             this.log(game_changer_title + 'loading game ' + game_pk)
