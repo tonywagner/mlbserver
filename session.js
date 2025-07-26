@@ -4218,7 +4218,7 @@ class sessionClass {
             }
             
             let basesit = this.basesit(first, second, third)
-            let innbaseout = currentInning.toString() + half.toString() + basesit.toString() + outs.toString()
+            let innbaseout = ((currentInning > 9) ? 9 : currentInning).toString() + half.toString() + basesit.toString() + outs.toString()
             
             games.push({
               'gamePk': game.gamePk,
