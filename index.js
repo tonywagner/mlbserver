@@ -3440,9 +3440,14 @@ app.post('/upload', async function(req, res) {
   try {
     session.requestlog('upload', req)
     
+    let content_protect = ''
+    if ( req.query.content_protect ) {
+      content_protect += '?content_protect=' + req.query.content_protect
+    }
+    
     req.on('body', function(body) {
       session.parse_stream_finder_settings(body)
-      let response = '<p><b>SUCCESS!</b></p><p>Your Stream Finder settings have been saved in mlbserver.</p><p>Select the Stream Finder stream to use them, or <a href="' + http_root + '/#streamfinder">click here</a> to replace them with new settings.</p>'
+      let response = '<p><b>SUCCESS!</b></p><p>Your Stream Finder settings have been saved in mlbserver.</p><p>Select the Stream Finder stream to use them, or <a href="' + http_root + '/' + content_protect + '#streamfinder">click here</a> to replace them with new settings.</p>'
       res.end(response)
     })
   } catch (e) {
