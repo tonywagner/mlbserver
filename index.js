@@ -451,6 +451,32 @@ var requestRetry = function(u, opts, cb) {
   action()
 }
 
+// Listen for master stream requests
+app.get('/master.m3u8', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  try {
+    session.requestlog('master.m3u8', req)
+    
+    let options = {}
+    if ( req.query.streamURL ) {
+      let streamURL = decodeURIComponent(req.query.streamURL)
+      if ( req.query.streamURLToken ) {
+        options.streamURLToken = decodeURIComponent(req.query.streamURLToken)
+      }
+
+      getMasterPlaylist(streamURL, req, res, options)
+    } else {
+      session.log('failed to find master URL : ' + req.url)
+      res.end('')
+      return
+    }
+  } catch (e) {
+    session.log('master request error : ' + e.message)
+    res.end('')
+  }
+})
+
 
 // Get the master playlist from the stream URL
 function getMasterPlaylist(streamURL, req, res, options = {}) {
@@ -554,12 +580,12 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         }
 
         // Omit captions track when TV audio is excluded or no video is specified
-        if ( line.startsWith('#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,') && ((audio_track != VALID_AUDIO_TRACKS[0]) || (audio_track != VALID_AUDIO_TRACKS[1]) || (resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1])) ) {
+        if ( line.startsWith('#EXT-X-MEDIA:') && line.includes('TYPE=CLOSED-CAPTIONS') && ((audio_track != VALID_AUDIO_TRACKS[0]) || (audio_track != VALID_AUDIO_TRACKS[1]) || (resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1])) ) {
           return
         }
 
         // Parse audio tracks to only include matching one, if specified
-        if ( line.startsWith('#EXT-X-MEDIA:TYPE=AUDIO') ) {
+        if ( line.startsWith('#EXT-X-MEDIA:') && line.includes('TYPE=AUDIO') ) {
           // if we've already returned our desired audio track, we can skip subsequent ones
           if ( audio_track_matched ) return
 
@@ -573,7 +599,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           let audio_output = ''
 
           // default TV audio, or park sounds
-          if ( !line.includes(',URI=') ) {
+          if ( !line.includes('URI=') ) {
             // only include default embedded audio track if requested or if filtering for park audio
             if ( (audio_track == VALID_AUDIO_TRACKS[1]) || (audio_track == VALID_AUDIO_TRACKS[6]) ) {
               audio_track_matched = true
@@ -600,7 +626,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
               if ( line.match ) {
                 //var parsed = line.match(/URI="([^"]+)"?$/)
-                var parsed = line.match(',URI="([^"]+)"')
+                var parsed = line.match('URI="([^"]+)"')
                 if ( parsed[1] ) {
                   newurl = http_root + '/playlist.m3u8?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
                   if ( force_vod != VALID_FORCE_VOD[0] ) newurl += '&force_vod=on'
@@ -653,8 +679,8 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
         }
 
         // Pass through any remaining caption tracks
-        if ( line.startsWith('#EXT-X-MEDIA:TYPE=SUBTITLES,') ) {
-          var parsed = line.match(',URI="([^"]+)"')
+        if ( line.startsWith('#EXT-X-MEDIA:') && line.includes('TYPE=SUBTITLES') ) {
+          var parsed = line.match('URI="([^"]+)"')
           if ( parsed[1] ) {
             newurl = http_root + '/playlist.m3u8?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
             if ( force_vod != VALID_FORCE_VOD[0] ) newurl += '&force_vod=on'
@@ -757,7 +783,7 @@ app.get('/playlist.m3u8', async function(req, res) {
     requestRetry(u, headers, function(err, response) {
       if (err) return res.error(err)
 
-      //session.debuglog(response.body)
+      session.debuglog(response.body)
 
       var body = response.body.replace(/^\s+|\s+$/g, '').split('\n')
 
@@ -1020,12 +1046,12 @@ app.get('/gamechanger.m3u8', async function(req, res) {
 
   var resolution
   if ( req.query.resolution && (req.query.resolution == 'best') ) {
-    resolution = VALID_RESOLUTIONS[2]
+    resolution = VALID_RESOLUTIONS[1]
   } else {
     resolution = session.returnValidItem(req.query.resolution, VALID_RESOLUTIONS)
   }
   if ( resolution == VALID_RESOLUTIONS[0] ) {
-    resolution = VALID_RESOLUTIONS[2]
+    resolution = VALID_RESOLUTIONS[1]
   }
 
   var streamFinder = ''
@@ -1051,7 +1077,9 @@ app.get('/gamechanger.m3u8', async function(req, res) {
     content_protect = '&content_protect=' + session.protection.content_protect
   }
 
-  var body = '#EXTM3U' + '\n' + '#EXT-X-INDEPENDENT-SEGMENTS' + '\n' + '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",LANGUAGE="en",NAME="English",AUTOSELECT=YES,DEFAULT=YES' + '\n' + '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",LANGUAGE="en",NAME="English",INSTREAM-ID="CC1",AUTOSELECT=YES,DEFAULT=YES' + '\n'
+  var body = '#EXTM3U' + '\n' + '#EXT-X-INDEPENDENT-SEGMENTS' + '\n' + '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="program_audio",LANGUAGE="en",NAME="English",AUTOSELECT=YES,DEFAULT=YES' + '\n'
+  // disable captions
+  // + '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",LANGUAGE="en",NAME="English",INSTREAM-ID="CC1",AUTOSELECT=YES,DEFAULT=YES' + '\n'
 
   for ( gamechanger_resolution in GAMECHANGER_RESOLUTIONS ) {
     if ( resolution == gamechanger_resolution ) {
@@ -2259,7 +2287,7 @@ app.get('/', async function(req, res) {
         }
         body += '</p>' + "\n"
 
-        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove all breaks, idle time, non-action pitches, or only commercial breaks from the stream (useful to make your own "condensed games").<br/><br/>NOTE: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream.</span></span>: '
+        body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove all breaks, idle time, non-action pitches, or only commercial breaks from the stream (useful to make your own "condensed games").<br/><br/>NOTES: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream. Also, commercial skip will not work on pre-2024 games, or on MiLB games -- use skip breaks instead.</span></span>: '
         for (var i = 0; i < VALID_SKIP.length; i++) {
           body += '<button '
           if ( skip == VALID_SKIP[i] ) body += 'class="default" '

@@ -3137,28 +3137,41 @@ class sessionClass {
   // Get variant playlist
   async getVariantPlaylist(streamURL, streamURLToken) {
     try {
-      this.debuglog('getVariantPlaylist')
-      
-      // MLB version
-      let variant = '_5600K'
-      if ( streamURL.includes('milb.com') ) {
-        variant = '_1280x720_59_5472K'
-      }
+      this.debuglog('getVariantPlaylist from ' + streamURL)
 
-      let variant_url = 'http://localhost:' + this.data.port + '/playlist.m3u8?url=' + encodeURIComponent(streamURL.substr(0,streamURL.length-5) + variant + '.m3u8')
+      let master_url = 'http://localhost:' + this.data.port + '/master.m3u8?streamURL=' + encodeURIComponent(streamURL)
       if ( streamURLToken ) {
-        variant_url += '&streamURLToken=' + encodeURIComponent(streamURLToken)
+        master_url += '&streamURLToken=' + encodeURIComponent(streamURLToken)
       }
       if ( this.protection.content_protect ) {
-        variant_url += '&content_protect=' + this.protection.content_protect
+        master_url += '&content_protect=' + this.protection.content_protect
       }
+      this.debuglog('getVariantPlaylist checking master ' + master_url)
       let reqObj = {
-        url: variant_url
+        url: master_url
       }
       var response = await this.httpGet(reqObj, false)
       var body = response.replace(/^\s+|\s+$/g, '').split('\n')
       
-      return body
+      let variant_url
+      for (var i=0; i<body.length; i++) {
+        let line = body[i];
+        if ( line.includes('RESOLUTION=1280x720') && line.includes('FRAME-RATE=59.94') ) {
+          variant_url = 'http://localhost:' + this.data.port + body[i+1]
+          break
+        }
+      }
+      
+      if (variant_url) {
+        this.debuglog('getVariantPlaylist found variant ' + variant_url)
+        reqObj = {
+          url: variant_url
+        }
+        response = await this.httpGet(reqObj, false)
+        body = response.replace(/^\s+|\s+$/g, '').split('\n')
+        
+        return body
+      }
     } catch(e) {
       this.log('getVariantPlaylist error : ' + e.message)
     }
