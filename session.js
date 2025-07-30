@@ -3450,13 +3450,18 @@ class sessionClass {
           
           if ( response.data ) {
             for (var i=0; i < response.data.length; i++) {
-              if ( response.data[i].airings && (response.data[i].airings.length > 0) && response.data[i].airings[0] && response.data[i].airings[0].accessRightsV2 && response.data[i].airings[0].accessRightsV2.live ) {
-                let est_date = new Date(response.data[i].airings[0].accessRightsV2.live.startTime).toLocaleString("en-US", {timeZone: 'America/New_York'})
-                let date_array = est_date.split(',')[0].split('/')
-                let this_datestring = date_array[2] + '-' + date_array[0].padStart(2, '0') + '-' + date_array[1].padStart(2, '0')
-                this.cache.bigInningSchedule[this_datestring] = {
-                  start: response.data[i].airings[0].accessRightsV2.live.startTime, 
-                  end: response.data[i].airings[0].accessRightsV2.live.endTime
+              if ( response.data[i].airings && (response.data[i].airings.length > 0) ) {
+                for (var j=0; j < response.data[i].airings.length; j++) {
+                  if ( response.data[i].airings[j].station && response.data[i].airings[j].station.name && (response.data[i].airings[j].station.name == 'MLB Big Inning') && response.data[i].airings[j].accessRightsV2 && response.data[i].airings[j].accessRightsV2.live ) {
+                    let est_date = new Date(response.data[i].airings[j].accessRightsV2.live.startTime).toLocaleString("en-US", {timeZone: 'America/New_York'})
+                    let date_array = est_date.split(',')[0].split('/')
+                    let this_datestring = date_array[2] + '-' + date_array[0].padStart(2, '0') + '-' + date_array[1].padStart(2, '0')
+                    this.cache.bigInningSchedule[this_datestring] = {
+                      start: response.data[i].airings[j].accessRightsV2.live.startTime, 
+                      end: response.data[i].airings[j].accessRightsV2.live.endTime
+                    }
+                    break
+                  }
                 }
               }
             }
