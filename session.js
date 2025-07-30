@@ -3588,19 +3588,15 @@ class sessionClass {
       if ( eventList ) {
         for (var i=0; i<eventList.length; i++) {
           if ( eventList[i].fields && eventList[i].fields.blurb && eventList[i].fields.url ) {
-            if ( !eventList[i].fields.blurb.includes('LIVE') ) {
-              break
-            } else {
-              if ( eventList[i].title ) {
-                if ( (eventName == 'BIGINNING') && eventList[i].title.startsWith('LIVE') && eventList[i].title.includes('Big Inning') ) {
-                  this.debuglog('active big inning url')
+            if ( eventList[i].title ) {
+              if ( (eventName == 'BIGINNING') && eventList[i].title.startsWith('LIVE') && eventList[i].title.includes('Big Inning') ) {
+                this.debuglog('active big inning url')
+                return eventList[i].fields.url
+              } else {
+                let cleaned_title = eventList[i].title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+                if ( cleaned_title.endsWith(' VS. ' + eventName) || cleaned_title.includes(eventName + ' VS. ') ) {
+                  this.debuglog('active ' + eventName + ' url')
                   return eventList[i].fields.url
-                } else {
-                  let cleaned_title = eventList[i].title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
-                  if ( cleaned_title.endsWith(' VS. ' + eventName) || cleaned_title.includes(eventName + ' VS. ') ) {
-                    this.debuglog('active ' + eventName + ' url')
-                    return eventList[i].fields.url
-                  }
                 }
               }
             }
