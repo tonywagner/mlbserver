@@ -3295,8 +3295,8 @@ class sessionClass {
                     event_end_padding = pitch_end_padding
                   }
                   let action_index
-                  // skip type 0 (none, inning start), 1 (breaks), and 4 (commercials) will look at all plays with an endTime
-                  if ( ((skip_type <= 1) || (skip_type == 4)) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime ) {
+                  // skip type 0 (none, inning start) and 1 (breaks), or type 4 (commercials) with an inning start, will look at all plays with an endTime
+                  if ( cache_data.liveData.plays.allPlays[i].playEvents[j].endTime && ((skip_type <= 1) || ((skip_type == 4) && (start_inning > 0))) ) {
                     action_index = j
                   // skip type 2 (idle time) will look at all non-idle plays with an endTime
                   } else if ((skip_type == 2) && cache_data.liveData.plays.allPlays[i].playEvents[j].endTime && (!cache_data.liveData.plays.allPlays[i].playEvents[j].details || !cache_data.liveData.plays.allPlays[i].playEvents[j].details.description || !IDLE_TYPES.some(v => cache_data.liveData.plays.allPlays[i].playEvents[j].details.description.includes(v)))) {
