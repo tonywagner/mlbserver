@@ -33,9 +33,10 @@ const VALID_RESOLUTIONS = [ 'adaptive', '1080p60', '720p60', '720p', '540p', '50
 const DEFAULT_MULTIVIEW_RESOLUTION = '504p'
 // Corresponding andwidths to display for above resolutions
 const DISPLAY_BANDWIDTHS = [ '', '9600k', '6600k', '4160k', '2950k', '2120k', '1400k', '1000k', '600k', '300k', '' ]
-const VALID_AUDIO_TRACKS = [ 'all', 'English', 'Home Radio', 'Casa Radio', 'Away Radio', 'Visita Radio', 'Park', 'none' ]
-const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Radio', 'Spa.', 'Away Rad.', 'Away Sp.', 'Park', 'none' ]
+const VALID_AUDIO_TRACKS = [ 'all', 'English', 'Home', 'Casa', 'Away', 'Visita', 'Park', 'none' ]
+const DISPLAY_AUDIO_TRACKS = [ 'all', 'TV', 'Home', 'Casa', 'Away', 'Visita', 'Park', 'none' ]
 const DEFAULT_MULTIVIEW_AUDIO_TRACK = 'English'
+const VALID_CAPTIONS = [ 'enabled', 'disabled' ]
 const VALID_SKIP = [ 'off', 'breaks', 'idle time', 'pitches', 'commercials' ]
 const DEFAULT_SKIP_ADJUST = 0
 const VALID_PAD = [ 'off', 'on' ]
@@ -292,7 +293,11 @@ app.get('/stream.m3u8', async function(req, res) {
       options.referer = 'https://hls-js-dev.netlify.app/'
     } else {
       options.resolution = req.query.resolution
-      options.audio_track = session.returnValidItem(req.query.audio_track, VALID_AUDIO_TRACKS)
+      options.audio_track = VALID_AUDIO_TRACKS[0]
+      if ( req.query.audio_track ) {
+        options.audio_track = session.returnValidItem(req.query.audio_track.split(' ')[0], VALID_AUDIO_TRACKS)
+      }
+      options.captions = req.query.captions || VALID_CAPTIONS[0]
       options.force_vod = req.query.force_vod || VALID_FORCE_VOD[0]
 
       options.inning_half = req.query.inning_half || VALID_INNING_HALF[0]
@@ -515,6 +520,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
       let resolution = options.resolution || VALID_RESOLUTIONS[0]
       let audio_track = options.audio_track || VALID_AUDIO_TRACKS[0]
+      let captions = options.captions || VALID_CAPTIONS[0]
       let force_vod = options.force_vod || VALID_FORCE_VOD[0]
 
       let inning_half = options.inning_half || VALID_INNING_HALF[0]
@@ -579,8 +585,8 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           return
         }
 
-        // Omit captions track when TV audio is excluded or no video is specified
-        if ( line.startsWith('#EXT-X-MEDIA:') && line.includes('TYPE=CLOSED-CAPTIONS') && ((audio_track != VALID_AUDIO_TRACKS[0]) || (audio_track != VALID_AUDIO_TRACKS[1]) || (resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1])) ) {
+        // Omit captions track when disabled, TV audio is excluded, or no video is specified
+        if ( line.startsWith('#EXT-X-MEDIA:') && line.includes('TYPE=CLOSED-CAPTIONS') && ((captions == VALID_CAPTIONS[1]) || (audio_track != VALID_AUDIO_TRACKS[0]) || (audio_track != VALID_AUDIO_TRACKS[1]) || (resolution == VALID_RESOLUTIONS[VALID_RESOLUTIONS.length-1])) ) {
           return
         }
 
@@ -611,10 +617,10 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
               audio_output += line
             }
           } else {
-            if ( (audio_track != VALID_AUDIO_TRACKS[1]) && (audio_track != VALID_AUDIO_TRACKS[6]) && (audio_track != VALID_AUDIO_TRACKS[7]) ) {
+            if ( (audio_track != VALID_AUDIO_TRACKS[1]) && !VALID_AUDIO_TRACKS.slice(6, 8).includes(audio_track) ) {
               // if user specified home/away radio or home/away Spanish audio track, check if this one matches
-              if ( (audio_track == VALID_AUDIO_TRACKS[2]) || (audio_track == VALID_AUDIO_TRACKS[3]) || (audio_track == VALID_AUDIO_TRACKS[4]) || (audio_track == VALID_AUDIO_TRACKS[5]) ) {
-                if ( line.includes('NAME="'+audio_track+'"') || line.includes('NAME="'+audio_track.substring(0,audio_track.length-1)+'"') ) {
+              if ( VALID_AUDIO_TRACKS.slice(2, 6).includes(audio_track) ) {
+                if ( line.includes('NAME="'+audio_track) ) {
                   audio_track_matched = true
                   line = line.replace('DEFAULT=NO','DEFAULT=YES')
                   line = line.replace('AUTOSELECT=NO','AUTOSELECT=YES')
@@ -678,8 +684,12 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
           return
         }
 
-        // Pass through any remaining caption tracks
+        // Pass through any remaining caption tracks, if not disabled
         if ( line.startsWith('#EXT-X-MEDIA:') && line.includes('TYPE=SUBTITLES') ) {
+          // disabled
+          if ( captions == VALID_CAPTIONS[1] ) {
+            return
+          }
           var parsed = line.match('URI="([^"]+)"')
           if ( parsed[1] ) {
             newurl = http_root + '/playlist.m3u8?url='+encodeURIComponent(url.resolve(streamURL, parsed[1].trim()))
@@ -1422,6 +1432,10 @@ app.get('/', async function(req, res) {
     if ( req.query.audio_track ) {
       audio_track = req.query.audio_track
     }
+    var captions = VALID_CAPTIONS[0]
+    if ( req.query.captions ) {
+      captions = req.query.captions
+    }
     var force_vod = VALID_FORCE_VOD[0]
     if ( req.query.force_vod ) {
       force_vod = req.query.force_vod
@@ -1474,10 +1488,10 @@ app.get('/', async function(req, res) {
     body += '</style><script type="text/javascript">' + "\n";
 
     // Define option variables in page
-    body += 'var date="' + gameDate + '";var level="' + level + '";var org="' + org + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var skip_adjust="' + skip_adjust + '";var pad="' + pad + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var controls="' + controls + '";var scan_mode="' + scan_mode + '";var content_protect="' + content_protect + '";' + "\n"
+    body += 'var date="' + gameDate + '";var level="' + level + '";var org="' + org + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var captions="' + captions + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var skip_adjust="' + skip_adjust + '";var pad="' + pad + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var controls="' + controls + '";var scan_mode="' + scan_mode + '";var content_protect="' + content_protect + '";' + "\n"
 
     // Reload function, called after options change
-    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="' + http_root + '/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (level != "' + default_level + '"){newurl+="level="+encodeURIComponent(level)+"&"}if (org != "All"){newurl+="org="+encodeURIComponent(org)+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";if (skip_adjust != "' + DEFAULT_SKIP_ADJUST + '"){newurl+="skip_adjust="+skip_adjust+"&"}}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="' + http_root + '/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (level != "' + default_level + '"){newurl+="level="+encodeURIComponent(level)+"&"}if (org != "All"){newurl+="org="+encodeURIComponent(org)+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (captions != "' + VALID_CAPTIONS[0] + '"){newurl+="captions="+encodeURIComponent(captions)+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";if (skip_adjust != "' + DEFAULT_SKIP_ADJUST + '"){newurl+="skip_adjust="+skip_adjust+"&"}}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
     // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
@@ -2149,6 +2163,9 @@ app.get('/', async function(req, res) {
                         } else {
                           multiviewquerystring += '&audio_track=' + encodeURIComponent(DEFAULT_MULTIVIEW_AUDIO_TRACK)
                         }
+                        if ( captions != VALID_CAPTIONS[0] ) {
+                          querystring += '&captions=' + encodeURIComponent(captions)
+                        }
                         if ( linkType == VALID_LINK_TYPES[0] ) {
                           if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
                           if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
@@ -2287,6 +2304,14 @@ app.get('/', async function(req, res) {
         }
         body += '</p>' + "\n"
 
+        body += '<p><span class="tooltip">Captions<span class="tooltiptext">For video streams only: you can disable the caption track, if one is present. This is handy if you do not want to disable it in your player each time.</span></span>: '
+        for (var i = 0; i < VALID_CAPTIONS.length; i++) {
+          body += '<button '
+          if ( captions == VALID_CAPTIONS[i] ) body += 'class="default" '
+          body += 'onclick="captions=\'' + VALID_CAPTIONS[i] + '\';reload()">' + VALID_CAPTIONS[i] + '</button> '
+        }
+        body += '</p>' + "\n"
+
         body += '<p><span class="tooltip">Skip<span class="tooltiptext">For video streams only (use the video "none" option above to apply it to audio streams): you can remove all breaks, idle time, non-action pitches, or only commercial breaks from the stream (useful to make your own "condensed games").<br/><br/>NOTES: skip timings are only generated when the stream is loaded -- so for live games, it will only skip up to the time you loaded the stream. Also, commercial skip will not work on pre-2024 games, or on MiLB games -- use skip breaks instead.</span></span>: '
         for (var i = 0; i < VALID_SKIP.length; i++) {
           body += '<button '
@@ -2337,7 +2362,7 @@ app.get('/', async function(req, res) {
         body += '<hr>Watch: <a href="' + http_root + '/embed.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Embed</a> | <a href="' + http_root + '/stream.m3u8?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Stream</a> | <a href="' + http_root + '/chromecast.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Chromecast</a> | <a href="' + http_root + '/advanced.html?msrc=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Advanced</a> | <a href="' + http_root + '/download.ts?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '&filename=' + gameDate + ' Multiview">Download</a><br/><span class="tinytext">Kodi STRM files: <a href="' + http_root + '/kodi.strm?src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Matrix/19+</a> (<a href="' + http_root + '/kodi.strm?version=18&src=' + encodeURIComponent(multiview_stream_url) + content_protect_b + '">Leia/18</a>)</span>'
         body += '</td></tr></table><br/>' + "\n"
     
-        body += '<table><tr><td><p><a name="streamfinder"/><span class="tooltip">Stream Finder Settings<span class="tooltiptext">Automatically switches between games according to your preferences. This program is not affiliated with Baseball Reference, do not contact them for support.</span></span></p><p><a download="mlbserverStreamFinder.txt" href="' + http_root + '/downloadsettings' + content_protect_a + '">Click to Download Currently Stored Settings</a></p><p><b><u>Step 1</b></u><br/>Export and download your desired Stream Finder settings at this link:<br/><a href="https://www.baseball-reference.com/stream-finder.shtml" target="_blank">https://www.baseball-reference.com/stream-finder.shtml</a></p><form method="POST" enctype="multipart/form-data" action="' + http_root + '/upload' + content_protect_a + '"><p><b><u>Step 2</b></u><br/>Click this button and select the settings file you just downloaded:<br/><input name="file" type="file"/></p><p><p><b><u>Step 3</b></u><br/>Click this button to upload the selected settings file to mlbserver:<br/><input type="submit" value="Upload"/></p></form></td></tr></table><br/>' + "\n"
+        body += '<table><tr><td><p><a name="streamfinder"/><span class="tooltip">Stream Finder Settings<span class="tooltiptext">Automatically switches between games according to your preferences. This program is not affiliated with Baseball Reference, do not contact them for support.</span></span></p><p><a download="mlbserverStreamFinder.txt" href="' + http_root + '/downloadsettings' + content_protect_a + '">Click to Download Currently Stored Settings</a></p><p><b><u>Step 1</b></u><br/>Export and download your desired Stream Finder settings at this link:<br/><a href="https://www.baseball-reference.com/stream-finder.shtml" target="_blank">https://www.baseball-reference.com/stream-finder.shtml</a></p><form method="POST" enctype="multipart/form-data" action="' + http_root + '/upload' + content_protect_a + '"><p><b><u>Step 2</b></u><br/>Click this button and select the settings file you just downloaded:<br/><input name="file" type="file" onchange="form.submit()"/></p></form></td></tr></table><br/>' + "\n"
     }
 
     body += '<table><tr><td>' + "\n"
