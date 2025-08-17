@@ -295,7 +295,7 @@ app.get('/stream.m3u8', async function(req, res) {
       options.resolution = req.query.resolution
       options.audio_track = VALID_AUDIO_TRACKS[0]
       if ( req.query.audio_track ) {
-        options.audio_track = session.returnValidItem(req.query.audio_track.split(' ')[0], VALID_AUDIO_TRACKS)
+        options.audio_track = req.query.audio_track.split(' ')[0]
       }
       options.captions = req.query.captions || VALID_CAPTIONS[0]
       options.force_vod = req.query.force_vod || VALID_FORCE_VOD[0]
@@ -339,6 +339,17 @@ app.get('/stream.m3u8', async function(req, res) {
               } else {
                 mediaId = mediaInfo.mediaId
                 gamePk = mediaInfo.gamePk
+                if ( mediaInfo.teamType ) {
+                  if ( options.audio_track.toLowerCase() == 'radio' ) {
+                    options.audio_track = mediaInfo.teamType
+                  } else if ( options.audio_track.toLowerCase() == 'spanish' ) {
+                    if ( mediaInfo.teamType == 'Away' ) {
+                      options.audio_track = VALID_AUDIO_TRACKS[5]
+                    } else {
+                      options.audio_track = VALID_AUDIO_TRACKS[3]
+                    }
+                  }
+                }
               }
             } else {
               session.log('no matching game found ' + req.url)
@@ -520,6 +531,34 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
 
       let resolution = options.resolution || VALID_RESOLUTIONS[0]
       let audio_track = options.audio_track || VALID_AUDIO_TRACKS[0]
+      // if specific audio track is requested, check if master playlist contains it
+      if ( audio_track != VALID_AUDIO_TRACKS[0] ) {
+        if ( !response.body.includes(',NAME="' + audio_track) ) {
+          session.debuglog('requested ' + audio_track + ' audio track not available')
+          // fallback check other team's radio feed
+          if ( VALID_AUDIO_TRACKS.slice(2, 6).includes(audio_track) ) {
+            if ( audio_track == VALID_AUDIO_TRACKS[5] ) {
+              audio_track = VALID_AUDIO_TRACKS[3]
+            } else if ( audio_track == VALID_AUDIO_TRACKS[3] ) {
+              audio_track = VALID_AUDIO_TRACKS[5]
+            } else if ( audio_track == VALID_AUDIO_TRACKS[4] ) {
+              audio_track = VALID_AUDIO_TRACKS[2]
+            } else if ( audio_track == VALID_AUDIO_TRACKS[2] ) {
+              audio_track = VALID_AUDIO_TRACKS[4]
+            }
+            if ( !response.body.includes(',NAME="' + audio_track) ) {
+              // if fallback feed is also not available, fall back to default
+              session.debuglog('fallback ' + audio_track + ' audio track also not available')
+              audio_track = VALID_AUDIO_TRACKS[0]
+            } else {
+              session.debuglog('falling back to ' + audio_track + ' audio track')
+            }
+          } else {
+            // fall back to default
+            audio_track = VALID_AUDIO_TRACKS[0]
+          }
+        }
+      }
       let captions = options.captions || VALID_CAPTIONS[0]
       let force_vod = options.force_vod || VALID_FORCE_VOD[0]
 
@@ -2388,6 +2427,10 @@ app.get('/', async function(req, res) {
       include_teams = session.credentials.fav_teams.toString()
     }
     body += '<p><span class="tooltip">By team<span class="tooltiptext">Including a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will include all of its broadcasts, or if that team is not broadcasting the game, it will include the national broadcast or opponent\'s broadcast if available. It will also include affiliate games for those organizations. Channels/games subject to blackout will be omitted by default. See below for an additional option to override that.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + content_protect_b + '">calendar.ics</a></p>' + "\n"
+    
+    body += '<p><span class="tooltip">By team w/ radio<span class="tooltiptext">Same as above, but defaults to that team\'s radio track, if available.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&audio_track=radio' + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&audio_track=radio' + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&audio_track=radio' + content_protect_b + '">calendar.ics</a></p>' + "\n"
+    
+    body += '<p><span class="tooltip">By team w/ Spanish<span class="tooltiptext">Same as above, but defaults to that team\'s Spanish radio track, if available.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&audio_track=spanish' + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&audio_track=spanish' + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&audio_track=spanish' + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
     body += '<p><span class="tooltip">Include blackouts<span class="tooltiptext">An optional parameter added to the URL will include channels/games subject to blackout (although you may not be able to play those games).</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">channels.m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">guide.xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=' + include_teams + '&includeBlackouts=true' + content_protect_b + '">calendar.ics</a></p>' + "\n"
 
@@ -2820,6 +2863,11 @@ app.get('/channels.m3u', async function(req, res) {
     startingChannelNumber = req.query.startingChannelNumber
   }
 
+  let audio_track = false
+  if ( req.query.audio_track ) {
+    audio_track = req.query.audio_track
+  }
+
   let includeBlackouts = 'false'
   if ( req.query.includeBlackouts ) {
     includeBlackouts = req.query.includeBlackouts
@@ -2835,7 +2883,7 @@ app.get('/channels.m3u', async function(req, res) {
     includeOrgs = req.query.includeOrgs.toUpperCase().split(',')
   }
 
-  var body = await session.getTVData('channels', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, 'false', 'false', resolution, pipe, startingChannelNumber)
+  var body = await session.getTVData('channels', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, 'false', audio_track, 'false', resolution, pipe, startingChannelNumber)
 
   res.writeHead(200, {'Content-Type': 'audio/x-mpegurl'})
   res.end(body)
@@ -2861,6 +2909,11 @@ app.get('/calendar.ics', async function(req, res) {
     if ( req.query.excludeTeams ) {
       excludeTeams = req.query.excludeTeams.toUpperCase().split(',')
     }
+    
+    let audio_track = false
+    if ( req.query.audio_track ) {
+      audio_track = req.query.audio_track
+    }
 
     let includeBlackouts = 'false'
     if ( req.query.includeBlackouts ) {
@@ -2884,7 +2937,7 @@ app.get('/calendar.ics', async function(req, res) {
 
     let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
 
-    var body = await session.getTVData('calendar', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles)
+    var body = await session.getTVData('calendar', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles, audio_track)
 
     res.writeHead(200, {'Content-Type': 'text/calendar'})
     res.end(body)
@@ -2915,6 +2968,11 @@ app.get('/guide.xml', async function(req, res) {
     excludeTeams = req.query.excludeTeams.toUpperCase().split(',')
   }
 
+  let audio_track = false
+  if ( req.query.audio_track ) {
+    audio_track = req.query.audio_track
+  }
+
   let includeBlackouts = 'false'
   if ( req.query.includeBlackouts ) {
     includeBlackouts = req.query.includeBlackouts
@@ -2942,7 +3000,7 @@ app.get('/guide.xml', async function(req, res) {
 
   let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
 
-  var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles, offAir)
+  var body = await session.getTVData('guide', mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles, audio_track, offAir)
 
   res.end(body)
 })

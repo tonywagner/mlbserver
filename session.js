@@ -1886,6 +1886,7 @@ class sessionClass {
                         if ( (nationalArray.length == 2) && (nationalArray[1] == nationalCount) ) {
                           this.debuglog('matched national event')
                           mediaInfo = await this.check_media_state(broadcast, cache_data.dates[0].games[j].status.abstractGameState, mediaDate, cache_data.dates[0].games[j].gamePk)
+                          mediaInfo.teamType = 'Home'
                           break
                         }
 
@@ -1897,6 +1898,7 @@ class sessionClass {
                           if ( (freeArray.length == 2) && (freeArray[1] == freeCount) ) {
                             this.debuglog('matched free event')
                             mediaInfo = await this.check_media_state(broadcast, cache_data.dates[0].games[j].status.abstractGameState, mediaDate, cache_data.dates[0].games[j].gamePk)
+                            mediaInfo.teamType = 'Home'
                             break
                           }
 
@@ -1910,6 +1912,11 @@ class sessionClass {
                           } else {
                             this.debuglog('matched team for event')
                             mediaInfo = await this.check_media_state(broadcast, cache_data.dates[0].games[j].status.abstractGameState, mediaDate, cache_data.dates[0].games[j].gamePk)
+                            if ( team.toUpperCase() == away_team ) {
+                              mediaInfo.teamType = 'Away'
+                            } else {
+                              mediaInfo.teamType = 'Home'
+                            }
                             break
                           }
                         }
@@ -2193,7 +2200,7 @@ class sessionClass {
   }
 
   // get TV data (channels or guide)
-  async getTVData(dataType, mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles='false', offAir='false', resolution='best', pipe='false', startingChannelNumber=1) {
+  async getTVData(dataType, mediaType, includeTeams, excludeTeams, includeLevels, includeOrgs, server, includeBlackouts, includeTeamsInTitles='false', audio_track=false, offAir='false', resolution='best', pipe='false', startingChannelNumber=1) {
     try {
       this.debuglog('getTVData for ' + dataType)
 
@@ -2531,6 +2538,9 @@ class sessionClass {
                             if ( streamMediaType == 'Video' ) {
                               stream += '&resolution=' + resolution
                             }
+                            if ( audio_track ) {
+                              stream += '&audio_track=' + audio_track
+                            }
                             if ( includeBlackouts == 'true' ) stream += '&includeBlackouts=' + includeBlackouts
                             if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
                             if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
@@ -2550,6 +2560,13 @@ class sessionClass {
                                 title = this.channelsFormattedTitle(subtitle, cache_data.dates[i].games[j].gameDate)
                               } else {
                                 title = 'MLB: ' + subtitle + ' (' + station
+                                if ( audio_track ) {
+                                  title += ' with'
+                                  if ( audio_track.toLowerCase() == 'spanish' ) {
+                                    title += ' Spanish'
+                                  }
+                                  title += ' Radio'
+                                }
                                 if ( language == 'es' ) {
                                   title += ' Spanish'
                                 }
@@ -2566,6 +2583,14 @@ class sessionClass {
                                 description += ' Spanish'
                               }
                               description += ' Radio'
+                            } else {
+                              if ( audio_track ) {
+                                description += ' with'
+                                if ( audio_track.toLowerCase() == 'spanish' ) {
+                                  description += ' Spanish'
+                                }
+                                description += ' Radio, if available'
+                              }                                
                             }
                             description += '. '
                             if ( cache_data.dates[i].games[j].seriesDescription != 'Regular Season' ) {
@@ -2627,6 +2652,9 @@ class sessionClass {
                             let location = server + '/embed.html?team=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
                             if ( streamMediaType == 'Video' ) {
                               location += '&resolution=' + resolution
+                            }
+                            if ( audio_track ) {
+                              location += '&audio_track=' + audio_track
                             }
                             if ( includeBlackouts == 'true' ) location += '&includeBlackouts=' + includeBlackouts
                             if ( this.protection.content_protect ) location += '&content_protect=' + this.protection.content_protect
