@@ -2545,7 +2545,52 @@ app.get('/', async function(req, res) {
     body += '<div id="myModal" class="modal"><div class="modal-content"><span class="close">&times;</span><div id="highlights"></div></div></div>'
 
     // Highlights modal functions
-    body += '<script type="text/javascript">var modal = document.getElementById("myModal");var highlightsModal = document.getElementById("highlights");var span = document.getElementsByClassName("close")[0];function parsehighlightsresponse(responsetext) { try { var highlights = JSON.parse(responsetext);var modaltext = "<ul>"; if (highlights && highlights[0]) { for (var i = 0; i < highlights.length; i++) { modaltext += "<li><a href=\'' + link + '?highlight_src=" + encodeURIComponent(highlights[i].playbacks[3].url) + "&resolution=" + resolution + "' + content_protect_b + '\'>" + highlights[i].headline + "</a><span class=\'tinytext\'> (<a href=\'" + highlights[i].playbacks[0].url + "\'>MP4</a>)</span></li>" } } else { modaltext += "No highlights available for this game.";}modaltext += "</ul>";highlightsModal.innerHTML = modaltext;modal.style.display = "block"} catch (e) { alert("Error processing highlights: " + e.message)}} function showhighlights(gamePk, gameDate) { makeGETRequest("' + http_root + '/highlights?gamePk=" + gamePk + "&gameDate=" + gameDate + "' + content_protect_b + '", parsehighlightsresponse);return false} span.onclick = function() {modal.style.display = "none";}' + "\n"
+    body += `<script type="text/javascript">
+var modal = document.getElementById("myModal");
+var highlightsModal = document.getElementById("highlights");
+var span = document.getElementsByClassName("close")[0];
+function parsehighlightsresponse(responsetext) {
+  try {
+    var highlights = JSON.parse(responsetext);
+    var modaltext = "<ul>";
+    var captions_parameter = '';
+    if (captions == 'disabled') {
+      captions_parameter = '&captions=disabled';
+    }
+    if (highlights && (highlights.length > 0)) {
+      for (var i = 0; i < highlights.length; i++) {
+        var hls_url = '';
+        var mp4_url = '';
+        if (highlights[i].playbacks && (highlights[i].playbacks.length > 0)) {
+          for (var j = 0; j < highlights[i].playbacks.length; j++) {
+            if (highlights[i].playbacks[j].name && (highlights[i].playbacks[j].name == 'HTTP_CLOUD_WIRED_60')) {
+              hls_url = highlights[i].playbacks[j].url;
+            } else if (highlights[i].playbacks[j].name && (highlights[i].playbacks[j].name == 'mp4Avc')) {
+              mp4_url = highlights[i].playbacks[j].url;
+            }
+          }
+        }
+        modaltext += "<li><a href='` + link + `?highlight_src=" + encodeURIComponent(hls_url) + "&resolution=" + resolution + captions_parameter + "` + content_protect_b + `'>" + highlights[i].headline + "</a><span class='tinytext'> (<a href='" + mp4_url + "'>MP4</a>)</span></li>";
+      }
+    } else {
+      modaltext += "No highlights available for this game.";
+    }
+    modaltext += "</ul>";
+    highlightsModal.innerHTML = modaltext;
+    modal.style.display = "block"
+  } catch (e) {
+    alert("Error processing highlights: " + e.message)
+  }
+}
+function showhighlights(gamePk, gameDate) {
+  makeGETRequest("` + http_root + `/highlights?gamePk=" + gamePk + "&gameDate=" + gameDate + "` + content_protect_b + `", parsehighlightsresponse);
+  return false
+}
+span.onclick = function() {
+  modal.style.display = "none";
+}
+`
+
     body += 'window.onclick = function(event) { if (event.target == modal) { modal.style.display = "none"; } }</script>' + "\n"
 
     body += "</body></html>"
