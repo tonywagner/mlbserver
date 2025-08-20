@@ -36,6 +36,8 @@ const WINTER_LEAGUES = [AFL_ID, LIDOM_ID]
 
 const OFF_AIR_LOGO = 'https://lh3.googleusercontent.com/uVJBX-jpgwHsDY_o6-po2JU5-cDZuoq_CsCcqJ0-T7996z8NbOzeQCfQaAG0DB2hbkxv2VvtZ2E'
 
+const RADIO_LOGOS = { 'ATH': ['1209', 'jpg'], 'ATL': ['27965', 'png'], 'AZ': ['33523', 'png'], 'BAL': ['29726', 'png'], 'BOS': ['22262', 'jpg'], 'CHC': ['22732', 'jpg'], 'CHW': ['21297', 'jpg'], 'CIN': ['30848', 'jpg'], 'CLE': ['23051', 'jpg'], 'COL': ['34417', 'jpg'], 'DET': ['30370', 'jpg'], 'HOU': ['31776', 'jpg'], 'KC': ['28141', 'jpg'], 'LAA': ['34679', 'jpg'], 'LAD': ['26568', 'jpg'], 'MIA': ['29623', 'jpg'], 'MIL': ['23203', 'jpg'], 'MIN': ['27781', 'jpg'], 'NYM': ['27760', 'png'], 'NYY': ['28671', 'jpg'], 'PHI': ['116135', 'jpg'], 'PIT': ['27728', 'jpg'], 'SD': ['26670', 'jpg'], 'SEA': ['33213', 'png'], 'SF': ['34231', 'jpg'], 'STL': ['34110', 'jpg'], 'TB': ['28140', 'jpg'], 'TEX': ['47360', 'jpg'], 'TOR': ['https://static.mytuner.mobi/media/tvos_radios/041/cjcl-sportsnet-590-the-fan.eedccc36.jpg'], 'WSH': ['29821', 'jpg'] }
+
 // These are the events to ignore, if we're skipping breaks
 const BREAK_TYPES = ['Game Advisory', 'Pitching Substitution', 'Offensive Substitution', 'Defensive Sub', 'Defensive Switch', 'Runner Placed On Base']
 // These are the events to keep, in addition to the last event of each at-bat, if we're skipping pitches
@@ -2515,6 +2517,22 @@ class sessionClass {
                               seriesId = cache_data.dates[i].games[j].teams[teamType].team.id
                               logo = 'https://www.mlbstatic.com/team-logos/share/' + cache_data.dates[i].games[j].teams[teamType].team.id + '.jpg'
                             }
+                            
+                            if ( audio_track ) {
+                              if ( audio_track.toLowerCase() == 'spanish' ) {
+                                seriesId += 'SPANISH'
+                              } else {
+                                seriesId += 'RADIO'
+                                let abbr = cache_data.dates[i].games[j].teams[teamType].team.abbreviation
+                                if ( RADIO_LOGOS[abbr] ) {
+                                  if ( RADIO_LOGOS[abbr].length == 1 ) {
+                                    logo = RADIO_LOGOS[abbr][0]
+                                  } else if ( RADIO_LOGOS[abbr].length == 2 ) {
+                                    logo = 'https://cdn-profiles.tunein.com/s' + RADIO_LOGOS[abbr][0] + '/images/logod.' + RADIO_LOGOS[abbr][1]
+                                  }
+                                }
+                              }
+                            }
 
                             let icon = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
                             if ( (cache_data.dates[i].games[j].teams['home'].team.id >= 108) && (cache_data.dates[i].games[j].teams['home'].team.id <= 158) && (cache_data.dates[i].games[j].teams['away'].team.id >= 108) && (cache_data.dates[i].games[j].teams['away'].team.id <= 158) ) {
@@ -2526,6 +2544,13 @@ class sessionClass {
                               channelid = 'Spanish'
                             }
                             channelid += '.' + team
+                            if ( audio_track ) {
+                              if ( audio_track.toLowerCase() == 'spanish' ) {
+                                channelid += '.SPANISH'
+                              } else {
+                                channelid += '.RADIO'
+                              }
+                            }
                             let streamMediaType = mediaType
                             let channelMediaType = mediaType
                             if ( mediaType == 'MLBTV' ) {
@@ -2558,15 +2583,10 @@ class sessionClass {
                             if (includeTeamsInTitles != 'false') {
                               if ( includeTeamsInTitles == 'channels' ) {
                                 title = this.channelsFormattedTitle(subtitle, cache_data.dates[i].games[j].gameDate)
+                                title = this.appendRadioTitle(title, audio_track)
                               } else {
                                 title = 'MLB: ' + subtitle + ' (' + station
-                                if ( audio_track ) {
-                                  title += ' with'
-                                  if ( audio_track.toLowerCase() == 'spanish' ) {
-                                    title += ' Spanish'
-                                  }
-                                  title += ' Radio'
-                                }
+                                title = this.appendRadioTitle(title, audio_track)
                                 if ( language == 'es' ) {
                                   title += ' Spanish'
                                 }
@@ -2575,6 +2595,8 @@ class sessionClass {
                                 }
                                 title += ')'
                               }
+                            } else {
+                              title = this.appendRadioTitle(title, audio_track)
                             }
 
                             let description = station
@@ -5375,6 +5397,17 @@ class sessionClass {
   
   channelsFormattedDate(date) {
     return new Date(date).toLocaleString('en-us', { month: 'short', day: 'numeric' })
+  }
+  
+  appendRadioTitle(title, audio_track) {
+    if ( audio_track ) {
+      title += ' with'
+      if ( audio_track.toLowerCase() == 'spanish' ) {
+        title += ' Spanish'
+      }
+      title += ' Radio'
+    }
+    return title
   }
 }
 
