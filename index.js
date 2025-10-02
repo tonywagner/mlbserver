@@ -2528,6 +2528,8 @@ app.get('/', async function(req, res) {
       let example_streamURL = gamechanger_streamURL + '&' + gamechanger_types[i] + 'cludeTeams=' + include_teams
       body += '&bull; ' + gamechanger_types[i] + 'clude: <a href="' + http_root + '/embed.html?src=' + encodeURIComponent(example_streamURL) + '&startFrom=' + VALID_START_FROM[1] + content_protect_b + '">Embed</a> | <a href="' + example_streamURL + '">Stream</a> | <a href="' + http_root + '/chromecast.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Chromecast</a> | <a href="' + http_root + '/advanced.html?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Advanced</a> | <a href="' + http_root + '/kodi.strm?src=' + encodeURIComponent(example_streamURL) + content_protect_b + '">Kodi</a><br/>' + "\n"
     }
+    
+    body += '<p><span class="tooltip">Comskip link examples<span class="tooltiptext">You can generate a <a href="https://github.com/erikkaashoek/Comskip">Comskip</a>-style file to automatically skip sections (breaks, idle time, or non-action pitches) of games you record using DVR software when watched in compatible players. For example, if you record a game from your local OTA channel using Tvheadend, you can then fetch one of these Comskip files, put it in the same directory with the same name as your recorded video file, and Kodi will automatically skip those sections while you watch the video.<br><br>Specifying the team and broadcast_start_timestamp in the URL is required! For the timestamp, use the  time your DVR software began the recording. This should be your local time in YYYY-MM-DDTHH:MM:SS format.<br><br>Specifying a skip_adjust value in the URL is recommended, to adjust for broadcast delays. This will vary across different channels and different video sources.<br><br>For the txt file format, specifying the video frame rate (fps) in the URL is also required. This will commonly be either 30, 59.94, or 60, depending on your video source.<br><br>Optionally, setting pad to "on" will generate random extra skips at the end, to help avoid timeline spoilers.</span></span>: <a href="' + http_root + '/comskip.edl?team=CHC&date=2025-10-01&pad=on&skip=pitches&skip_adjust=11&broadcast_start_timestamp=2025-10-01T14:00:00' + content_protect_a + '">comskip.edl</a> or <a href="' + http_root + '/comskip.txt?team=CHC&date=2025-10-01&pad=on&skip=pitches&skip_adjust=11&broadcast_start_timestamp=2025-10-01T14:00:00&fps=59.94' + content_protect_a + '">comskip.txt</a></p>' + "\n"
 
     body += '</p></td></tr></table><br/>' + "\n"
 
@@ -3648,5 +3650,86 @@ app.get('/stream_finder_icon.png', async function(req, res) {
   } catch (e) {
     session.log('stream_finder_icon.png request error : ' + e.message)
     res.end('stream_finder_icon.png request error, check log')
+  }
+})
+
+function prepareReqForComskip(req) {
+  req.query.mediaType = req.query.mediaType || VALID_MEDIA_TYPES[0]
+  req.query.inning_half = req.query.inning_half || VALID_INNING_HALF[0]
+  req.query.inning_number = req.query.inning_number || VALID_INNING_NUMBER[0]
+  let skip = req.query.skip || VALID_SKIP[1]
+  req.query.skip = VALID_SKIP.indexOf(skip)
+  req.query.pad = req.query.pad || VALID_PAD[0]
+  req.query.skip_adjust = parseInt(req.query.skip_adjust) || DEFAULT_SKIP_ADJUST
+  return req
+}
+
+// Listen for Comskip EDL file requests
+app.get('/comskip.edl', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  try {
+    session.requestlog('comskip.edl', req)
+    
+    req = prepareReqForComskip(req)
+    
+    let comskip_markers = await session.getComskipMarkers(req)
+
+    var body = ''
+    
+    for (var i=0; i<comskip_markers.length; i++) {
+      body += comskip_markers[i].break_start.toFixed(3) + ' ' + comskip_markers[i].break_end.toFixed(3) + ' 3' + "\n"
+    }
+
+    var download_headers = {
+      'Content-Disposition': 'attachment; filename="comskip.edl"'
+    }
+    res.writeHead(200, download_headers)
+
+    res.end(body)
+  } catch (e) {
+    session.log('comskip.edl request error : ' + e.message)
+    res.end('comskip.edl request error, check log')
+  }
+})
+
+// Listen for Comskip TXT file requests
+app.get('/comskip.txt', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  try {
+    session.requestlog('comskip.txt', req)
+    
+    var body = ''
+    
+    if ( !req.query.fps ) {
+      session.log('comskip.txt error : specifying the video FPS in the request URL is required')
+    } else {
+      let fps = req.query.fps
+    
+      req = prepareReqForComskip(req)
+    
+      let comskip_markers = await session.getComskipMarkers(req)
+      
+      if ( comskip_markers.length > 0 ) {  
+        let last_marker = comskip_markers[comskip_markers.length-1].break_end
+    
+        body = 'FILE PROCESSING COMPLETE ' + Math.round(last_marker * fps) + ' FRAMES AT  ' + (fps * 100) + "\n" + '-------------------' + "\n"
+    
+        for (var i=0; i<comskip_markers.length; i++) {
+          body += Math.round(comskip_markers[i].break_start * fps) + "\t" + Math.round(comskip_markers[i].break_end * fps) + "\n"
+        }
+      }
+    }
+
+    var download_headers = {
+      'Content-Disposition': 'attachment; filename="comskip.txt"'
+    }
+    res.writeHead(200, download_headers)
+
+    res.end(body)
+  } catch (e) {
+    session.log('comskip.txt request error : ' + e.message)
+    res.end('comskip.txt request error, check log')
   }
 })

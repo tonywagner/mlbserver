@@ -3252,7 +3252,7 @@ class sessionClass {
   }
 
   // Get skip markers into temporary cache
-  async getSkipMarkers(gamePk, skip_type, start_inning, start_inning_half, streamURL, streamURLToken, skip_adjust) {
+  async getSkipMarkers(gamePk, skip_type, start_inning, start_inning_half, streamURL, streamURLToken, skip_adjust, broadcast_start_timestamp=false) {
     try {
       this.debuglog('getSkipMarkers')
 
@@ -3276,9 +3276,11 @@ class sessionClass {
       // assume the game starts in a break
       let break_start = 0
 
-      // Get the broadcast start time first -- event times will be relative to this
-      let variantPlaylist = await this.getVariantPlaylist(streamURL, streamURLToken)
-      let broadcast_start_timestamp = await this.getBroadcastStart(variantPlaylist)
+      // Get the broadcast start time first, if necessary -- event times will be relative to this
+      if ( !broadcast_start_timestamp ) {
+        let variantPlaylist = await this.getVariantPlaylist(streamURL, streamURLToken)
+        broadcast_start_timestamp = await this.getBroadcastStart(variantPlaylist)
+      }
 
       if ( broadcast_start_timestamp ) {
         this.debuglog('getSkipMarkers broadcast start detected as ' + broadcast_start_timestamp)
@@ -5408,6 +5410,54 @@ class sessionClass {
       title += ' Radio'
     }
     return title
+  }
+  
+  async getComskipMarkers(req) {
+    try {
+      let gamePk = req.query.gamePk
+    
+      if ( !gamePk && req.query.team ) {
+        let mediaType = req.query.mediaType
+        let level = req.query.level || 'MLB'
+        let includeBlackouts = 'true'
+        let mediaInfo = await this.getMediaId(decodeURIComponent(req.query.team), decodeURIComponent(level), mediaType, req.query.date, req.query.game, includeBlackouts)
+        gamePk = mediaInfo.gamePk
+      }
+    
+      if ( !req.query.broadcast_start_timestamp ) {
+        this.log('comskip error : specifying the broadcast_start_timestamp in the URL is required, should be your local time in YYYY-MM-DDTHH:MM:SS format')
+        return []
+      }
+      let broadcast_start_timestamp = new Date(req.query.broadcast_start_timestamp)
+
+      let inning_half = req.query.inning_half
+      let inning_number = req.query.inning_number
+      let skip_type = req.query.skip
+      let pad = req.query.pad
+    
+      let streamURL = 'false'
+      let streamURLToken = 'false'
+    
+      let skip_adjust = parseInt(req.query.skip_adjust)
+    
+      await this.getSkipMarkers(gamePk, skip_type, inning_number, inning_half, streamURL, streamURLToken, skip_adjust, broadcast_start_timestamp)
+    
+      let comskip_markers = this.temp_cache[gamePk].skip_markers
+      
+      if ( (pad == 'on') && (comskip_markers.length > 0) ) {
+        let last_marker = comskip_markers[comskip_markers.length-1].break_end
+        let pad_time = last_marker + Math.floor(Math.random() * 7200) + 3600
+        while ( last_marker < pad_time ) {
+          let pad_start = last_marker + ((Math.floor(Math.random() * 15000) + 75000) / 1000)
+          last_marker = pad_start + ((Math.floor(Math.random() * 15000) + 75000) / 1000)
+          comskip_markers.push({'break_start': pad_start, 'break_end': last_marker})
+        }
+      }
+      
+      return comskip_markers
+    } catch(e) {
+      this.log('getComskipMarkers error : ' + e.message)
+    }
   }
 }
 
