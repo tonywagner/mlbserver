@@ -1700,7 +1700,7 @@ class sessionClass {
       let reqObj = {
         url: 'https://ids.mlb.com/oauth2/aus1m088yK07noBfh356/v1/token',
         headers: {
-          'user-agent': USER_AGENT,
+          'user-agent': 'okhttp/3.12.1',
           'content-type': 'application/x-www-form-urlencoded'
         },
         form: {
