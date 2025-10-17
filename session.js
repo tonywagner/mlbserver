@@ -22,7 +22,11 @@ const TODAY_UTC_HOURS = 8 // UTC hours (EST + 4) into tomorrow to still use toda
 
 const TEAM_IDS = { 'ATH': '133', 'ATL': '144', 'AZ': '109', 'BAL': '110', 'BOS': '111', 'CHC': '112', 'CWS': '145', 'CIN': '113', 'CLE': '114', 'COL': '115', 'DET': '116', 'HOU': '117', 'KC': '118', 'LAA': '108', 'LAD': '119', 'MIA': '146', 'MIL': '158', 'MIN': '142', 'NYM': '121', 'NYY': '147', 'PHI': '143', 'PIT': '134', 'STL': '138', 'SD': '135', 'SF': '137', 'SEA': '136', 'TB': '139', 'TEX': '140', 'TOR': '141', 'WSH': '120' }
 
+const AFL_TEAM_IDS = { 'GDD': '454', 'PEJ': '490', 'SRR': '527', 'SUR': '542', 'SCO': '544', 'MSS': '555' }
+
 const LIDOM_TEAM_IDS = { 'AGU': '667', 'TOR': '668', 'EST': '669', 'GIG': '670', 'ESC': '671', 'LIC': '672' }
+
+const LMP_TEAM_IDS = { 'MXC': '673', 'JAL': '674', 'MOC': '675', 'HER': '677', 'CUL': '678', 'MAZ': '679', 'OBR': '680', 'GSV': '5482', 'NAY': '6483', 'TBC': '6484' }
 
 const AFFILIATE_TEAM_IDS = { 'ATH': '237,400,499,524', 'ATL': '431,432,478,6325', 'AZ': '419,516,2310,5368', 'BAL': '418,488,548,568', 'BOS': '414,428,533,546', 'CHC': '451,521,550,553', 'CIN': '416,450,459,498', 'CLE': '402,437,445,481', 'COL': '259,342,486,538', 'CWS': '247,487,494,580', 'DET': '106,512,570,582', 'HOU': '482,573,3712,5434', 'KC': '541,565,1350,3705', 'LAA': '401,460,559,561', 'LAD': '238,260,456,526', 'MIA': '479,554,564,4124', 'MIL': '249,556,572,5015', 'MIN': '492,509,1960,3898', 'NYM': '453,505,507,552', 'NYY': '531,537,587,1956', 'PHI': '427,522,566,1410', 'PIT': '452,477,484,3390', 'SD': '103,510,584,4904', 'SEA': '403,515,529,574', 'SF': '105,461,476,3410', 'STL': '235,279,440,443', 'TB': '233,234,421,2498', 'TEX': '102,448,540,6324', 'TOR': '422,424,435,463', 'WSH': '426,436,534,547' }
 
@@ -30,9 +34,10 @@ const AFFILIATE_TEAM_IDS = { 'ATH': '237,400,499,524', 'ATL': '431,432,478,6325'
 const LEVELS = { 'MLB': '1', 'AAA': '11', 'AA': '12', 'A+': '13', 'A': '14', 'WINTER': '17', 'All': '1,11,12,13,14,17' }
 
 // Winter Leagues
-const AFL_ID = '119'
-const LIDOM_ID = '131'
-const WINTER_LEAGUES = [AFL_ID, LIDOM_ID]
+const AFL_ID = 119
+const LIDOM_ID = 131
+const LMP_ID = 132
+const WINTER_LEAGUES = [AFL_ID, LIDOM_ID, LMP_ID]
 
 const OFF_AIR_LOGO = 'https://lh3.googleusercontent.com/uVJBX-jpgwHsDY_o6-po2JU5-cDZuoq_CsCcqJ0-T7996z8NbOzeQCfQaAG0DB2hbkxv2VvtZ2E'
 
@@ -1118,8 +1123,16 @@ class sessionClass {
     return LEVELS
   }
 
-  getLidomId() {
-    return LIDOM_ID
+  getAFLid() {
+    return AFL_ID
+  }
+
+  getLMPid() {
+    return LMP_ID
+  }
+
+  getWinterIds() {
+    return WINTER_LEAGUES
   }
 
   getLevelNameFromSportId(sportId) {
@@ -1140,12 +1153,8 @@ class sessionClass {
     }
   }
 
-  getLidomTeamIds(team_abbr = false) {
-    if ( team_abbr ) {
-      return LIDOM_TEAM_IDS[team_abbr]
-    } else {
-      return Object.values(LIDOM_TEAM_IDS).toString()
-    }
+  getWinterTeamIds() {
+    return Object.values(AFL_TEAM_IDS).concat(Object.values(LIDOM_TEAM_IDS), Object.values(LMP_TEAM_IDS)).toString()
   }
 
   getAffiliateTeamIds(team_abbr = false) {
@@ -2265,8 +2274,8 @@ class sessionClass {
                 team_ids += ',' + AFFILIATE_TEAM_IDS[includeTeams[i]]
               }
             }
-            if ( includeTeams.includes('LIDOM') ) {
-              team_ids += ',' + this.getLidomTeamIds()
+            if ( includeTeams.includes('WINTER') ) {
+              team_ids += ',' + this.getWinterTeamIds()
             }
           } else {
             team_ids = this.getTeamIds()
@@ -2275,8 +2284,8 @@ class sessionClass {
                 team_ids += ',' + AFFILIATE_TEAM_IDS[this.credentials.fav_teams[i]]
               }
             }
-            if ( (excludeTeams.length == 0) || !excludeTeams.includes('LIDOM') ) {
-              team_ids += ',' + this.getLidomTeamIds()
+            if ( (excludeTeams.length == 0) || !excludeTeams.includes('WINTER') ) {
+              team_ids += ',' + this.getWinterTeamIds()
             }
           }
         }
@@ -2316,7 +2325,7 @@ class sessionClass {
                     }
                   }
                 }
-                  if ( (broadcastName == 'N/A') && (league_id != LIDOM_ID) ) {
+                  if ( (broadcastName == 'N/A') && !WINTER_LEAGUES.includes(league_id) ) {
                     continue
                   } else {
                     //for (var k = 0; k < cache_data.dates[i].games[j].broadcasts.length; k++) {
@@ -2336,11 +2345,21 @@ class sessionClass {
                       if ( league_id == LIDOM_ID ) {
                         let lidom_abbr = cache_data.dates[i].games[j].teams['home'].team.name.replace(/[^A-Z]/g, '').toLowerCase()
                         logo = 'https://pizarra.multimediard.com/ac/' + lidom_abbr + '.png'
+                      } else if ( league_id == LMP_ID ) {
+                        logo = 'https://cdn.lmp.mx/teams/default/' + team.toLowerCase() + '.png'
+                        if ( team == 'NAY' ) logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS0-Iyk0hS66mSJUiibq2ERvqfzzmQgMY8yAg&s';
+                        if ( team == 'TBC' ) logo = 'https://assets.simpleviewinc.com/simpleview/image/upload/c_limit,q_75,w_200/v1/crm/tucson/thumbnail_VECTORES_TUCSONBASEBALLTEAM-02_9C60D191-B719-AF5A-B7D5280D6EAE26EC_9c74a7a4-f651-f1e8-6d6360da6b7ac51c.jpg';
                       }
                       let streamMediaType = 'Video'
                       let stream = server + '/stream.m3u8?team=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
-                      if ( league_id == LIDOM_ID ) {
-                        stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.shortName.toUpperCase()) + '&mediaType=' + streamMediaType
+                      if ( WINTER_LEAGUES.includes(league_id) ) {
+                        if ( league_id == AFL_ID ) {
+                          stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.abbreviation.toUpperCase()) + '&mediaType=' + streamMediaType
+                        } else if ( league_id == LMP_ID ) {
+                          stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.name.split(' ')[0].toUpperCase()) + '&league_id=' + league_id + '&mediaType=' + streamMediaType
+                        } else {
+                          stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.shortName.toUpperCase()) + '&league_id=' + league_id + '&mediaType=' + streamMediaType
+                        }
                       }
                       stream += '&level=' + encodeURIComponent(this.getLevelNameFromSportId(sportId))
                       stream += '&resolution=' + resolution
@@ -2367,6 +2386,8 @@ class sessionClass {
                             title = 'AFL'
                           } else if ( league_id == LIDOM_ID ) {
                             title = 'LIDOM'
+                          } else if ( league_id == LMP_ID ) {
+                            title = 'LMP'
                           } else {
                             title = 'MiLB'
                           }
@@ -2385,7 +2406,7 @@ class sessionClass {
                       if ( scheduledInnings != '9' ) {
                         description += scheduledInnings + '-inning game. '
                       }
-                      if ( cache_data.dates[i].games[j].teams['away'].team.parentOrgName && cache_data.dates[i].games[j].teams['home'].team.parentOrgName ) {
+                      if ( !WINTER_LEAGUES.includes(league_id) && cache_data.dates[i].games[j].teams['away'].team.parentOrgName && cache_data.dates[i].games[j].teams['home'].team.parentOrgName ) {
                         description += cache_data.dates[i].games[j].teams['away'].team.name + ' (' + this.getParent(cache_data.dates[i].games[j].teams['away'].team.parentOrgName) + ') at ' + cache_data.dates[i].games[j].teams['home'].team.name + ' (' + this.getParent(cache_data.dates[i].games[j].teams['home'].team.parentOrgName) + '). '
                       }
                       if ( (cache_data.dates[i].games[j].teams['away'].probablePitcher && cache_data.dates[i].games[j].teams['away'].probablePitcher.fullName) || (cache_data.dates[i].games[j].teams['home'].probablePitcher && cache_data.dates[i].games[j].teams['home'].probablePitcher.fullName) ) {
@@ -3574,18 +3595,17 @@ class sessionClass {
   }
 
   // Get event data
-  async getEventData() {
+  async getEventData(url) {
     try {
       this.debuglog('getEventData')
 
       let cache_data
-      let cache_name = 'events'
+      let cache_name = url.substring(url.lastIndexOf('/')+1)
       let cache_file = path.join(this.CACHE_DIRECTORY, cache_name + '.json')
       let currentDate = new Date()
-      if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.eventURLCacheExpiry || (currentDate > new Date(this.cache.eventURLCacheExpiry)) ) {
+      if ( !fs.existsSync(cache_file) || !this.cache || !this.cache.eventURLCacheExpiry || !this.cache.eventURLCacheExpiry[cache_name] || (currentDate > new Date(this.cache.eventURLCacheExpiry[cache_name])) ) {
         let reqObj = {
-          url: 'https://dapi.cms.mlbinfra.com/v2/content/en-us/sel-mlbtv-featured-svod-video-list',
-          //url: 'https://dapi.mlbinfra.com/v2/content/en-us/vsmcontents/mlb-tv-welcome-center-big-inning-show',
+          url: url,
           headers: {
             'User-Agent': USER_AGENT,
             'Origin': 'https://www.mlb.com',
@@ -3605,7 +3625,10 @@ class sessionClass {
           let cacheExpiry = fiveMinutesFromNow
 
           // finally save the setting
-          this.cache.eventURLCacheExpiry = cacheExpiry
+          if (!this.cache.eventURLCacheExpiry || (this.cache.eventURLCacheExpiry !== 'object')) {
+            this.cache.eventURLCacheExpiry = {}
+          }
+          this.cache.eventURLCacheExpiry[cache_name] = cacheExpiry
           this.save_cache_data()
         } else {
           this.log('error : invalid json from url ' + reqObj.url)
@@ -3624,11 +3647,21 @@ class sessionClass {
   }
 
   // Get event URL, used to determine the stream URL if available
-  async getEventURL(eventName) {
+  async getEventURL(eventName, league_id=false) {
     try {
       this.debuglog('getEventURL')
+      if (league_id) {
+        this.debuglog('for ' + league_id)
+      }
+      
+      let url = 'https://dapi.cms.mlbinfra.com/v2/content/en-us/sel-mlbtv-featured-svod-video-list'
+      if ( league_id == LIDOM_ID ) {
+        url = 'https://dapi.cms.mlbinfra.com/v2/content/en-us/sel-dominican-winter-league-highlights-vod-video-list'
+      } else if ( league_id == LMP_ID ) {
+        url = 'https://dapi.cms.mlbinfra.com/v2/content/en-us/sel-mexican-pacific-league-highlights-vod'
+      }
 
-      let cache_data = await this.getEventData()
+      let cache_data = await this.getEventData(url)
 
       let eventList
       if ( cache_data && cache_data.items ) {
@@ -3788,7 +3821,7 @@ class sessionClass {
   }
 
   // Get event stream URL
-  async getEventStreamURL(eventName, gamePk=false) {
+  async getEventStreamURL(eventName, gamePk=false, league_id=false) {
     if ( gamePk ) {
       eventName = gamePk
     }
@@ -3814,7 +3847,7 @@ class sessionClass {
           playbackURL = await this.getLinearStreamURL('SNY_LIVE')
           return playbackURL
         } else {
-          playbackURL = await this.getEventURL(eventName)
+          playbackURL = await this.getEventURL(eventName, league_id)
         }
       }
       if ( !playbackURL ) {
@@ -3853,6 +3886,84 @@ class sessionClass {
           this.cacheStreamURL(eventName, playbackURL)
           return playbackURL
         }
+      }
+    }
+  }
+
+  // Get event stream URL
+  async getAFLStreamURL(team_abbr) {
+    this.debuglog('getAFLStreamURL for ' + team_abbr)
+    if ( this.cache.media && this.cache.media[team_abbr] && this.cache.media[team_abbr].streamURL && this.cache.media[team_abbr].streamURLExpiry && (Date.parse(this.cache.media[team_abbr].streamURLExpiry) > new Date()) ) {
+      this.log('using cached aflStreamURL')
+      return this.cache.media[eventName].streamURL
+    } else {
+      let aflStreamURL
+      let reqObj = {
+        url: 'https://www.mlb.com/arizona-fall-league/live-streams',
+        headers: {
+          'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+          'accept-encoding': 'gzip, deflate, br, zstd',
+          'accept-language': 'en-US,en;q=0.9',
+          'cache-control': 'no-cache',
+          'pragma': 'no-cache',
+          'user-agent': USER_AGENT
+        },
+        gzip: true
+      }
+      var response = await this.httpGet(reqObj, false)
+      if ( response ) {
+        // disabled because it's very big!
+        //this.debuglog('getAFLStreamURL response : ' + response)
+        let live_data = response.split('data-video-content-id="')
+        for (var i=0; i<live_data.length; i++) {
+          if ( live_data[i][0] != '"' ) {
+            let live_id = live_data[i].split('"')[0]
+            if ( live_id.includes('-' + team_abbr.toLowerCase() + '-') ) {
+              this.debuglog('getAFLStreamURL found live id for ' + team_abbr + ' : ' + live_id)
+              
+              let reqObj = {
+                url: 'https://www.mlb.com/data-service/en/videos/' + live_id,
+                headers: {
+                  'accept': '*/*',
+                  'accept-language': 'en-US,en;q=0.9',
+                  'cache-control': 'no-cache',
+                  'pragma': 'no-cache',
+                  'referer': 'https://www.mlb.com/arizona-fall-league/live-streams',
+                  'user-agent': USER_AGENT
+                }
+              }
+              var stream_response = await this.httpGet(reqObj, false)
+              if ( stream_response && this.isValidJson(stream_response) ) {
+                this.debuglog('getAFLStreamURL stream response : ' + stream_response)
+                let obj = JSON.parse(stream_response)
+                if ( obj.feeds && (obj.feeds.length > 0) ) {
+                  for (var j=0; j<obj.feeds.length; j++) {
+                    if ( obj.feeds[j].playbacks && (obj.feeds[j].playbacks.length > 0) ) {
+                      for (var k=0; k<obj.feeds[j].playbacks.length; k++) {
+                        if ( obj.feeds[j].playbacks[k].name && (obj.feeds[j].playbacks[k].name == 'hlsCloud') && obj.feeds[j].playbacks[k].url ) {
+                          this.debuglog('found aflStreamURL : ' + obj.feeds[j].playbacks[k].url)
+                          aflStreamURL = obj.feeds[j].playbacks[k].url
+                          this.cacheStreamURL(team_abbr, aflStreamURL)
+                          return aflStreamURL
+                        }
+                      }
+                    }
+                  }
+                  if (!aflStreamURL) {
+                    this.log('getAFLStreamURL failed to find stream for ' + team_abbr)
+                  }
+                } else {
+                  this.log('getAFLStreamURL failed to find feed for ' + team_abbr)
+                }
+              } else {
+                this.log('getAFLStreamURL failed to get stream response for ' + team_abbr)
+              }	
+              break
+            }
+          }
+        }
+      } else {
+        this.log('getAFLStreamURL failed to get response for ' + team_abbr)
       }
     }
   }

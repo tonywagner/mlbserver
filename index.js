@@ -318,7 +318,11 @@ app.get('/stream.m3u8', async function(req, res) {
       } else if ( req.query.highlight_src ) {
         streamURL = req.query.highlight_src
       } else if ( req.query.event ) {
-        streamURL = await session.getEventStreamURL(req.query.event.toUpperCase())
+        if ( req.query.league_id ) {
+          streamURL = await session.getEventStreamURL(req.query.event.toUpperCase(), false, req.query.league_id)
+        } else {
+          streamURL = await session.getAFLStreamURL(req.query.event.toUpperCase())
+        }
       } else {
         if ( req.query.gamePk ) {
           gamePk = req.query.gamePk
@@ -2088,8 +2092,14 @@ app.get('/', async function(req, res) {
                 startTime.setMinutes(startTime.getMinutes()-30)
                 if ( (currentTime >= startTime) ) {
                   let querystring
-                  if ( cache_data.dates[0].games[j].teams['home'].team.league.id == session.getLidomId() ) {
-                    querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.shortName.toUpperCase())
+                  if ( session.getWinterIds().includes(cache_data.dates[0].games[j].teams['home'].team.league.id) ) {
+                    if ( session.getAFLid() == cache_data.dates[0].games[j].teams['home'].team.league.id ) {
+                      querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.abbreviation.toUpperCase())
+                    } else if ( session.getLMPid() == cache_data.dates[0].games[j].teams['home'].team.league.id ) {
+                      querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.name.split(' ')[0].toUpperCase()) + '&league_id=' + cache_data.dates[0].games[j].teams['home'].team.league.id
+                    } else {
+                      querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.shortName.toUpperCase()) + '&league_id=' + cache_data.dates[0].games[j].teams['home'].team.league.id
+                    }
                   } else {
                     querystring = '?gamePk=' + gamePk
                   }
@@ -2437,7 +2447,7 @@ app.get('/', async function(req, res) {
     let exclude_teams = 'ath,atl'
     body += '<p><span class="tooltip">Exclude a team<span class="tooltiptext">Excluding a team (MLB only, by abbreviation, in a comma-separated list if more than 1) will exclude every game involving that team. Note that blackouts are already excluded without the need to specify this parameter.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&excludeTeams=' + exclude_teams + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&excludeTeams=' + exclude_teams + content_protect_b + '">ics</a></p>' + "\n"
 
-    body += '<p><span class="tooltip">Include (or exclude) LIDOM<span class="tooltiptext">Dominican Winter League, aka Liga de Beisbol Dominicano. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=lidom' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=lidom' + content_protect_b + '">ics</a></p>' + "\n"
+    body += '<p><span class="tooltip">Include (or exclude) Winter Leagues<span class="tooltiptext">Winter leagues include the Arizona Fall League, Dominican Winter League aka Liga de Beisbol Dominicano, and Mexican Winter League aka Liga Mexicana del Pacífico. Live stream only, does not support starting from the beginning or certain innings, skip options, etc.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=winter' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=winter' + content_protect_b + '">xml</a> and <a href="' + http_root + '/calendar.ics?mediaType=' + mediaType + '&includeTeams=winter' + content_protect_b + '">ics</a></p>' + "\n"
 
     if ( entitlements.includes('MLBN') || entitlements.includes('EXECMLB') || entitlements.includes('MLBTVMLBNADOBEPASS') ) {
       body += '<p><span class="tooltip">Include (or exclude) MLB Network<span class="tooltiptext">MLB Network live stream is now available in the USA for paid MLBTV subscribers or as a paid add-on, in addition to authenticated TV subscribers. <a href="https://support.mlb.com/s/article/MLB-Network-Streaming-FAQ">See here for more information</a>.</span></span>: <a href="' + http_root + '/channels.m3u?mediaType=' + mediaType + '&resolution=' + resolution + '&includeTeams=mlbn' + content_protect_b + '">m3u</a> and <a href="' + http_root + '/guide.xml?mediaType=' + mediaType + '&includeTeams=mlbn' + content_protect_b + '">xml</a></p>' + "\n"
