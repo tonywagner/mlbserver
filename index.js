@@ -319,9 +319,13 @@ app.get('/stream.m3u8', async function(req, res) {
         streamURL = req.query.highlight_src
       } else if ( req.query.event ) {
         if ( req.query.league_id ) {
-          streamURL = await session.getEventStreamURL(req.query.event.toUpperCase(), false, req.query.league_id)
+          if ( req.query.league_id == session.getAFLid() ) {
+            streamURL = await session.getAFLStreamURL(req.query.event.toUpperCase())
+          } else {
+            streamURL = await session.getEventStreamURL(req.query.event.toUpperCase(), false, req.query.league_id)
+          }
         } else {
-          streamURL = await session.getAFLStreamURL(req.query.event.toUpperCase())
+          streamURL = await session.getEventStreamURL(req.query.event.toUpperCase())
         }
       } else {
         if ( req.query.gamePk ) {
@@ -2096,10 +2100,11 @@ app.get('/', async function(req, res) {
                     if ( session.getAFLid() == cache_data.dates[0].games[j].teams['home'].team.league.id ) {
                       querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.abbreviation.toUpperCase())
                     } else if ( session.getLMPid() == cache_data.dates[0].games[j].teams['home'].team.league.id ) {
-                      querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.name.split(' ')[0].toUpperCase()) + '&league_id=' + cache_data.dates[0].games[j].teams['home'].team.league.id
+                      querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.name.split(' ')[0].toUpperCase())
                     } else {
-                      querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.shortName.toUpperCase()) + '&league_id=' + cache_data.dates[0].games[j].teams['home'].team.league.id
+                      querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.shortName.toUpperCase())
                     }
+                    querystring += '&league_id=' + cache_data.dates[0].games[j].teams['home'].team.league.id
                   } else {
                     querystring = '?gamePk=' + gamePk
                   }

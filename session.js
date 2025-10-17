@@ -2354,13 +2354,15 @@ class sessionClass {
                       let stream = server + '/stream.m3u8?team=' + encodeURIComponent(team) + '&mediaType=' + streamMediaType
                       if ( WINTER_LEAGUES.includes(league_id) ) {
                         if ( league_id == AFL_ID ) {
-                          stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.abbreviation.toUpperCase()) + '&mediaType=' + streamMediaType
+                          stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.abbreviation.toUpperCase())
                         } else if ( league_id == LMP_ID ) {
-                          stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.name.split(' ')[0].toUpperCase()) + '&league_id=' + league_id + '&mediaType=' + streamMediaType
+                          stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.name.split(' ')[0].toUpperCase())
                         } else {
-                          stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.shortName.toUpperCase()) + '&league_id=' + league_id + '&mediaType=' + streamMediaType
+                          stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.shortName.toUpperCase())
                         }
+                        stream += '&league_id=' + league_id
                       }
+                      stream += '&mediaType=' + streamMediaType
                       stream += '&level=' + encodeURIComponent(this.getLevelNameFromSportId(sportId))
                       stream += '&resolution=' + resolution
                       if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
