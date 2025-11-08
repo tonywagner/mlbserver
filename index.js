@@ -2099,8 +2099,8 @@ app.get('/', async function(req, res) {
                   if ( session.getWinterIds().includes(cache_data.dates[0].games[j].teams['home'].team.league.id) ) {
                     if ( session.getAFLid() == cache_data.dates[0].games[j].teams['home'].team.league.id ) {
                       querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.abbreviation.toUpperCase())
-                    } else if ( session.getLMPid() == cache_data.dates[0].games[j].teams['home'].team.league.id ) {
-                      querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.name.split(' ')[0].toUpperCase())
+                    //} else if ( session.getLMPid() == cache_data.dates[0].games[j].teams['home'].team.league.id ) {
+                    //  querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.name.split(' ')[0].toUpperCase())
                     } else {
                       querystring = '?event=' + encodeURIComponent(cache_data.dates[0].games[j].teams['home'].team.shortName.toUpperCase())
                     }

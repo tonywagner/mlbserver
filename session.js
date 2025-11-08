@@ -2355,8 +2355,8 @@ class sessionClass {
                       if ( WINTER_LEAGUES.includes(league_id) ) {
                         if ( league_id == AFL_ID ) {
                           stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.abbreviation.toUpperCase())
-                        } else if ( league_id == LMP_ID ) {
-                          stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.name.split(' ')[0].toUpperCase())
+                        //} else if ( league_id == LMP_ID ) {
+                        //  stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.name.split(' ')[0].toUpperCase())
                         } else {
                           stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.shortName.toUpperCase())
                         }
