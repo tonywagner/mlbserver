@@ -2347,7 +2347,7 @@ class sessionClass {
                         logo = 'https://pizarra.multimediard.com/ac/' + lidom_abbr + '.png'
                       } else if ( league_id == LMP_ID ) {
                         logo = 'https://cdn.lmp.mx/teams/default/' + team.toLowerCase() + '.png'
-                        if ( team == 'NAY' ) logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS0-Iyk0hS66mSJUiibq2ERvqfzzmQgMY8yAg&s';
+                        if ( team == 'NAY' ) logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS0-Iyk0hS66mSJUiibq2ERvqfzzmQgMY8yAg';
                         if ( team == 'TBC' ) logo = 'https://assets.simpleviewinc.com/simpleview/image/upload/c_limit,q_75,w_200/v1/crm/tucson/thumbnail_VECTORES_TUCSONBASEBALLTEAM-02_9C60D191-B719-AF5A-B7D5280D6EAE26EC_9c74a7a4-f651-f1e8-6d6360da6b7ac51c.jpg';
                       }
                       let streamMediaType = 'Video'
