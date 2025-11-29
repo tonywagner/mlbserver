@@ -540,7 +540,7 @@ function getMasterPlaylist(streamURL, req, res, options = {}) {
       let resolution = options.resolution || VALID_RESOLUTIONS[0]
       let audio_track = options.audio_track || VALID_AUDIO_TRACKS[0]
       // if specific audio track is requested, check if master playlist contains it
-      if ( audio_track != VALID_AUDIO_TRACKS[0] ) {
+      if ( (audio_track != VALID_AUDIO_TRACKS[0]) && (audio_track != VALID_AUDIO_TRACKS[6]) ) {
         if ( !response.body.includes(',NAME="' + audio_track) ) {
           session.debuglog('requested ' + audio_track + ' audio track not available')
           // fallback check other team's radio feed
