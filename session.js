@@ -2051,11 +2051,15 @@ class sessionClass {
       let cache_data
       let cache_name = dateString
       if ( level_ids != LEVELS['MLB'] ) {
-        cache_name += '.' + level_ids
+        cache_name += '.' + level_ids.replaceAll(',', '')
       }
       if ( team_ids != '' ) {
-        cache_name += '.' + team_ids
+        cache_name += '.' + team_ids.replaceAll(',', '')
       }
+      if ( cache_name.length > 250 ) {
+        cache_name = cache_name.slice(0, 250)
+      }
+      
       //let data_url = 'https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-scoreboard?stitch_env=prod&sortTemplate=2&sportId=1&sportId=17&startDate=' + dateString + '&endDate=' + dateString + '&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&leagueId=103&leagueId=131&contextTeamId='
       let data_url = 'https://statsapi.mlb.com/api/v1/schedule?sportId=' + level_ids
       if ( team_ids != '' ) {
@@ -2151,13 +2155,16 @@ class sessionClass {
       let utcHours = 5
 
       let cache_data
-      let cache_name = 'week'
+      let cache_name = 'w'
 
       if ( level_ids != LEVELS['All'] ) {
-        cache_name += '.' + level_ids
+        cache_name += '.' + level_ids.replaceAll(',', '')
       }
       if ( team_ids != '' ) {
-        cache_name += '.' + team_ids
+        cache_name += '.' + team_ids.replaceAll(',', '')
+      }
+      if ( cache_name.length > 250 ) {
+        cache_name = cache_name.slice(0, 250)
       }
 
       let cache_file = path.join(this.CACHE_DIRECTORY, cache_name + '.json')

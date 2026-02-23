@@ -1442,10 +1442,13 @@ app.get('/', async function(req, res) {
     }
     let cache_name = gameDate
     if ( level_ids != levels['MLB'] ) {
-      cache_name += '.' + level_ids
+      cache_name += '.' + level_ids.replaceAll(',', '')
     }
     if ( team_ids != '' ) {
-      cache_name += '.' + team_ids
+      cache_name += '.' + team_ids.replaceAll(',', '')
+    }
+    if ( cache_name.length > 250 ) {
+      cache_name = cache_name.slice(0, 250)
     }
 
     var cache_data = await session.getDayData(gameDate, false, level_ids, team_ids)
