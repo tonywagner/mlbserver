@@ -2500,10 +2500,11 @@ class sessionClass {
 
                         if ( (broadcast.type == 'TV') || ((mediaType == 'Audio') && (broadcast.language == language)) ) {
                           let teamType = broadcast.homeAway
+                          let opponent_teamType = 'away'
 
-                          if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[i].games[j].seriesDescription != 'Spring Training') ) {
+                          /*if ( (mediaType == 'MLBTV') && (cache_data.dates[i].games[j].seriesDescription != 'Regular Season') && (cache_data.dates[i].games[j].seriesDescription != 'Spring Training') ) {
                             teamType = 'NATIONAL'
-                          }
+                          }*/
                           let team = cache_data.dates[i].games[j].teams['home'].team.abbreviation
                           let opponent_team = cache_data.dates[i].games[j].teams['away'].team.abbreviation
 
@@ -2518,7 +2519,6 @@ class sessionClass {
                             }
                           } else {
                             teamType = teamType.toLowerCase()
-                            let opponent_teamType = 'away'
                             if ( teamType == 'away' ) {
                               opponent_teamType = 'home'
                             }
@@ -2528,8 +2528,9 @@ class sessionClass {
                           if ( (excludeTeams.length > 0) && (excludeTeams.includes(team) || excludeTeams.includes(opponent_team) || ((teamType == 'NATIONAL') && excludeTeams.includes(teamType))) ) {
                             continue
                           } else if ( (includeTeams.length == 0) || includeTeams.includes(team) || ((teamType == 'NATIONAL') && (includeTeams.includes(teamType) || includeTeams.includes(opponent_team))) || ((broadcast_count == 1) && includeTeams.includes(opponent_team)) || ((broadcast.freeGame == true) && includeTeams.includes('FREE')) ) {
-                            if ( (broadcast_count == 1) && !includeTeams.includes(team) && includeTeams.includes(opponent_team) ) {
+                            if ( (teamType != 'NATIONAL') && (broadcast_count == 1) && !includeTeams.includes(team) && includeTeams.includes(opponent_team) ) {
                               team = opponent_team
+                              teamType = opponent_teamType
                             }
                             let logo = 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRi5AKF6eAu9Va9BzZzgw0PSsQXw8rXPiQLHA'
                             let seriesId = 'MLB'
