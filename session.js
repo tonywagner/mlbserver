@@ -2764,6 +2764,39 @@ class sessionClass {
           channels = this.sortObj(channels)
           
           let entitlements = await this.getEntitlements()
+          
+          // MASN live stream for entitled subscribers
+          try {
+              if ( (entitlements.includes('MASN_110')) ) {
+                if ( (mediaType == 'MLBTV') && ((includeLevels.length == 0) || includeLevels.includes('MLB') || includeLevels.includes('ALL')) ) {
+                  if ( (excludeTeams.length > 0) && excludeTeams.includes('MASN') ) {
+                    // do nothing
+                  } else if ( (includeTeams.length == 0) || includeTeams.includes('MASN') ) {
+                    this.debuglog('getTVData processing MASN')
+                    let logo = 'https://img.mlbstatic.com/mlb-images/image/upload/t_16x9/t_w640/v1745242435/mlb/jov4fxbzmqikc8umj5kr.png'
+                    let channelid = mediaType + '.MASN'
+                    //if ( this.protection.content_protect ) logo += '&amp;content_protect=' + this.protection.content_protect
+                    let stream = server + '/stream.m3u8?event=masn&mediaType=Video&resolution=' + resolution
+                    if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
+                    if ( pipe == 'true' ) stream = await this.convert_stream_to_pipe(stream, channelid)
+                    channels[channelid] = await this.create_channel_object(channelid, logo, stream, mediaType)
+
+                    let title = 'MASN'
+                    let description = 'Live stream of MASN (Mid-Atlantic Sports Network)'
+
+                    let start = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
+                    let stop = this.convertDateToXMLTV(new Date(cache_data.dates[cache_data.dates.length-1].date + ' 00:00:00'))
+
+                    // MASN guide XML
+                    programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(cache_data.dates[0].date))
+                    this.debuglog('getTVData completed MASN')
+                  } // end includeTeams check
+                } // end mediaType check
+              } // end entitlements check
+          } catch (e) {
+            this.debuglog('getTVData MASN detect error : ' + e.message)
+          }
+          
           // MLB Network live stream for eligible USA subscribers
           try {
               if ( (entitlements.includes('MLBN') || entitlements.includes('EXECMLB') || entitlements.includes('MLBTVMLBNADOBEPASS')) ) {
@@ -2850,7 +2883,7 @@ class sessionClass {
                     let start = this.convertDateToXMLTV(new Date(cache_data.dates[0].date + ' 00:00:00'))
                     let stop = this.convertDateToXMLTV(new Date(cache_data.dates[cache_data.dates.length-1].date + ' 00:00:00'))
 
-                    // SNLA guide XML
+                    // SNY guide XML
                     programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertStringToAirDate(cache_data.dates[0].date))
                     this.debuglog('getTVData completed SNY')
                   } // end includeTeams check
@@ -3848,6 +3881,8 @@ class sessionClass {
           let dateString = eventName.substring(12)
           this.debuglog('getEventStreamURL RecapRundown for ' + dateString)
           playbackURL = await this.getRecapRundownURL(dateString)
+        } else if ( eventName.toUpperCase() == 'MASN' ) {
+          playbackURL = await this.getLinearStreamURL('MASN_ONE_LIVE')
         } else if ( eventName.toUpperCase() == 'MLBN' ) {
           playbackURL = 'https://falcon.mlbinfra.com/api/v1/linear/mlbn'
         } else if ( eventName.toUpperCase() == 'SNLA' ) {
