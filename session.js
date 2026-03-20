@@ -3319,6 +3319,7 @@ class sessionClass {
   async getSkipMarkers(gamePk, skip_type, start_inning, start_inning_half, streamURL, streamURLToken, skip_adjust, broadcast_start_timestamp=false) {
     try {
       this.debuglog('getSkipMarkers')
+      let variantPlaylist;
 
       if ( skip_adjust != 0 ) this.log('manual adjustment of ' + skip_adjust + ' seconds being applied')
       
@@ -3342,7 +3343,7 @@ class sessionClass {
 
       // Get the broadcast start time first, if necessary -- event times will be relative to this
       if ( !broadcast_start_timestamp ) {
-        let variantPlaylist = await this.getVariantPlaylist(streamURL, streamURLToken)
+        variantPlaylist = await this.getVariantPlaylist(streamURL, streamURLToken)
         broadcast_start_timestamp = await this.getBroadcastStart(variantPlaylist)
       }
 
@@ -3488,6 +3489,10 @@ class sessionClass {
           // if skipping commercials, look at the variant playlist to detect insertions
           if ( skip_type == 4 ) {
             this.debuglog('detecting commercial breaks')
+            if (!variantPlaylist) {
+              this.debuglog('variantPlaylist missing, fetching...')
+              variantPlaylist = await this.getVariantPlaylist(streamURL, streamURLToken)
+            }
             let body = variantPlaylist
             let break_active = false
             let break_end = 0
