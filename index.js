@@ -431,7 +431,7 @@ var getKey = function(url, headers, cb) {
   requestRetry(url, headers, function(err, response) {
     if (err) return cb(err)
     let key = response.body
-    session.debuglog('key returned ' + key)
+    session.debuglog('key returned ' + Buffer.from(key, 'binary').toString('base64'))
     session.temp_cache.prevKeys[url] = key
     cb(null, key)
   })
@@ -1262,15 +1262,28 @@ app.get('/gamechangerplaylist.m3u8', async function(req, res) {
               let new_segments_complete = false
               let segment_count = 0
               for (var i=(body.length-1); i>=0; i--) {
-                if ( body[i].startsWith('#EXTINF:') ) {
-                  let line = url.resolve(u, body[i+1])
-                  if ( !new_segments_complete ) {
-                    session.debuglog(game_changer_title + 'found segment ' + line)
+                if ( body[i].startsWith('#EXT-X-KEY') ) {
+                  let key = url.resolve(u, body[i].match('URI="([^"]+)"')[1])
+                  let iv = body[i].match('IV=0x(.*)$')[1]
+                  let ts
+                  let extinf
+                  for (var j=1; j<=4; j++) {
+                    if ( body[i+j] ) {
+                      if ( !extinf && body[i+j].startsWith('#EXTINF') ) {
+                        extinf = body[i+j]
+                      } else if ( !ts && !body[i+j].startsWith('#') ) {
+                        ts = url.resolve(u, body[i+j])
+                      }
+                      if ( extinf && ts ) break;
+                    }
+                  }
+                  if ( key && iv && extinf && ts && !new_segments_complete ) {
+                    session.debuglog(game_changer_title + 'found segment ' + ts)
                     if ( discontinuity ) {
                       session.debuglog(game_changer_title + 'only getting newest segment after stream change')
-                      new_segments.unshift({'extinf':body[i], 'ts':line, 'streamURLToken':streamURLToken})
+                      new_segments.unshift({'key':key, 'iv':iv, 'extinf':extinf, 'ts':ts, 'streamURLToken':streamURLToken})
                       new_segments_complete = true
-                    } else if ( !discontinuity && (session.temp_cache.gamechanger[id].segments.length > 0) && (line == session.temp_cache.gamechanger[id].segments[session.temp_cache.gamechanger[id].segments.length-1].ts) ) {
+                    } else if ( !discontinuity && (session.temp_cache.gamechanger[id].segments.length > 0) && (ts == session.temp_cache.gamechanger[id].segments[session.temp_cache.gamechanger[id].segments.length-1].ts) ) {
                       session.debuglog(game_changer_title + 'found previous last segment')
                       new_segments_complete = true
                     } else if ( segment_count == GAMECHANGER_LIST_SIZE ) {
@@ -1281,7 +1294,7 @@ app.get('/gamechangerplaylist.m3u8', async function(req, res) {
                       }
                       new_segments_complete = true
                     } else {
-                      new_segments.unshift({'extinf':body[i], 'ts':line, 'streamURLToken':streamURLToken})
+                      new_segments.unshift({'key':key, 'iv':iv, 'extinf':extinf, 'ts':ts, 'streamURLToken':streamURLToken})
                     }
                   }
                   segment_count++
@@ -1314,7 +1327,7 @@ app.get('/gamechangerplaylist.m3u8', async function(req, res) {
                 if ( session.temp_cache.gamechanger[id].segments[i].discontinuity ) {
                   session.temp_cache.gamechanger[id].playlist[resolution] += '#EXT-X-DISCONTINUITY' + '\n'
                 }
-                session.temp_cache.gamechanger[id].playlist[resolution] += session.temp_cache.gamechanger[id].segments[i].extinf + '\n' + http_root + '/segment.ts?url=' + encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].ts) + '&streamURLToken='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].streamURLToken) + content_protect + '\n'
+                session.temp_cache.gamechanger[id].playlist[resolution] += session.temp_cache.gamechanger[id].segments[i].extinf + '\n' + http_root + '/segment.ts?url=' + encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].ts) + '&streamURLToken='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].streamURLToken) + '&key='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].key) + '&iv='+encodeURIComponent(session.temp_cache.gamechanger[id].segments[i].iv) + content_protect + '\n'
               }
 
               session.debuglog(game_changer_title + 'playlist ' + session.temp_cache.gamechanger[id].playlist[resolution])
