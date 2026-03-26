@@ -4354,6 +4354,7 @@ class sessionClass {
       if ( cache_data ) {
         if ( cache_data.dates && cache_data.dates[0] && cache_data.dates[0].games && (cache_data.dates[0].games.length > 0) ) {
           let team_data = this.temp_cache.gamechanger[id].streamFinderData.team_data
+          let games_CLI = this.temp_cache.gamechanger[id].streamFinderData.games_CLI
         
           var games = []
           
