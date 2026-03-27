@@ -1,7 +1,8 @@
 # --- Build Stage ---
-FROM node:20-alpine AS build
+FROM node:18-alpine AS build
 
 # Set environment variable to skip the automatic Chromium download by Puppeteer
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 # Install system-level dependencies for Chromium on Alpine

@@ -29,7 +29,7 @@ const LIDOM_TEAM_IDS = { 'AGU': '667', 'TOR': '668', 'EST': '669', 'GIG': '670',
 
 const LMP_TEAM_IDS = { 'MXC': '673', 'JAL': '674', 'MOC': '675', 'HER': '677', 'CUL': '678', 'MAZ': '679', 'OBR': '680', 'GSV': '5482', 'NAY': '6483', 'TBC': '6484' }
 
-const AFFILIATE_TEAM_IDS = { 'ATH': '237,400,499,524', 'ATL': '431,432,478,6325', 'AZ': '419,516,2310,5368', 'BAL': '418,488,548,568', 'BOS': '414,428,533,546', 'CHC': '451,521,550,553', 'CIN': '416,450,459,498', 'CLE': '402,437,445,481', 'COL': '259,342,486,538', 'CWS': '247,487,494,580', 'DET': '106,512,570,582', 'HOU': '482,573,3712,5434', 'KC': '541,565,1350,3705', 'LAA': '401,460,559,561', 'LAD': '238,260,456,526', 'MIA': '479,554,564,4124', 'MIL': '249,556,572,5015', 'MIN': '492,509,1960,3898', 'NYM': '453,505,507,552', 'NYY': '531,537,587,1956', 'PHI': '427,522,566,1410', 'PIT': '452,477,484,3390', 'SD': '103,510,584,4904', 'SEA': '403,515,529,574', 'SF': '105,461,476,3410', 'STL': '235,279,440,443', 'TB': '233,234,421,2498', 'TEX': '102,448,540,6324', 'TOR': '422,424,435,463', 'WSH': '426,436,534,547' }
+const AFFILIATE_TEAM_IDS = {"ATH":"237,400,499,524","ATL":"431,432,478,6325","AZ":"419,516,2310,5368","BAL":"418,493,548,568","BOS":"414,428,533,546","CHC":"451,521,550,553","CIN":"416,450,459,498","CLE":"402,437,445,481","COL":"259,342,486,538","CWS":"247,487,494,580","DET":"106,512,570,582","HOU":"482,573,3712,5434","KC":"541,565,1350,3705","LAA":"460,526,559,561","LAD":"238,260,456,6482","MIA":"479,554,564,4124","MIL":"249,556,572,5015","MIN":"492,509,1960,3898","NYM":"453,505,507,552","NYY":"531,537,587,1956","PHI":"427,522,566,1410","PIT":"452,477,484,3390","SD":"103,510,584,4904","SEA":"401,403,529,574","SF":"105,461,476,3410","STL":"235,279,440,443","TB":"233,234,421,2498","TEX":"102,448,540,6324","TOR":"422,424,435,463","WSH":"426,436,534,547"}
 
 // First is default level, last should be All (also used as default org)
 const LEVELS = { 'MLB': '1', 'AAA': '11', 'AA': '12', 'A+': '13', 'A': '14', 'WINTER': '17', 'All': '1,11,12,13,14,17' }
@@ -5678,6 +5678,56 @@ class sessionClass {
       return comskip_markers
     } catch(e) {
       this.log('getComskipMarkers error : ' + e.message)
+    }
+  }
+
+  // generates AFFILIATE_TEAM_IDS, should be done each season
+  async getAffiliates() {
+    try {
+      this.debuglog('getAffiliates')
+
+      let affiliates_data = {}
+      let reqObj = {
+        url: 'https://statsapi.mlb.com/api/v1/teams?sportIds=1,11,12,13,14&activeStatus=true&season=2026',
+        headers: {
+          'User-agent': USER_AGENT,
+          'Origin': 'https://www.mlb.com',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Content-type': 'application/json'
+        },
+        gzip: true
+      }
+      var response = await this.httpGet(reqObj, false)
+      if ( response && this.isValidJson(response) ) {
+        //this.debuglog(response)
+        let teams_data = JSON.parse(response)
+        
+        let parent_orgs = {}
+        if ( teams_data && teams_data.teams ) {
+          for (var i=0; i<teams_data.teams.length; i++) {
+            if (teams_data.teams[i].sport.id == 1) {
+              parent_orgs[teams_data.teams[i].id] = teams_data.teams[i].abbreviation
+              affiliates_data[teams_data.teams[i].abbreviation] = []
+            }
+          }
+          for (var i=0; i<teams_data.teams.length; i++) {
+            if (teams_data.teams[i].sport.id != 1) {
+              teams_data.teams[i].abbreviation
+              affiliates_data[parent_orgs[teams_data.teams[i].parentOrgId]].push(teams_data.teams[i].id)
+              affiliates_data[parent_orgs[teams_data.teams[i].parentOrgId]].sort((a, b) => a - b)
+            }
+          }
+          for (const [key, value] of Object.entries(affiliates_data)) {
+            affiliates_data[key] = value.join(',')
+          }
+          
+          console.log(JSON.stringify(this.sortObj(affiliates_data)))
+        }
+      } else {
+        this.log('error : invalid json from url ' + reqObj.url)
+      }
+    } catch(e) {
+      this.log('getAffiliates error : ' + e.message)
     }
   }
 }
