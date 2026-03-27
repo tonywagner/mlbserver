@@ -8,6 +8,7 @@ const path = require('path')
 const readlineSync = require('readline-sync')
 const FileCookieStore = require('tough-cookie-filestore')
 const parseString = require('xml2js').parseString
+const puppeteer = require('puppeteer')
 
 const MULTIVIEW_DIRECTORY_NAME = 'multiview'
 
@@ -3543,62 +3544,109 @@ class sessionClass {
       let currentDate = new Date()
       if ( !this.cache || !this.cache.bigInningScheduleCacheExpiry || (currentDate > new Date(this.cache.bigInningScheduleCacheExpiry)) ) {
         if ( !this.cache.bigInningSchedule ) this.cache.bigInningSchedule = {}
-        let reqObj = {
-          url: 'https://api.fubo.tv/gg/series/123881219/live-programs?limit=14&languages=en&countrySlugs=USA',
-          headers: {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'accept-language': 'en-US,en;q=0.9',
-            'cache-control': 'no-cache',
-            'dnt': '1',
-            'pragma': 'no-cache',
-            'sec-ch-ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"macOS"',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'none',
-            'sec-fetch-user': '?1',
-            'sec-gpc': '1',
-            'upgrade-insecure-requests': '1',
-            'user-agent': USER_AGENT
-          },
-          json: true,
-          gzip: true
-        }
-        var response = await this.httpGet(reqObj, false)
-        if ( response ) {
-          this.debuglog(JSON.stringify(response))
-          
-          if ( response.data ) {
-            for (var i=0; i < response.data.length; i++) {
-              if ( response.data[i].airings && (response.data[i].airings.length > 0) ) {
-                for (var j=0; j < response.data[i].airings.length; j++) {
-                  if ( response.data[i].airings[j].station && response.data[i].airings[j].station.name && (response.data[i].airings[j].station.name == 'MLB Big Inning') && response.data[i].airings[j].accessRightsV2 && response.data[i].airings[j].accessRightsV2.live ) {
-                    let est_date = new Date(response.data[i].airings[j].accessRightsV2.live.startTime).toLocaleString("en-US", {timeZone: 'America/New_York'})
-                    let date_array = est_date.split(',')[0].split('/')
-                    let this_datestring = date_array[2] + '-' + date_array[0].padStart(2, '0') + '-' + date_array[1].padStart(2, '0')
-                    this.cache.bigInningSchedule[this_datestring] = {
-                      start: response.data[i].airings[j].accessRightsV2.live.startTime, 
-                      end: response.data[i].airings[j].accessRightsV2.live.endTime
-                    }
-                    break
-                  }
+        
+        const browser = await puppeteer.launch()
+        const page = await browser.newPage()
+        await page.setUserAgent(USER_AGENT)
+        await page.goto('https://support.mlb.com/s/article/What-Is-MLB-Big-Inning?language=en_US', { waitUntil: 'networkidle0' })
+        const response = await page.content()
+        await browser.close()
+        
+        // break HTML into array based on table rows
+        var rows = response.split('<tr ')
+        // start iterating at 2 (after header row)
+        for (var i=2; i<rows.length; i++) {
+          // split HTML row into array with columns
+          let cols = rows[i].split('<td ')
+
+          // define some variables that persist for each row
+          let parts
+          let year
+          let month
+          let day
+          let this_datestring
+          let add_date = 0
+          let d
+
+          // start iterating at 2 (after DOW column)
+          for (var j=2; j<cols.length; j++) {
+            // split on brackets to get column text at resulting array index 0
+            let col = cols[j].split('>')[1].split('<')
+            switch(j){
+              // first column is date
+              case 2:
+                // split date into array
+                // old date format (January 1, 1970) (disabled)
+                /*parts = col[0].split(' ')
+                year = parts[2]
+                // get month index, zero-based
+                month = new Date(Date.parse(parts[0] +" 1, 2021")).getMonth()
+                day = parts[1].substring(0,parts[1].length-3)*/
+                // new date format (01/01/70)
+                parts = col[0].split('/')
+                year = parts[2]
+                if ( year.length == 2 ) {
+                  year = '20' + parts[2]
                 }
-              }
+                // get month index, zero-based
+                month = parseInt(parts[0]) - 1
+                day = parts[1]
+                this_datestring = new Date(year, month, day).toISOString().substring(0,10)
+                this.cache.bigInningSchedule[this_datestring] = {}
+                // increment month index (not zero-based)
+                month += 1
+                break
+              // remaining columns are times
+              default:
+                let hour
+                let minute = '00'
+                let ampm
+                // if time has colon, split into array on that to get hour and minute parts
+                if ( col[0].indexOf(':') > 0 ) {
+                  parts = col[0].split(':')
+                  hour = parseInt(parts[0])
+                  minute = parts[1].substring(0,2)
+                } else {
+                  hour = parseInt(col[0].substring(0,col[0].length-2))
+                }
+                ampm = col[0].substring(col[0].length-2,col[0].length)
+                // convert hour to 24-hour format
+                if ( (ampm == 'PM') || ((hour == 12) && (ampm == 'AM')) ) {
+                  hour += 12
+                }
+                // these times are EDT so add 4 for UTC
+                hour += 4
+                // if hour is beyond 23, note we will have to add 1 day
+                if ( hour > 23 ) {
+                  add_date = 1
+                  hour -= 24
+                }
+
+                d = new Date(this_datestring + 'T' + hour.toString().padStart(2, '0') + ':' + minute.toString().padStart(2, '0') + ':00.000+00:00')
+                d.setDate(d.getDate()+add_date)
+                switch(j){
+                  // 3rd column is start time
+                  case 3:
+                    this.cache.bigInningSchedule[this_datestring].start = d
+                    break
+                  // 3rd column is end time
+                  case 4:
+                    this.cache.bigInningSchedule[this_datestring].end = d
+                    break
+                }
+                break
             }
           }
-          this.debuglog(JSON.stringify(this.cache.bigInningSchedule))
-
-          // Default cache period is 1 day from now
-          let oneDayFromNow = new Date()
-          oneDayFromNow.setDate(oneDayFromNow.getDate()+1)
-          let cacheExpiry = oneDayFromNow
-          this.cache.bigInningScheduleCacheExpiry = cacheExpiry
-
-          this.save_cache_data()
-        } else {
-          this.log('error : invalid response from url ' + reqObj.url)
         }
+        this.debuglog(JSON.stringify(this.cache.bigInningSchedule))
+
+        // Default cache period is 1 day from now
+        let oneDayFromNow = new Date()
+        oneDayFromNow.setDate(oneDayFromNow.getDate()+1)
+        let cacheExpiry = oneDayFromNow
+        this.cache.bigInningScheduleCacheExpiry = cacheExpiry
+
+        this.save_cache_data()
       } else {
         this.debuglog('using cached big inning schedule')
       }
