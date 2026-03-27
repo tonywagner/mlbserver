@@ -865,6 +865,8 @@ class sessionClass {
   constructor(argv = {}) {
     this.debug = argv.debug
 
+    this.executablePath = argv.PUPPETEER_EXECUTABLE_PATH
+
     let dirname = __dirname
     if ( argv.data_directory ) {
       dirname = argv.data_directory
@@ -3545,7 +3547,16 @@ class sessionClass {
       if ( !this.cache || !this.cache.bigInningScheduleCacheExpiry || (currentDate > new Date(this.cache.bigInningScheduleCacheExpiry)) ) {
         if ( !this.cache.bigInningSchedule ) this.cache.bigInningSchedule = {}
         
-        const browser = await puppeteer.launch()
+        const browser = await puppeteer.launch({
+          headless: 'new',
+          executablePath: this.executablePath,
+          args: [
+            '--no-sandbox',
+            '--disable-gpu',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage'
+          ],
+        })
         const page = await browser.newPage()
         await page.setUserAgent(USER_AGENT)
         await page.goto('https://support.mlb.com/s/article/What-Is-MLB-Big-Inning?language=en_US', { waitUntil: 'networkidle0' })
