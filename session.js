@@ -2371,8 +2371,8 @@ class sessionClass {
                           stream = server + '/stream.m3u8?event=' + encodeURIComponent(cache_data.dates[i].games[j].teams['home'].team.shortName.toUpperCase())
                         }
                         stream += '&league_id=' + league_id
+                        stream += '&mediaType=' + streamMediaType
                       }
-                      stream += '&mediaType=' + streamMediaType
                       stream += '&level=' + encodeURIComponent(this.getLevelNameFromSportId(sportId))
                       stream += '&resolution=' + resolution
                       if ( this.protection.content_protect ) stream += '&content_protect=' + this.protection.content_protect
