@@ -1572,12 +1572,83 @@ class sessionClass {
     if ( !this.data.entitlements ) {
       await this.getSession()
     }
+
+    // Supplement with REST entitlements API for more complete coverage.
+    // The GraphQL initSession may return fewer entitlements than the REST
+    // endpoint, particularly for subscriptions linked via TV provider.
+    try {
+      let restEntitlements = await this.getRestEntitlements()
+      if ( restEntitlements && restEntitlements.length > 0 ) {
+        if ( !this.data.entitlements ) {
+          this.data.entitlements = []
+        }
+        let before = this.data.entitlements.length
+        for (var i=0; i<restEntitlements.length; i++) {
+          if ( !this.data.entitlements.includes(restEntitlements[i]) ) {
+            this.data.entitlements.push(restEntitlements[i])
+          }
+        }
+        if ( this.data.entitlements.length > before ) {
+          this.log('REST entitlements added ' + (this.data.entitlements.length - before) + ' new entitlement(s)')
+          this.save_session_data()
+        }
+      }
+    } catch(e) {
+      this.debuglog('REST entitlements fallback failed: ' + e.message)
+    }
+
     if ( this.data.entitlements ) {
       this.debuglog('using cached entitlements')
       return this.data.entitlements
     } else {
       this.log('failed to getEntitlements')
     }
+  }
+
+  // REST entitlements API - supplements GraphQL initSession entitlements
+  async getRestEntitlements() {
+    this.debuglog('getRestEntitlements')
+    let loginToken = await this.getLoginToken()
+    if ( !loginToken ) return []
+
+    // Extract uid from JWT payload (base64-encoded middle segment)
+    let uid
+    try {
+      let parts = loginToken.split('.')
+      if ( parts.length >= 2 ) {
+        let payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'))
+        uid = payload.uid
+        this.debuglog('getRestEntitlements extracted uid: ' + uid)
+      }
+    } catch(e) {
+      this.debuglog('getRestEntitlements failed to extract uid from JWT: ' + e.message)
+      return []
+    }
+
+    if ( !uid ) return []
+
+    let reqObj = {
+      url: 'https://mlbentitlementservices.mlb.com/entitlements?principalType=user&principalId=' + uid + '&includeFeatures=true',
+      headers: {
+        'accept': 'application/json',
+        'authorization': 'Bearer ' + loginToken,
+        'content-type': 'application/json'
+      },
+      json: true
+    }
+    var response = await this.httpGet(reqObj, false)
+    if ( response && response.contents ) {
+      this.debuglog('getRestEntitlements response: ' + response.contents.length + ' entitlement(s)')
+      var entitlements = []
+      for (var i=0; i<response.contents.length; i++) {
+        if ( response.contents[i].isActive && response.contents[i].entitlementCode ) {
+          entitlements.push(response.contents[i].entitlementCode)
+        }
+      }
+      this.debuglog('getRestEntitlements active codes: ' + JSON.stringify(entitlements))
+      return entitlements
+    }
+    return []
   }
 
   // new API call
@@ -4157,34 +4228,63 @@ class sessionClass {
     
     let feedTypes = ['videoFeeds', 'audioFeeds']
 
+    // Check if the user has verified MLB.TV entitlements via REST API.
+    // When verified, ignore the MAST API's per-feed 'entitled' flag
+    // (which can return false for tokens from certain OAuth clients)
+    // and only use MAST data for geographic blackout detection.
+    let hasVerifiedEntitlements = false
+    if ( this.data.entitlements && (this.data.entitlements.includes('MLBTVMLBNADOBEPASS') || this.data.entitlements.includes('MLBTV')) ) {
+      hasVerifiedEntitlements = true
+      this.debuglog('get_blackout_games: user has verified MLB.TV entitlement, ignoring MAST entitled flags')
+    }
+
     if ( cache_data && cache_data.results && (cache_data.results.length > 0) ) {
       for (var i = 0; i < cache_data.results.length; i++) {
         let game = cache_data.results[i]
         let game_pk = game.gamePk
         this.debuglog('get_blackout_games checking game ' + game_pk)
         let blackout_type = ''
-        if ( game.blackedOutVideo || !game.entitledVideo || !game.entitledAudio ) {
-          if ( !game.entitledVideo || !game.entitledAudio ) {
-            this.debuglog('get_blackout_games found non-entitled game ' + game_pk)
-            blackout_type = 'Not entitled'
-          } else {
+
+        if ( hasVerifiedEntitlements ) {
+          // Only check geographic blackouts, not entitlement
+          if ( game.blackedOutVideo ) {
             this.debuglog('get_blackout_games found blackout game ' + game_pk)
+            blackouts[game_pk] = { blackout_type: 'Blackout' }
           }
-          blackouts[game_pk] = { blackout_type: blackout_type }       
+        } else {
+          // Original behavior: check both entitlement and blackout
+          if ( game.blackedOutVideo || !game.entitledVideo || !game.entitledAudio ) {
+            if ( !game.entitledVideo || !game.entitledAudio ) {
+              this.debuglog('get_blackout_games found non-entitled game ' + game_pk)
+              blackout_type = 'Not entitled'
+            } else {
+              this.debuglog('get_blackout_games found blackout game ' + game_pk)
+            }
+            blackouts[game_pk] = { blackout_type: blackout_type }
+          }
         }
-        
+
         let blackout_feeds = []
         for (var j = 0; j < feedTypes.length; j++) {
           let feedType = feedTypes[j]
           for (var k = 0; k < game[feedType].length; k++) {
             let feed = game[feedType][k]
-            if ( !feed.entitled || ((j == 0) && feed.blackedOut) ) {
-              blackout_feeds.push(feed['mediaId'])
-              if ( !feed['entitled'] ) {
-                this.debuglog('get_blackout_games found non-entitled feed ' + feed.callLetters)
-                blackout_type = 'Not entitled'
-              } else {
+            if ( hasVerifiedEntitlements ) {
+              // Only check geographic blackouts on video feeds
+              if ( (j == 0) && feed.blackedOut ) {
+                blackout_feeds.push(feed['mediaId'])
                 this.debuglog('get_blackout_games found blackout feed ' + feed.callLetters)
+              }
+            } else {
+              // Original behavior
+              if ( !feed.entitled || ((j == 0) && feed.blackedOut) ) {
+                blackout_feeds.push(feed['mediaId'])
+                if ( !feed['entitled'] ) {
+                  this.debuglog('get_blackout_games found non-entitled feed ' + feed.callLetters)
+                  blackout_type = 'Not entitled'
+                } else {
+                  this.debuglog('get_blackout_games found blackout feed ' + feed.callLetters)
+                }
               }
             }
           }
@@ -4193,7 +4293,7 @@ class sessionClass {
           if ( !blackouts[game_pk] ) {
             blackouts[game_pk] = { blackout_type: blackout_type }
           }
-          blackouts[game_pk].blackout_feeds = blackout_feeds   
+          blackouts[game_pk].blackout_feeds = blackout_feeds
         }
         
         // add blackout expiry, if requested
