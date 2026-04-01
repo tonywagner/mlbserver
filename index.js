@@ -1828,37 +1828,38 @@ app.get('/', async function(req, res) {
       if ( (entitlements.length > 0) && cache_data.dates && cache_data.dates[0] && (cache_data.dates[0].date >= today) && cache_data.dates[0].games && (cache_data.dates[0].games.length > 1) && cache_data.dates[0].games[0] && (cache_data.dates[0].games[0].seriesDescription == 'Regular Season') ) {
         // Scraped Big Inning schedule
         big_inning = await session.getBigInningSchedule(gameDate)
-
-        // Generated Big Inning schedule (disabled)
-        //big_inning = await session.generateBigInningSchedule(gameDate)
       }
-      if ( big_inning && big_inning.start ) {
-        body += '<tr><td><span class="tooltip">' + new Date(big_inning.start).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + new Date(big_inning.end).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://support.mlb.com/s/article/What-Is-MLB-Big-Inning">See here for more information</a>.</span></span></td><td>'
-        let compareStart = new Date(big_inning.start)
-        compareStart.setMinutes(compareStart.getMinutes()-10)
-        let compareEnd = new Date(big_inning.end)
-        compareEnd.setHours(compareEnd.getHours()+1)
-        if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
-          let querystring = '?event=biginning'
-          let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
-          if ( linkType == VALID_LINK_TYPES[0] ) {
-            if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
-            if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+      if ( big_inning ) {
+        for (var i = 0; i < big_inning.length; i++) {
+          if ( big_inning[i].start ) {
+            body += '<tr><td><span class="tooltip">' + new Date(big_inning[i].start).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + ' - ' + new Date(big_inning[i].end).toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true }) + '<span class="tooltiptext">Big Inning is the live look-in and highlights show. <a href="https://support.mlb.com/s/article/What-Is-MLB-Big-Inning">See here for more information</a>.</span></span></td><td>'
+            let compareStart = new Date(big_inning[i].start)
+            compareStart.setMinutes(compareStart.getMinutes()-10)
+            let compareEnd = new Date(big_inning[i].end)
+            compareEnd.setHours(compareEnd.getHours()+1)
+            if ( (currentDate >= compareStart) && (currentDate < compareEnd) ) {
+              let querystring = '?event=biginning'
+              let multiviewquerystring = querystring + '&resolution=' + DEFAULT_MULTIVIEW_RESOLUTION
+              if ( linkType == VALID_LINK_TYPES[0] ) {
+                if ( startFrom != VALID_START_FROM[0] ) querystring += '&startFrom=' + startFrom
+                if ( controls != VALID_CONTROLS[0] ) querystring += '&controls=' + controls
+              }
+              if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
+              if ( linkType == VALID_LINK_TYPES[1] ) {
+                if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
+              } else if ( linkType == VALID_LINK_TYPES[4] ) {
+                querystring += '&filename=' + gameDate + ' Big Inning'
+              }
+              querystring += content_protect_b
+              multiviewquerystring += content_protect_b
+              body += '<a href="' + thislink + querystring + '">Big Inning</a>'
+              body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
+            } else {
+              body += 'Big Inning'
+            }
+            body += '</td></tr>' + "\n"
           }
-          if ( resolution != VALID_RESOLUTIONS[0] ) querystring += '&resolution=' + resolution
-          if ( linkType == VALID_LINK_TYPES[1] ) {
-            if ( force_vod != VALID_FORCE_VOD[0] ) querystring += '&force_vod=' + force_vod
-          } else if ( linkType == VALID_LINK_TYPES[4] ) {
-            querystring += '&filename=' + gameDate + ' Big Inning'
-          }
-          querystring += content_protect_b
-          multiviewquerystring += content_protect_b
-          body += '<a href="' + thislink + querystring + '">Big Inning</a>'
-          body += '<input type="checkbox" value="http://127.0.0.1:' + session.data.port + '/stream.m3u8' + multiviewquerystring + '" onclick="addmultiview(this)">'
-        } else {
-          body += 'Big Inning'
         }
-        body += '</td></tr>' + "\n"
       }
 
       // Game Changer and Stream Finder

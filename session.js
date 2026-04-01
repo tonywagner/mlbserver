@@ -8,7 +8,6 @@ const path = require('path')
 const readlineSync = require('readline-sync')
 const FileCookieStore = require('tough-cookie-filestore')
 const parseString = require('xml2js').parseString
-const puppeteer = require('puppeteer')
 
 const MULTIVIEW_DIRECTORY_NAME = 'multiview'
 
@@ -864,8 +863,6 @@ class sessionClass {
   // Initialize the class
   constructor(argv = {}) {
     this.debug = argv.debug
-
-    this.executablePath = argv.PUPPETEER_EXECUTABLE_PATH
 
     let dirname = __dirname
     if ( argv.data_directory ) {
@@ -2922,25 +2919,28 @@ class sessionClass {
                 let gameDate = cache_data.dates[i].date
                 if ( (gameDate >= today) && cache_data.dates[i].games && (cache_data.dates[i].games.length > 1) && cache_data.dates[i].games[0] && (cache_data.dates[i].games[0].seriesDescription == 'Regular Season') && this.cache.bigInningSchedule[gameDate] ) {
                   this.debuglog('getTVData Big Inning active for date ' + cache_data.dates[i].date)
-                  // Scraped Big Inning schedule
-                  let start = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].start))
-                  let stop = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate].end))
-
-                  // Big Inning calendar ICS
-                  let prefix = 'Watch'
-                  let location = server + '/embed.html?event=biginning&mediaType=Video&resolution=' + resolution
-                  if ( this.protection.content_protect ) location += '&content_protect=' + this.protection.content_protect
-                  calendar += await this.generate_ics_event(prefix, new Date(this.cache.bigInningSchedule[gameDate].start), new Date(this.cache.bigInningSchedule[gameDate].end), title, description, location)
                   
-                  // Off Air if necessary
-                  let off_air_event = await this.generate_off_air_event(offAir, channelid, gameDate, channels[channelid].stop, this.cache.bigInningSchedule[gameDate].start, title)
-                  if ( off_air_event ) {
-                    programs += off_air_event
-                    channels[channelid].stop = stop
-                  }
+                  for (var j = 0; j < this.cache.bigInningSchedule[gameDate].length; j++) {
+                    // Scraped Big Inning schedule
+                    let start = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate][j].start))
+                    let stop = this.convertDateToXMLTV(new Date(this.cache.bigInningSchedule[gameDate][j].end))
 
-                  // Big Inning guide XML
-                  programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(new Date(this.cache.bigInningSchedule[gameDate].start)))
+                    // Big Inning calendar ICS
+                    let prefix = 'Watch'
+                    let location = server + '/embed.html?event=biginning&mediaType=Video&resolution=' + resolution
+                    if ( this.protection.content_protect ) location += '&content_protect=' + this.protection.content_protect
+                    calendar += await this.generate_ics_event(prefix, new Date(this.cache.bigInningSchedule[gameDate][j].start), new Date(this.cache.bigInningSchedule[gameDate][j].end), title, description, location)
+                  
+                    // Off Air if necessary
+                    let off_air_event = await this.generate_off_air_event(offAir, channelid, gameDate, channels[channelid].stop, this.cache.bigInningSchedule[gameDate][j].start, title)
+                    if ( off_air_event ) {
+                      programs += off_air_event
+                      channels[channelid].stop = stop
+                    }
+
+                    // Big Inning guide XML
+                    programs += await this.generate_xml_program(channelid, start, stop, title, description, logo, this.convertDateToAirDate(new Date(this.cache.bigInningSchedule[gameDate][j].start)))
+                  }
                 }
                 this.debuglog('getTVData completed Big Inning for date ' + cache_data.dates[i].date)
               }
@@ -3542,122 +3542,66 @@ class sessionClass {
       // temporarily disable Big Inning schedule checking until a new source URL is available
       /*this.cache.bigInningSchedule = {}
       return*/
-
+      
+      // reset for new format as of 2026-04-01
+      try {
+        if ( !this.cache.bigInningSchedule[Object.keys(this.cache.bigInningSchedule)[0]].length ) {
+          this.log('getBigInningSchedule cache reset')
+          delete this.cache.bigInningScheduleCacheExpiry
+          delete this.cache.bigInningSchedule
+        }
+      } catch (e) {
+        //this.debuglog('getBigInningSchedule cache reset error : ' + e.message)
+      }
+      
       let currentDate = new Date()
       if ( !this.cache || !this.cache.bigInningScheduleCacheExpiry || (currentDate > new Date(this.cache.bigInningScheduleCacheExpiry)) ) {
         if ( !this.cache.bigInningSchedule ) this.cache.bigInningSchedule = {}
-        
-        const browser = await puppeteer.launch({
-          headless: 'new',
-          executablePath: this.executablePath,
-          args: [
-            '--no-sandbox',
-            '--disable-gpu',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage'
-          ],
-        })
-        const page = await browser.newPage()
-        await page.setUserAgent(USER_AGENT)
-        await page.goto('https://support.mlb.com/s/article/What-Is-MLB-Big-Inning?language=en_US', { waitUntil: 'networkidle0' })
-        const response = await page.content()
-        await browser.close()
-        
-        // break HTML into array based on table rows
-        var rows = response.split('<tr ')
-        // start iterating at 2 (after header row)
-        for (var i=2; i<rows.length; i++) {
-          // split HTML row into array with columns
-          let cols = rows[i].split('<td ')
-
-          // define some variables that persist for each row
-          let parts
-          let year
-          let month
-          let day
-          let this_datestring
-          let add_date = 0
-          let d
-
-          // start iterating at 2 (after DOW column)
-          for (var j=2; j<cols.length; j++) {
-            // split on brackets to get column text at resulting array index 0
-            let col = cols[j].split('>')[1].split('<')
-            switch(j){
-              // first column is date
-              case 2:
-                // split date into array
-                // old date format (January 1, 1970) (disabled)
-                /*parts = col[0].split(' ')
-                year = parts[2]
-                // get month index, zero-based
-                month = new Date(Date.parse(parts[0] +" 1, 2021")).getMonth()
-                day = parts[1].substring(0,parts[1].length-3)*/
-                // new date format (01/01/70)
-                parts = col[0].split('/')
-                year = parts[2]
-                if ( year.length == 2 ) {
-                  year = '20' + parts[2]
-                }
-                // get month index, zero-based
-                month = parseInt(parts[0]) - 1
-                day = parts[1]
-                this_datestring = new Date(year, month, day).toISOString().substring(0,10)
-                this.cache.bigInningSchedule[this_datestring] = {}
-                // increment month index (not zero-based)
-                month += 1
-                break
-              // remaining columns are times
-              default:
-                let hour
-                let minute = '00'
-                let ampm
-                // if time has colon, split into array on that to get hour and minute parts
-                if ( col[0].indexOf(':') > 0 ) {
-                  parts = col[0].split(':')
-                  hour = parseInt(parts[0])
-                  minute = parts[1].substring(0,2)
-                } else {
-                  hour = parseInt(col[0].substring(0,col[0].length-2))
-                }
-                ampm = col[0].substring(col[0].length-2,col[0].length)
-                // convert hour to 24-hour format
-                if ( (ampm == 'PM') || ((hour == 12) && (ampm == 'AM')) ) {
-                  hour += 12
-                }
-                // these times are EDT so add 4 for UTC
-                hour += 4
-                // if hour is beyond 23, note we will have to add 1 day
-                if ( hour > 23 ) {
-                  add_date = 1
-                  hour -= 24
-                }
-
-                d = new Date(this_datestring + 'T' + hour.toString().padStart(2, '0') + ':' + minute.toString().padStart(2, '0') + ':00.000+00:00')
-                d.setDate(d.getDate()+add_date)
-                switch(j){
-                  // 3rd column is start time
-                  case 3:
-                    this.cache.bigInningSchedule[this_datestring].start = d
-                    break
-                  // 3rd column is end time
-                  case 4:
-                    this.cache.bigInningSchedule[this_datestring].end = d
-                    break
-                }
-                break
-            }
-          }
+        let reqObj = {
+          url: 'https://www.fubo.tv/welcome/channel/mlb-big-inning',
+          headers: {
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'accept-encoding': 'gzip, deflate, br, zstd',
+            'referer': 'https://www.fubo.tv',
+            'user-agent': USER_AGENT
+          },
+          gzip: true
         }
-        this.debuglog(JSON.stringify(this.cache.bigInningSchedule))
+        var response = await this.httpGet(reqObj, false)
+        if ( response ) {
+          // disabled because it's big
+          //this.debuglog(response)
+          
+          let nextdatastring = response.match(/<script id=\"__NEXT_DATA__\" type=\"application\/json\">(.*?)<\/script>/)
+          let nextdata = JSON.parse(nextdatastring[1])
+          let initialState = JSON.parse(nextdata.props.pageProps.initialState.replace(/\\"/g, '"'))
 
-        // Default cache period is 1 day from now
-        let oneDayFromNow = new Date()
-        oneDayFromNow.setDate(oneDayFromNow.getDate()+1)
-        let cacheExpiry = oneDayFromNow
-        this.cache.bigInningScheduleCacheExpiry = cacheExpiry
+          initialState.channel.channelPrograms.live.data.forEach((program) => {
+            program.airings.forEach((airing) => {
+              let est_date = new Date(airing.accessRightsV2.live.startTime).toLocaleString("en-US", {timeZone: 'America/New_York'})
+              let date_array = est_date.split(',')[0].split('/')
+              let this_datestring = date_array[2] + '-' + date_array[0].padStart(2, '0') + '-' + date_array[1].padStart(2, '0')
+              if ( !this.cache.bigInningSchedule[this_datestring] || !this.cache.bigInningSchedule[this_datestring].length ) {
+                this.cache.bigInningSchedule[this_datestring] = []
+              }
+              this.cache.bigInningSchedule[this_datestring].push({
+                start: airing.accessRightsV2.live.startTime, 
+                end: airing.accessRightsV2.live.endTime
+              })
+            });
+          });
+          this.debuglog(JSON.stringify(this.cache.bigInningSchedule))
 
-        this.save_cache_data()
+          // Default cache period is 1 day from now
+          let oneDayFromNow = new Date()
+          oneDayFromNow.setDate(oneDayFromNow.getDate()+1)
+          let cacheExpiry = oneDayFromNow
+          this.cache.bigInningScheduleCacheExpiry = cacheExpiry
+
+          this.save_cache_data()
+        } else {
+          this.log('error : invalid response from url ' + reqObj.url)
+        }
       } else {
         this.debuglog('using cached big inning schedule')
       }
@@ -3669,35 +3613,6 @@ class sessionClass {
       }
     } catch(e) {
       this.log('getBigInningSchedule error : ' + e.message)
-    }
-  }
-
-  // Generate generic Big Inning schedule for specified date
-  // times in UTC (and DST) according to https://www.mlb.com/live-stream-games/help-center/subscription-access-big-inning
-  async generateBigInningSchedule(dateString) {
-    try {
-      this.debuglog('generateBigInningSchedule')
-
-      let utc_start_string = '01:00'
-      let utc_end_string = '03:30'
-      let add_date = 1
-      // Different Sunday schedule
-      let weekday_index = new Date(dateString + ' 00:00:00').getDay()
-      if ( weekday_index == 0 ) {
-        utc_start_string = '19:00'
-        utc_end_string = '21:30'
-        add_date = 0
-      }
-      let d = new Date(dateString + 'T' + utc_start_string + ':00.000+00:00')
-      d.setDate(d.getDate()+add_date)
-      let start = d
-      d = new Date(dateString + 'T' + utc_end_string + ':00.000+00:00')
-      d.setDate(d.getDate()+add_date)
-      let end = d
-
-      return {start: start, end: end}
-    } catch(e) {
-      this.log('generateBigInningSchedule error : ' + e.message)
     }
   }
 
