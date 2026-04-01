@@ -3319,11 +3319,13 @@ function start_multiview_stream(streams, sync, dvr, faster, reencode, park_audio
       //let audio_input = audio_present[i] + ':a:m:language:en?'
       let audio_input = audio_present[i] + ':a:'
       let video_url = streams[audio_present[i]]
-      if ( !video_url || video_url.includes('audio_track=English') || !video_url.includes('audio_track=') ) {
+      // disabled code below because we can now assume 
+      // the first audio track is the one we want
+      //if ( !video_url || video_url.includes('audio_track=English') || !video_url.includes('audio_track=') ) {
         audio_input += '0'
-      } else {
+      /*} else {
         audio_input += '1'
-      }
+      }*/
       let filter = ''
       // Optionally apply sync adjustments
       if ( sync[audio_present[i]] ) {
@@ -3530,11 +3532,13 @@ app.get('/download.ts', async function(req, res) {
   if ( ! (await protect(req, res)) ) return
 
   try {
+    let ffmpeg_timeout = 432000
     // we'll know it's an actual download request if it include a filename parameter
     if ( req.query.filename ) {
       session.requestlog('download.ts', req)
     } else {
       session.debuglog('force alternate audio', req)
+      ffmpeg_timeout = 20
     }
 
     let server = 'http://127.0.0.1:' + session.data.port + http_root
@@ -3560,7 +3564,7 @@ app.get('/download.ts', async function(req, res) {
       }
     }
 
-    ffmpeg_command = ffmpeg({ timeout: 432000 })
+    ffmpeg_command = ffmpeg({ timeout: ffmpeg_timeout })
 
     // Set input stream and minimize ffmpeg startup latency
     ffmpeg_command.input(video_url)
@@ -3618,15 +3622,21 @@ app.get('/download.ts', async function(req, res) {
     ffmpeg_command.addOutputOption('-f', 'mpegts')
     .output(res)
     .on('start', function(commandLine) {
-      session.debuglog('download.ts command started')
+      session.debuglog('download.ts command started for ' + video_url)
       if ( argv.debug || argv.ffmpeg_logging ) {
-        session.debuglog('download.ts command: ' + commandLine)
+        session.log('download.ts command: ' + commandLine)
       }
     })
     .on('error', function(err, stdout, stderr) {
-      session.debuglog('download.ts command stopped: ' + err.message)
-      if ( stdout ) session.log(stdout)
-      if ( stderr ) session.log(stderr)
+      if (err.message.includes('timeout')) {
+        session.debuglog('download.ts command timeout: ' + err.message)
+      } else {
+        session.debuglog('download.ts command error: ' + err.message)
+      }
+      if ( stdout ) session.debuglog(stdout)
+      if ( stderr ) session.debuglog(stderr)
+      ffmpeg_command.kill('SIGKILL')
+      session.debuglog('killed ffmpeg process due to error processing ' + video_url)
     })
     .on('end', function() {
       session.debuglog('download.ts command ended')
@@ -3792,5 +3802,144 @@ app.get('/comskip.txt', async function(req, res) {
   } catch (e) {
     session.log('comskip.txt request error : ' + e.message)
     res.end('comskip.txt request error, check log')
+  }
+})
+
+// Listen for embedded MPEGTS stream requests
+// embedded player not fully tested
+app.get('/mpegts.html', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  try {
+    let server = 'http://127.0.0.1:' + session.data.port + http_root
+
+    let video_url = '/stream.ts'
+    if ( req.query.src ) {
+      video_url = req.query.src
+    } else {
+      let urlArray = req.url.split('?')
+      if ( (urlArray.length == 2) ) {
+        video_url += '?' + urlArray[1]
+      }
+      video_url = server + video_url
+    }
+    session.debuglog('mpegts.html src : ' + video_url)
+    
+    var body = '<html><script src="https://xqq.im/mpegts.js/dist/mpegts.js"></script><style type"text/css">body{background-color:black}video{width:100% !important;height:auto !important;max-width:1280px}</style><body><video id="videoElement" controls autoplay playsinline></video><script>if (mpegts.getFeatureList().mseLivePlayback) { var videoElement = document.getElementById("videoElement"); var player = mpegts.createPlayer({ type: "mpegts", isLive: true, url: "' + video_url + '" }); player.attachMediaElement(videoElement); player.load(); player.play(); }</script></body></html>'
+
+    res.end(body)
+  } catch (e) {
+    session.log('mpegts.html request error : ' + e.message)
+    res.end('')
+  }
+})
+
+
+// Listen for MPEGTS stream requests
+app.get('/stream.ts', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  try {
+    let server = 'http://127.0.0.1:' + session.data.port + http_root
+
+    let video_url = '/stream.m3u8'
+    if ( req.query.src ) {
+      video_url = req.query.src
+    } else {
+      let urlArray = req.url.split('?')
+      if ( (urlArray.length == 2) ) {
+        video_url += '?' + urlArray[1]
+      }
+      video_url = server + video_url
+    }
+    session.debuglog('stream.ts src : ' + video_url)
+
+    // force adaptive streams to just use a single video resolution/track
+    if ( !video_url.includes('resolution=') ) {
+      video_url += '&resolution=best'
+    } else if ( video_url.includes('resolution=adaptive') ) {
+      video_url = video_url.replace('resolution=adaptive', 'resolution=best')
+    }
+
+    // force streams to just use a single audio track, if they aren't already
+    if ( !video_url.includes('audio_track=') ) {
+      video_url += '&audio_track=English'
+    } else if ( video_url.includes('audio_track=all') ) {
+      video_url = video_url.replace('audio_track=all', 'audio_track=English')
+    }
+
+    ffmpeg_command = ffmpeg({ timeout: 432000 })
+
+    // Set input live stream and minimize ffmpeg startup latency
+    ffmpeg_command.input(video_url)
+    .addInputOption('-thread_queue_size', '4096')
+    .addInputOption('-fflags', 'nobuffer')
+    .addInputOption('-probesize', '1000000')
+    .addInputOption('-analyzeduration', '0')
+    
+    // We'll limit our processing to real-time
+    ffmpeg_command.native()
+
+    let video_input = 0
+    let audio_input = 0
+    
+    // Adjust audio sync, if specified
+    if ( req.query.sync ) {
+      if ( req.query.sync > 0 ) {
+        session.log('stream.ts delaying video by ' + req.query.sync + ' seconds')
+        video_input = 1
+        ffmpeg_command.addInputOption('-itsoffset', req.query.sync)
+      } else {
+        session.log('stream.ts delaying audio by ' + (req.query.sync * -1) + ' seconds')
+        audio_input = 1
+        ffmpeg_command.addInputOption('-itsoffset', (req.query.sync * -1))
+      }
+      ffmpeg_command.input(video_url)
+      .addInputOption('-thread_queue_size', '4096')
+      
+      // We'll limit our processing to real-time
+      ffmpeg_command.native()
+    }
+
+    // video
+    ffmpeg_command.addOutputOption('-map', video_input + ':v:0')
+    .addOutputOption('-c:v', 'copy')
+
+    // audio
+    ffmpeg_command.addOutputOption('-map', audio_input + ':a')
+    .addOutputOption('-c:a', 'copy')
+
+    // output mpegts to response stream
+    ffmpeg_command.addOutputOption('-f', 'mpegts')
+    .output(res)
+    .on('start', function(commandLine) {
+      session.debuglog('stream.ts command started')
+      if ( argv.debug || argv.ffmpeg_logging ) {
+        session.log('stream.ts command: ' + commandLine)
+      }
+    })
+    .on('error', function(err, stdout, stderr) {
+      session.debuglog('stream.ts command stopped: ' + err.message)
+      if ( stdout ) session.debuglog(stdout)
+      if ( stderr ) session.debuglog(stderr)
+    })
+    .on('end', function() {
+      session.debuglog('stream.ts command ended')
+    })
+
+    if ( argv.ffmpeg_logging ) {
+      session.log('ffmpeg output logging enabled')
+      ffmpeg_command.on('stderr', function(stderrLine) {
+        session.log(stderrLine);
+      })
+    }
+
+    var headers = {'Content-Type': 'video/mp2t',"access-control-allow-origin":"*"}
+    res.writeHead(200, headers)
+
+    ffmpeg_command.run()
+  } catch (e) {
+    session.log('stream.ts request error : ' + e.message)
+    res.end('')
   }
 })
