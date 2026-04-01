@@ -262,6 +262,7 @@ app.get('/clearcache', async function(req, res) {
     session.log('Clearing session...')
     session.clear_session_data()
     session = new sessionClass(argv)
+    session.setPorts(port, multiview_port)
 
     let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
     res.redirect(server)
