@@ -129,9 +129,10 @@ var argv = minimist(process.argv, {
     s: 'session',
     c: 'cache',
     v: 'version',
-    e: 'env'
+    e: 'env',
+    lp: 'login_page'
   },
-  boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version', 'free', 'env'],
+  boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version', 'free', 'env', 'login_page'],
   string: ['account_username', 'account_password', 'fav_teams', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'data_directory', 'http_root']
 })
 
@@ -1353,31 +1354,53 @@ app.get('/gamechangerplaylist.m3u8', async function(req, res) {
 })
 
 // Protect pages by password, or content by content_protect url parameter
+function isAuthenticated(req) {
+  if (!req.headers.cookie) return false;
+  const cookies = req.headers.cookie.split(';').map(c => c.trim());
+  const authCookie = cookies.find(c => c.startsWith('auth_token='));
+  if (!authCookie) return false;
+  const token = authCookie.split('=')[1];
+  return token === session.protection.content_protect;
+}
+
 async function protect(req, res) {
   if (argv.page_username && argv.page_password) {
     if ( !session.protection.content_protect || !req.query.content_protect || (req.query.content_protect != session.protection.content_protect) ) {
       if ( !session.protection.content_protect || !req.query.content_protect || !req.query.content_protect[0] || (req.query.content_protect[0] != session.protection.content_protect) ) {
-        const reject = () => {
-          res.setHeader('www-authenticate', 'Basic')
-          res.error(401, ' Not Authorized')
-          return false
-        }
+        if (argv.login_page && isAuthenticated(req)) {
+          // Already authenticated via cookie
+        } else {
+          if (argv.login_page) {
+            // Redirect to login page
+            const redirectUrl = encodeURIComponent(req.url);
+            res.writeHead(302, { 'Location': http_root + '/login?redirect=' + redirectUrl });
+            res.end();
+            return false;
+          } else {
+            // Use browser popup
+            const reject = () => {
+              res.setHeader('www-authenticate', 'Basic');
+              res.error(401, ' Not Authorized');
+              return false;
+            };
 
-        const authorization = req.headers.authorization
+            const authorization = req.headers.authorization;
 
-        if(!authorization) {
-          return reject()
-        }
+            if(!authorization) {
+              return reject();
+            }
 
-        const [username, password] = Buffer.from(authorization.replace('Basic ', ''), 'base64').toString().split(':')
+            const [username, password] = Buffer.from(authorization.replace('Basic ', ''), 'base64').toString().split(':');
 
-        if(! (username === argv.page_username && password === argv.page_password)) {
-          return reject()
+            if(! (username === argv.page_username && password === argv.page_password)) {
+              return reject();
+            }
+          }
         }
       }
     }
   }
-  return true
+  return true;
 }
 
 function getLastName(fullName) {
@@ -1389,6 +1412,72 @@ function getLastName(fullName) {
 
   return fullName.substring(indexOfSpace + 1);
 }
+
+// Login page
+app.get('/login', async function(req, res) {
+  try {
+    if (!argv.login_page) {
+      res.error(404, 'Not Found');
+      return;
+    }
+    const redirect = req.query.redirect || '/';
+    const error = req.query.error ? '<p style="color:red;">Invalid username or password</p>' : '';
+    res.writeHead(200, {'Content-Type': 'text/html'});
+    res.end(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Login - ${appname}</title><style>body{color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif;}input{background-color:black;color:lightgray;border:1px solid lightgray;}button{background-color:black;color:lightgray;border:1px solid lightgray;}</style></head><body><h1>Login to ${appname}</h1>${error}<form method="POST" action="${http_root}/login"><input type="hidden" name="redirect" value="${redirect}"><p>Username: <input type="text" name="username" required></p><p>Password: <input type="password" name="password" required></p><p><button type="submit">Login</button></p></form></body></html>`);
+  } catch (e) {
+    session.log('login get request error : ' + e.message);
+    res.end('login get request error, check log');
+  }
+});
+
+// Login POST handler
+app.post('/login', async function(req, res) {
+  try {
+    if (!argv.login_page) {
+      res.error(404, 'Not Found');
+      return;
+    }
+    let body = '';
+    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('end', () => {
+      const params = new URLSearchParams(body);
+      const username = params.get('username');
+      const password = params.get('password');
+      const redirect = params.get('redirect') || '/';
+      if (username === argv.page_username && password === argv.page_password) {
+        res.writeHead(302, {
+          'Location': redirect,
+          'Set-Cookie': `auth_token=${session.protection.content_protect}; HttpOnly; Path=/`
+        });
+        res.end();
+      } else {
+        res.writeHead(302, { 'Location': `${http_root}/login?redirect=${encodeURIComponent(redirect)}&error=1` });
+        res.end();
+      }
+    });
+  } catch (e) {
+    session.log('login post request error : ' + e.message);
+    res.end('login post request error, check log');
+  }
+});
+
+// Logout
+app.get('/logout', async function(req, res) {
+  try {
+    if (!argv.login_page) {
+      res.error(404, 'Not Found');
+      return;
+    }
+    res.writeHead(302, {
+      'Location': '/',
+      'Set-Cookie': 'auth_token=; HttpOnly; Path=/; Max-Age=0'
+    });
+    res.end();
+  } catch (e) {
+    session.log('logout request error : ' + e.message);
+    res.end('logout request error, check log');
+  }
+});
 
 // Server homepage, base URL
 app.get('/', async function(req, res) {
@@ -1569,6 +1658,10 @@ app.get('/', async function(req, res) {
     body += 'document.addEventListener("touchstart", function() {}, true);' + "\n"
 
 		body += '</script></head><body><h1>' + appname + '</h1>' + "\n"
+
+    if (argv.login_page) {
+      body += '<p><a href="' + http_root + '/logout">Logout</a></p>' + "\n"
+    }
 
     body += '<p><span class="tooltip tinytext">Touch or hover over an option name for more details</span></p>' + "\n"
 
