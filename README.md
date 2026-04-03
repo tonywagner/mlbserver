@@ -50,6 +50,7 @@ Basic command line or Docker environment options:
 --session or -s (clears session)
 --cache or -c (clears cache)
 --env or -e (use environment variables instead of command line arguments; automatically applied in the Docker image)
+--login_page or -lp (false if not specified, login is done via a login page and uses cookies)
 ```
 
 Advanced command line or Docker environment options:
@@ -68,6 +69,7 @@ Advanced command line or Docker environment options:
 --page_username (username to protect pages; default is no protection)
 --page_password (password to protect pages; default is no protection)
 --content_protect (specify the content protection key to include as a URL parameter, if page protection is enabled)
+--login_page (optional, enable login page authentication; default is false, uses browswer popup when unset)
 --gamechanger_delay (specify extra delay for the gamechanger switches in 10 second increments, default is 0)
 --data_directory (defaults to installed application directory; in the Docker image, this defaults to /mlbserver/data_directory for mapping persistent storage)
 ```
