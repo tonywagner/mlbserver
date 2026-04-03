@@ -15,6 +15,7 @@ services:
       #- page_username=
       #- page_password=
       #- content_protect=
+      #- login_page=false
       #- gamechanger_delay=0
       #- PUID=1000
       #- PGID=1000
