@@ -1363,7 +1363,48 @@ function isAuthenticated(req) {
   return token === session.protection.content_protect;
 }
 
+const AUTH_TOKEN_TTL = 24 * 60 * 60 * 1000; // 1 day
+const authenticatedSessions = new Map();
+
+function isSecure(req) {
+  const forwarded = req.headers['x-forwarded-proto'];
+  if (forwarded) {
+    return forwarded.split(',')[0].trim().toLowerCase() === 'https';
+  }
+  return (req.connection && req.connection.encrypted) || false;
+}
+
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  for (const [token, sessionData] of authenticatedSessions.entries()) {
+    if (sessionData.expiry <= now) {
+      authenticatedSessions.delete(token);
+    }
+  }
+}
+
+function isAuthenticated(req) {
+  if (!req.headers.cookie) return false;
+  const cookies = req.headers.cookie.split(';').map(c => c.trim());
+  const authCookie = cookies.find(c => c.startsWith('auth_token='));
+  if (!authCookie) return false;
+
+  const token = authCookie.split('=')[1];
+  const sessionData = authenticatedSessions.get(token);
+  if (!sessionData) return false;
+
+  if (sessionData.expiry <= Date.now()) {
+    authenticatedSessions.delete(token);
+    return false;
+  }
+
+  sessionData.expiry = Date.now() + AUTH_TOKEN_TTL;
+  return true;
+}
+
 async function protect(req, res) {
+  cleanupExpiredSessions();
+
   if (argv.page_username && argv.page_password) {
     if ( !session.protection.content_protect || !req.query.content_protect || (req.query.content_protect != session.protection.content_protect) ) {
       if ( !session.protection.content_protect || !req.query.content_protect || !req.query.content_protect[0] || (req.query.content_protect[0] != session.protection.content_protect) ) {
@@ -1371,28 +1412,26 @@ async function protect(req, res) {
           // Already authenticated via cookie
         } else {
           if (argv.login_page) {
-            // Redirect to login page
             const redirectUrl = encodeURIComponent(req.url);
             res.writeHead(302, { 'Location': http_root + '/login?redirect=' + redirectUrl });
             res.end();
             return false;
           } else {
-            // Use browser popup
             const reject = () => {
               res.setHeader('www-authenticate', 'Basic');
               res.error(401, ' Not Authorized');
               return false;
-            };
+            }
 
             const authorization = req.headers.authorization;
 
-            if(!authorization) {
+            if (!authorization) {
               return reject();
             }
 
             const [username, password] = Buffer.from(authorization.replace('Basic ', ''), 'base64').toString().split(':');
 
-            if(! (username === argv.page_username && password === argv.page_password)) {
+            if (! (username === argv.page_username && password === argv.page_password)) {
               return reject();
             }
           }
@@ -1430,6 +1469,12 @@ app.get('/login', async function(req, res) {
   }
 });
 
+function getCookieOptions(req) {
+  const options = ['HttpOnly', 'Path=/', 'SameSite=Strict'];
+  if (isSecure(req)) options.push('Secure');
+  return options.join('; ');
+}
+
 // Login POST handler
 app.post('/login', async function(req, res) {
   try {
@@ -1445,9 +1490,11 @@ app.post('/login', async function(req, res) {
       const password = params.get('password');
       const redirect = params.get('redirect') || '/';
       if (username === argv.page_username && password === argv.page_password) {
+        const token = crypto.randomBytes(16).toString('hex');
+        authenticatedSessions.set(token, { expiry: Date.now() + AUTH_TOKEN_TTL });
         res.writeHead(302, {
           'Location': redirect,
-          'Set-Cookie': `auth_token=${session.protection.content_protect}; HttpOnly; Path=/`
+          'Set-Cookie': `auth_token=${token}; ${getCookieOptions(req)}`
         });
         res.end();
       } else {
@@ -1468,9 +1515,18 @@ app.get('/logout', async function(req, res) {
       res.error(404, 'Not Found');
       return;
     }
+    let token = '';
+    if (req.headers.cookie) {
+      const cookies = req.headers.cookie.split(';').map(c => c.trim());
+      const authCookie = cookies.find(c => c.startsWith('auth_token='));
+      if (authCookie) token = authCookie.split('=')[1];
+    }
+    if (token && authenticatedSessions.has(token)) {
+      authenticatedSessions.delete(token);
+    }
     res.writeHead(302, {
       'Location': '/',
-      'Set-Cookie': 'auth_token=; HttpOnly; Path=/; Max-Age=0'
+      'Set-Cookie': `auth_token=; ${getCookieOptions(req)}; Max-Age=0`
     });
     res.end();
   } catch (e) {
