@@ -1692,7 +1692,7 @@ app.get('/', async function(req, res) {
     var body = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg' + content_protect_a + '"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:none}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext,textarea,input[type="number"]{font-size:.8em}textarea{width:380px}.freegame,.freegame a{color:green}.blackout,.blackout a{text-decoration:line-through}'
 
     // Highlights CSS
-    body += '.modal{display:none;position:fixed;z-index:1;left:0;top:0;width:100%;height:100%;overflow:hidden;background-color:rgb(0,0,0);background-color:rgba(0,0,0,0.4)}.modal-content{position:absolute;top:100px;bottom:20px;left:50%;transform:translateX(-50%);background-color:#fefefe;padding:10px;border:1px solid #888;width:360px;overflow-y:auto;color:black}#highlights{overflow-y:auto;}#highlights a{color:black}.close{color:black;float:right;font-size:28px;font-weight:bold;}#highlights a:hover,#highlights a:focus,.close:hover,.close:focus{color:gray;text-decoration:none;cursor:pointer;}'
+    body += '.modal{display:none;position:fixed;z-index:1;left:0;top:0;width:100%;height:100%;overflow:hidden;background-color:rgb(0,0,0);background-color:rgba(0,0,0,0.4)}.modal-content{position:absolute;top:100px;bottom:20px;left:50%;transform:translateX(-50%);background-color:#fefefe;padding:10px;border:1px solid #888;width:560px;overflow-y:auto;color:black}#highlights{overflow-y:auto;}#highlights a{color:black}.close{color:black;float:right;font-size:28px;font-weight:bold;}#highlights a:hover,#highlights a:focus,.close:hover,.close:focus{color:gray;text-decoration:none;cursor:pointer;}'
 
     // Tooltip CSS
     body += '.tooltip{position:relative;display:inline-block;border-bottom: 1px dotted gray;}.tooltip .tooltiptext{font-size:.8em;visibility:hidden;width:360px;background-color:gray;color:white;text-align:left;padding:5px;border-radius:6px;position:absolute;z-index:1;top:100%;left:75%;margin-left:-30px;}.tooltip:hover .tooltiptext{visibility:visible;}'
@@ -2781,20 +2781,34 @@ function parsehighlightsresponse(responsetext) {
       captions_parameter = '&captions=disabled';
     }
     if (highlights && (highlights.length > 0)) {
-      for (var i = 0; i < highlights.length; i++) {
+
+      function addhighlight(highlight) {
         var hls_url = '';
         var mp4_url = '';
-        if (highlights[i].playbacks && (highlights[i].playbacks.length > 0)) {
-          for (var j = 0; j < highlights[i].playbacks.length; j++) {
-            if (highlights[i].playbacks[j].name && (highlights[i].playbacks[j].name == 'HTTP_CLOUD_WIRED_60')) {
-              hls_url = highlights[i].playbacks[j].url;
-            } else if (highlights[i].playbacks[j].name && (highlights[i].playbacks[j].name == 'mp4Avc')) {
-              mp4_url = highlights[i].playbacks[j].url;
+        if (highlight.playbacks && (highlight.playbacks.length > 0)) {
+          for (var j = 0; j < highlight.playbacks.length; j++) {
+            if (highlight.playbacks[j].name && (highlight.playbacks[j].name == 'HTTP_CLOUD_WIRED_60')) {
+              hls_url = highlight.playbacks[j].url;
+            } else if (highlight.playbacks[j].name && (highlight.playbacks[j].name == 'mp4Avc')) {
+              mp4_url = highlight.playbacks[j].url;
             }
           }
         }
-        modaltext += "<li><a href='` + link + `?highlight_src=" + encodeURIComponent(hls_url) + "&resolution=" + resolution + captions_parameter + "` + content_protect_b + `'>" + highlights[i].headline + "</a><span class='tinytext'> (<a href='" + mp4_url + "'>MP4</a>)</span></li>";
+        modaltext += "<li><a href='` + link + `?highlight_src=" + encodeURIComponent(hls_url) + "&resolution=" + resolution + captions_parameter + "` + content_protect_b + `'>" + highlight.headline + "</a><span class='tinytext'> (<a href='" + mp4_url + "'>MP4</a>)</span></li>";
       }
+
+      for (var i = 0; i < highlights.length; i++) {
+        if (highlights[i].headline && highlights[i].headline.indexOf("Condensed Game") !== -1) {
+          addhighlight(highlights[i]);
+          modaltext += "<hr>";
+          break;
+  }
+}
+
+      for (var i = 0; i < highlights.length; i++) {
+        addhighlight(highlights[i]);
+      }
+
     } else {
       modaltext += "No highlights available for this game.";
     }
@@ -3324,6 +3338,7 @@ app.get('/highlights', async function(req, res) {
     if ( req.query.gamePk && req.query.gameDate ) {
       highlightsData = await session.getHighlightsData(req.query.gamePk, req.query.gameDate)
     }
+    res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
     res.end(JSON.stringify(highlightsData))
   } catch (e) {
     session.log('highlights request error : ' + e.message)
