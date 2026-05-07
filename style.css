@@ -1,0 +1,69 @@
+html,
+body {
+    display: block;
+    height: 100dvh;
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    background-color: rgba(0, 0, 0, 0.4);
+
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background-color: #fefefe;
+    border: 1px solid #888;
+    overflow-y: auto;
+    color: black;
+    box-sizing: border-box;
+
+    max-height: 90dvh;
+}
+
+#highlights {
+    overflow-y: auto;
+}
+
+#highlights a {
+    color: black;
+}
+
+.close {
+    color: black;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    padding-right: 5px;
+    cursor: pointer;
+}
+
+#highlights a:hover,
+#highlights a:focus,
+.close:hover,
+.close:focus {
+    color: gray;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+@media screen and (max-width: 480px) {
+    .modal {
+        align-items: stretch;
+        justify-content: stretch;
+    }
+
+    .modal-content {
+        max-width: 100vw;
+        border-radius: 0;
+        overflow-y: auto;
+    }
+}

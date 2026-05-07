@@ -3190,6 +3190,21 @@ class sessionClass {
     }
   }
 
+  // Get stylesheet from local file
+  async getCSS() {
+    this.debuglog('getCSS style.css')
+
+    let cssPath = path.join(__dirname, 'style.css')
+
+    if (fs.existsSync(cssPath)) {
+      this.debuglog('serving local stylesheet at ' + cssPath)
+      return fs.readFileSync(cssPath, 'utf8')
+    } else {
+      this.debuglog('failed to get stylesheet at ' + cssPath)
+      return
+    }
+  }
+
   // Get gameday data for a game (play and pitch data)
   async getGamedayData(gamePk) {
     try {

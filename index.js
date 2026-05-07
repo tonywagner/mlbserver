@@ -227,7 +227,7 @@ var ffmpeg_status = false
 
 // Start web server listening on port
 // and also multiview server on its port (next one if not defined otherwise)
-let port = argv.port || 9999
+let port = argv.port || 9669
 let multiview_port = argv.multiview_port || port + 1
 session.setPorts(port, multiview_port)
 app.listen(port, function(addr) {
@@ -250,6 +250,24 @@ function corsMiddleware(req, res, next) {
 }
 httpAttach(multiview_app, corsMiddleware)
 multiview_app.listen(multiview_port)
+
+// Listen for stylesheet requests
+app.get('/style.css', async function (req, res) {
+  if (!(await protect(req, res))) return
+
+  session.requestlog('style.css', req, true)
+
+  var body = await session.getCSS()
+
+  if (!body) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('style.css not found')
+    return
+  }
+
+  res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8' })
+  res.end(body)
+})
 
 // Listen for clear cache requests
 app.get('/clearcache', async function(req, res) {
@@ -1689,10 +1707,7 @@ app.get('/', async function(req, res) {
       content_protect_b = '&content_protect=' + content_protect
     }
 
-    var body = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg' + content_protect_a + '"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:none}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext,textarea,input[type="number"]{font-size:.8em}textarea{width:380px}.freegame,.freegame a{color:green}.blackout,.blackout a{text-decoration:line-through}'
-
-    // Highlights CSS
-    body += '.modal{display:none;position:fixed;z-index:1;left:0;top:0;width:100%;height:100%;overflow:hidden;background-color:rgb(0,0,0);background-color:rgba(0,0,0,0.4)}.modal-content{position:absolute;top:100px;bottom:20px;left:50%;transform:translateX(-50%);background-color:#fefefe;padding:10px;border:1px solid #888;width:560px;overflow-y:auto;color:black}#highlights{overflow-y:auto;}#highlights a{color:black}.close{color:black;float:right;font-size:28px;font-weight:bold;}#highlights a:hover,#highlights a:focus,.close:hover,.close:focus{color:gray;text-decoration:none;cursor:pointer;}'
+    var body = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-type" content="text/html;charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no"><title>' + appname + '</title><link rel="icon" href="favicon.svg' + content_protect_a + '"><link rel="stylesheet" href="/style.css"><style type="text/css">input[type=text],input[type=button]{-webkit-appearance:none;-webkit-border-radius:0}body{max-width:480px;color:lightgray;background-color:black;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:none}a{color:darkgray}button{color:lightgray;background-color:black}button.default{color:black;background-color:lightgray}table{width:100%;pad}table,th,td{border:1px solid darkgray;border-collapse:collapse}th,td{padding:5px}.tinytext,textarea,input[type="number"]{font-size:.8em}textarea{width:380px}.freegame,.freegame a{color:green}.blackout,.blackout a{text-decoration:line-through}'
 
     // Tooltip CSS
     body += '.tooltip{position:relative;display:inline-block;border-bottom: 1px dotted gray;}.tooltip .tooltiptext{font-size:.8em;visibility:hidden;width:360px;background-color:gray;color:white;text-align:left;padding:5px;border-radius:6px;position:absolute;z-index:1;top:100%;left:75%;margin-left:-30px;}.tooltip:hover .tooltiptext{visibility:visible;}'
@@ -2769,6 +2784,35 @@ app.get('/', async function(req, res) {
 
     // Highlights modal functions
     body += `<script type="text/javascript">
+    `
+
+    // Highlights modal positioning
+    body += `var pageScrollY = 0;
+
+    function openModal() {
+      pageScrollY = window.scrollY || document.documentElement.scrollTop;
+      document.body.style.position = "fixed";
+      document.body.style.top = "-" + pageScrollY + "px";
+      document.body.style.left = "0";
+      document.body.style.right = "0";
+      document.body.style.width = "100%";
+      document.body.style.overflow = "hidden";
+      modal.style.display = "flex";
+    }
+
+    function closeModal() {
+      document.body.style.position = "";
+      document.body.style.top = "";
+      document.body.style.left = "";
+      document.body.style.right = "";
+      document.body.style.width = "";
+      document.body.style.overflow = "";
+      window.scrollTo(0, pageScrollY);
+      modal.style.display = "none";
+    }
+      `
+
+  body += `
 var modal = document.getElementById("myModal");
 var highlightsModal = document.getElementById("highlights");
 var span = document.getElementsByClassName("close")[0];
@@ -2814,7 +2858,7 @@ function parsehighlightsresponse(responsetext) {
     }
     modaltext += "</ul>";
     highlightsModal.innerHTML = modaltext;
-    modal.style.display = "block"
+    openModal();
   } catch (e) {
     alert("Error processing highlights: " + e.message)
   }
@@ -2823,12 +2867,10 @@ function showhighlights(gamePk, gameDate) {
   makeGETRequest("` + http_root + `/highlights?gamePk=" + gamePk + "&gameDate=" + gameDate + "` + content_protect_b + `", parsehighlightsresponse);
   return false
 }
-span.onclick = function() {
-  modal.style.display = "none";
-}
+span.onclick = closeModal;
 `
 
-    body += 'window.onclick = function(event) { if (event.target == modal) { modal.style.display = "none"; } }</script>' + "\n"
+    body += 'window.onclick = function(event) { if (event.target == modal) {closeModal()} }</script>' + "\n"
 
     body += "</body></html>"
 
