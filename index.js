@@ -227,7 +227,7 @@ var ffmpeg_status = false
 
 // Start web server listening on port
 // and also multiview server on its port (next one if not defined otherwise)
-let port = argv.port || 9669
+let port = argv.port || 9999
 let multiview_port = argv.multiview_port || port + 1
 session.setPorts(port, multiview_port)
 app.listen(port, function(addr) {
