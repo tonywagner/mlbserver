@@ -1722,8 +1722,12 @@ app.get('/', async function(req, res) {
     // Define option variables in page
     body += 'var date="' + gameDate + '";var level="' + level + '";var org="' + org + '";var mediaType="' + mediaType + '";var resolution="' + resolution + '";var audio_track="' + audio_track + '";var captions="' + captions + '";var force_vod="' + force_vod + '";var inning_half="' + inning_half + '";var inning_number="' + inning_number + '";var skip="' + skip + '";var skip_adjust="' + skip_adjust + '";var pad="' + pad + '";var linkType="' + linkType + '";var startFrom="' + startFrom + '";var scores="' + scores + '";var controls="' + controls + '";var scan_mode="' + scan_mode + '";var content_protect="' + content_protect + '";' + "\n"
 
+    // Disclosure state helper functions
+    body += 'function saveDisclosure(id, val){try{localStorage.setItem("disclosure_"+id,val)}catch(e){}try{sessionStorage.setItem("disclosure_"+id,val)}catch(e){}}' + "\n"
+    body += 'function restoreDisclosure(id){try{var val=localStorage.getItem("disclosure_"+id);if(val===null){val=sessionStorage.getItem("disclosure_"+id)}if(val==="true"){var el=document.getElementById(id);if(el){el.open=true}}}catch(e){}}' + "\n"
+
     // Reload function, called after options change
-    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var newurl="' + http_root + '/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (level != "' + default_level + '"){newurl+="level="+encodeURIComponent(level)+"&"}if (org != "All"){newurl+="org="+encodeURIComponent(org)+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (captions != "' + VALID_CAPTIONS[0] + '"){newurl+="captions="+encodeURIComponent(captions)+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";if (skip_adjust != "' + DEFAULT_SKIP_ADJUST + '"){newurl+="skip_adjust="+skip_adjust+"&"}}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
+    body += 'var defaultDate="' + today + '";var curDate=new Date();var utcHours=curDate.getUTCHours();if ((utcHours >= ' + todayUTCHours + ') && (utcHours < ' + YESTERDAY_UTC_HOURS + ')){defaultDate="' + yesterday + '"}function reload(){var disclosures=document.querySelectorAll(".settingsDisclosure");for(var i=0;i<disclosures.length;i++){if(disclosures[i].id){saveDisclosure(disclosures[i].id,disclosures[i].open)}}var newurl="' + http_root + '/?";if (date != defaultDate){var urldate=date;if (date == "' + today + '"){urldate="today"}else if (date == "' + yesterday + '"){urldate="yesterday"}newurl+="date="+urldate+"&"}if (level != "' + default_level + '"){newurl+="level="+encodeURIComponent(level)+"&"}if (org != "All"){newurl+="org="+encodeURIComponent(org)+"&"}if (mediaType != "' + VALID_MEDIA_TYPES[0] + '"){newurl+="mediaType="+mediaType+"&"}if (mediaType=="Video"){if (resolution != "' + VALID_RESOLUTIONS[0] + '"){newurl+="resolution="+resolution+"&"}if (audio_track != "' + VALID_AUDIO_TRACKS[0] + '"){newurl+="audio_track="+encodeURIComponent(audio_track)+"&"}else if (resolution == "none"){newurl+="audio_track="+encodeURIComponent("' + VALID_AUDIO_TRACKS[2] + '")+"&"}if (captions != "' + VALID_CAPTIONS[0] + '"){newurl+="captions="+encodeURIComponent(captions)+"&"}if (inning_half != "' + VALID_INNING_HALF[0] + '"){newurl+="inning_half="+inning_half+"&"}if (inning_number != "' + VALID_INNING_NUMBER[0] + '"){newurl+="inning_number="+inning_number+"&"}if (skip != "' + VALID_SKIP[0] + '"){newurl+="skip="+skip+"&";if (skip_adjust != "' + DEFAULT_SKIP_ADJUST + '"){newurl+="skip_adjust="+skip_adjust+"&"}}}if (pad != "' + VALID_PAD[0] + '"){newurl+="pad="+pad+"&";}if (linkType != "' + VALID_LINK_TYPES[0] + '"){newurl+="linkType="+linkType+"&"}if (linkType=="' + VALID_LINK_TYPES[0] + '"){if (startFrom != "' + VALID_START_FROM[0] + '"){newurl+="startFrom="+startFrom+"&"}if (controls != "' + VALID_CONTROLS[0] + '"){newurl+="controls="+controls+"&"}}if (linkType=="Stream"){if (force_vod != "' + VALID_FORCE_VOD[0] + '"){newurl+="force_vod="+force_vod+"&"}}if (scores != "' + VALID_SCORES[0] + '"){newurl+="scores="+scores+"&"}if (scan_mode != "' + session.data.scan_mode + '"){newurl+="scan_mode="+scan_mode+"&"}if (content_protect != ""){newurl+="content_protect="+content_protect+"&"}window.location=newurl.substring(0,newurl.length-1)}' + "\n"
 
     // Ajax function for multiview and highlights
     body += 'function makeGETRequest(url, callback){var request=new XMLHttpRequest();request.onreadystatechange=function(){if (request.readyState==4 && request.status==200){callback(request.responseText)}};request.open("GET", url);request.send();}' + "\n"
@@ -1804,7 +1808,7 @@ app.get('/', async function(req, res) {
     }
     body += '</div></div>' + "\n" + settingInfo('mediaTypeInfo')
 
-    body += '<details class="settingsDisclosure"><summary>Show more filters</summary><div class="settingsDisclosureContent">'
+    body += '<details class="settingsDisclosure" id="moreFilters"><summary>Show more filters</summary><div class="settingsDisclosureContent">'
     body += '<div class="settingRow">' + settingInfoLabel('Level', 'levelInfo') + '<div class="settingControl">'
     for (const [key, value] of Object.entries(levels)) {
       body += '<button '
@@ -1822,7 +1826,7 @@ app.get('/', async function(req, res) {
       if ( org == orgs[i] ) body += ' selected'
       body += '>' + orgs[i] + '</option> '
     }
-    body += '</select></div></div>' + settingInfo('levelInfo') + settingInfo('orgInfo') + '</div></details></div>' + "\n"
+    body += '</select></div></div>' + settingInfo('levelInfo') + settingInfo('orgInfo') + '</div></details><script>restoreDisclosure("moreFilters")</script></div>' + "\n"
 
     body += '<div class="settingsGroup">'
 
@@ -1860,7 +1864,7 @@ app.get('/', async function(req, res) {
       body += settingInfo('inningInfo')
     }
 
-    body += '<details class="settingsDisclosure"><summary>Show more stream options</summary><div class="settingsDisclosureContent">'
+    body += '<details class="settingsDisclosure" id="moreStreamOptions"><summary>Show more stream options</summary><div class="settingsDisclosureContent">'
 
     body += '<div class="settingRow">' + settingInfoLabel('Link Type', 'linkTypeInfo') + '<div class="settingControl">'
     for (var i = 0; i < VALID_LINK_TYPES.length; i++) {
@@ -1943,7 +1947,7 @@ app.get('/', async function(req, res) {
         body += '<span>(if client does not support seeking in live streams)</span></div></div>' + "\n" + settingInfo('forceVodInfo')
       }
 
-    body += '</div></details></div></div></div></div>'
+    body += '</div></details><script>restoreDisclosure("moreStreamOptions")</script></div></div></div></div>'
 
     const subscriptionInfoText = {
       masn: 'MASN live stream for entitled subscribers. <a href="https://support.mlb.com/s/article/MASN-In-Market-Offering">See here for more information</a>.',
@@ -1995,6 +1999,18 @@ app.get('/', async function(req, res) {
 
     body += `<script>
 document.addEventListener("DOMContentLoaded", function () {
+  var disclosures = document.querySelectorAll(".settingsDisclosure");
+  for (var k = 0; k < disclosures.length; k++) {
+    if (disclosures[k].id) {
+      restoreDisclosure(disclosures[k].id);
+    }
+    disclosures[k].addEventListener("toggle", function () {
+      if (this.id) {
+        saveDisclosure(this.id, this.open);
+      }
+    });
+  }
+
   var infoButtons = document.getElementsByClassName("info");
 
   for (var i = 0; i < infoButtons.length; i++) {
