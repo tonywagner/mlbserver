@@ -26,7 +26,7 @@ const AFL_TEAM_IDS = { 'GDD': '454', 'PEJ': '490', 'SRR': '527', 'SUR': '542', '
 
 const LIDOM_TEAM_IDS = { 'AGU': '667', 'TOR': '668', 'EST': '669', 'GIG': '670', 'ESC': '671', 'LIC': '672' }
 
-const LMP_TEAM_IDS = { 'MXC': '673', 'JAL': '674', 'MOC': '675', 'HER': '677', 'CUL': '678', 'MAZ': '679', 'OBR': '680', 'GSV': '5482', 'NAY': '6483', 'TBC': '6484' }
+const LMP_TEAM_IDS = { 'MXC': '673', 'JAL': '674', 'MOC': '675', 'HER': '677', 'CUL': '678', 'MAZ': '679', '356"OBR': '680', 'GSV': '5482', 'NAY': '6483', 'TBC': '6484' }
 
 const AFFILIATE_TEAM_IDS = {"ATH":"237,400,499,524","ATL":"431,432,478,6325","AZ":"419,516,2310,5368","BAL":"418,493,548,568","BOS":"414,428,533,546","CHC":"451,521,550,553","CIN":"416,450,459,498","CLE":"402,437,445,481","COL":"259,342,486,538","CWS":"247,487,494,580","DET":"106,512,570,582","HOU":"482,573,3712,5434","KC":"541,565,1350,3705","LAA":"460,526,559,561","LAD":"238,260,456,6482","MIA":"479,554,564,4124","MIL":"249,556,572,5015","MIN":"492,509,1960,3898","NYM":"453,505,507,552","NYY":"531,537,587,1956","PHI":"427,522,566,1410","PIT":"452,477,484,3390","SD":"103,510,584,4904","SEA":"401,403,529,574","SF":"105,461,476,3410","STL":"235,279,440,443","TB":"233,234,421,2498","TEX":"102,448,540,6324","TOR":"422,424,435,463","WSH":"426,436,534,547"}
 
@@ -884,29 +884,6 @@ class sessionClass {
     // Read credentials from file, if present
     this.credentials = this.readFileToJson(this.CREDENTIALS_FILE) || {}
 
-    // Check if account credentials were provided and if they are different from the stored credentials
-    if ( argv.account_username && argv.account_password && ((argv.account_username != this.credentials.account_username) || (argv.account_password != this.credentials.account_password)) ) {
-      this.log('updating account credentials')
-      this.credentials.account_username = argv.account_username
-      this.credentials.account_password = argv.account_password
-      this.save_credentials()
-      this.clear_session_data()
-    } else {
-      // Prompt for credentials if they don't exist
-      if ( !this.credentials.account_username || !this.credentials.account_password ) {
-        this.debuglog('prompting for account credentials')
-        try {
-          this.credentials.account_username = readlineSync.question('Enter account username (email address): ')
-          this.credentials.account_password = readlineSync.question('Enter account password: ', { hideEchoBack: true })
-        } catch {
-          this.log('error: required account credentials not present in Docker compose/run')
-          process.exit(1)
-        }
-        this.save_credentials()
-        this.clear_session_data()
-      }
-    }
-
     // If page username/password protection is specified, retrieve or generate a random string of random length
     // to protect non-page content (streams, playlists, guides, images)
     this.protection = {}
@@ -1568,6 +1545,7 @@ class sessionClass {
     this.debuglog('getEntitlements')
     if ( !this.data.entitlements ) {
       await this.getSession()
+      if ( this.deviceAuth ) return []
     }
     if ( this.data.entitlements ) {
       this.debuglog('using cached entitlements')
@@ -1580,17 +1558,21 @@ class sessionClass {
   // new API call
   async getSession() {
     this.debuglog('getSession')
+    let loginToken = await this.getLoginToken()
+    if ( this.deviceAuth ) return
+    if ( !loginToken ) this.halt('missing loginToken')
+
     let reqObj = {
       url: GRAPHQL_URL,
       headers: {
         'accept': 'application/json, text/plain, */*',
-		    'accept-encoding': 'gzip, deflate, br',
-		    'accept-language': 'en-US,en;q=0.5',
-		    'authorization': 'Bearer ' + await this.getLoginToken() || this.halt('missing loginToken'),
-		    'connection': 'keep-alive',
-		    'content-type': 'application/json',
-		    'x-client-name': 'WEB',
-		    'x-client-version': '7.8.1',
+        'accept-encoding': 'gzip, deflate, br',
+        'accept-language': 'en-US,en;q=0.5',
+        'authorization': 'Bearer ' + loginToken,
+        'connection': 'keep-alive',
+        'content-type': 'application/json',
+        'x-client-name': 'WEB',
+        'x-client-version': '7.8.1',
         'origin': 'https://www.mlb.com',
         'referer': 'https://www.mlb.com/',
         'user-agent': USER_AGENT
@@ -1703,41 +1685,143 @@ class sessionClass {
 
   // API call
   async getLoginToken() {
+    if ( this._loginTokenPromise ) {
+      return this._loginTokenPromise
+    }
+    this._loginTokenPromise = this._getLoginTokenInternal()
+    try {
+      return await this._loginTokenPromise
+    } finally {
+      this._loginTokenPromise = null
+    }
+  }
+  async _getLoginTokenInternal() {
     this.debuglog('getLoginToken')
-    if ( !this.data.loginToken || !this.data.loginTokenExpiry || (Date.parse(this.data.loginTokenExpiry) < new Date()) ) {
-      this.debuglog('need to get loginToken')
-      let reqObj = {
-        url: 'https://ids.mlb.com/oauth2/aus1m088yK07noBfh356/v1/token',
-        headers: {
-          'user-agent': 'okhttp/3.12.1',
-          'content-type': 'application/x-www-form-urlencoded'
-        },
-        form: {
-          'username': this.credentials.account_username || this.halt('missing account username'),
-          'password': this.credentials.account_password || this.halt('missing account password'),
-          'grant_type': 'password',
-          'scope': 'openid offline_access',
-          'client_id': '0oa3e1nutA1HLzAKG356'
-        }
-      }
-      var response = await this.httpPost(reqObj)
-      if ( this.isValidJson(response) ) {
-        this.debuglog('getLoginToken : ' + response)
-        let obj = JSON.parse(response)
-        this.debuglog('getLoginToken token : ' + obj.access_token)
-        this.debuglog('getLoginToken expires in : ' + obj.expires_in)
-        this.data.loginToken = obj.access_token
-        this.data.loginTokenExpiry = new Date(new Date().getTime() + obj.expires_in * 1000)
-        this.save_session_data()
-        await this.getSession()
-        return this.data.loginToken
-      } else {
-        this.log('getLoginToken response failure')
-      }
-    } else {
+    if ( this.data.loginToken && this.data.loginTokenExpiry && (Date.parse(this.data.loginTokenExpiry) - 300000 > Date.now()) ) {
       this.debuglog('using cached loginToken')
       return this.data.loginToken
     }
+
+    // Prevent generating a new code if a device auth prompt is already active
+    if ( this.deviceAuthPolling ) {
+      this.debuglog('device authorization already in progress')
+      return ''
+    }
+
+    const tokenUrl = 'https://ids.mlb.com/oauth2/aus1m088yK07noBfh356/v1/token'
+    const deviceAuthUrl = 'https://ids.mlb.com/oauth2/aus1m088yK07noBfh356/v1/device/authorize'
+    const clientId = '0oa3e1nutA1HLzAKG356'
+    const headers = {
+      'user-agent': 'okhttp/3.12.1',
+      'content-type': 'application/x-www-form-urlencoded'
+    }
+
+    // 1. Attempt to use refresh_token if available
+    if ( this.data.refreshToken ) {
+      this.debuglog('refreshing loginToken')
+      let refreshRes = await this.httpPost({
+        url: tokenUrl,
+        simple: false,
+        headers,
+        form: {
+          'grant_type': 'refresh_token',
+          'refresh_token': this.data.refreshToken,
+          'scope': 'openid offline_access',
+          'client_id': clientId
+        }
+      })
+      if ( this.isValidJson(refreshRes) ) {
+        let obj = JSON.parse(refreshRes)
+        if ( obj.access_token ) {
+          this.data.loginToken = obj.access_token
+          this.data.loginTokenExpiry = new Date(new Date().getTime() + obj.expires_in * 1000)
+          if ( obj.refresh_token ) this.data.refreshToken = obj.refresh_token
+          this.save_session_data()
+          await this.getSession()
+          return this.data.loginToken
+        }
+      }
+      this.log('refresh token expired or invalid, falling back to device code flow')
+      delete this.data.refreshToken
+    }
+
+    // 2. Initiate Device Code Flow
+    this.debuglog('initiating device code flow')
+    let authRes = await this.httpPost({
+      url: deviceAuthUrl,
+      simple: false,
+      headers,
+      form: {
+        'client_id': clientId,
+        'scope': 'openid offline_access'
+      }
+    })
+
+    if ( !this.isValidJson(authRes) ) {
+      this.halt('getLoginToken device authorize failure')
+    }
+
+    let authObj = JSON.parse(authRes)
+    if ( !authObj.device_code || !authObj.user_code ) {
+      this.halt('getLoginToken missing device_code: ' + authRes)
+    }
+
+    let verifyUrl = authObj.verification_uri_complete || authObj.verification_uri
+    this.deviceAuth = {
+      verifyUrl,
+      userCode: authObj.user_code,
+      hasCompleteUrl: Boolean(authObj.verification_uri_complete)
+    }
+
+    this.log('ACTION REQUIRED: Authorize this device at ' + verifyUrl + ' (Code: ' + authObj.user_code + ')')
+
+    // 3. Poll token endpoint in the background until user completes login
+    let intervalMs = (authObj.interval || 5) * 1000
+    let expiresAt = Date.now() + ((authObj.expires_in || 600) * 1000)
+
+    this.deviceAuthPolling = true
+    ;(async () => {
+      try {
+        while ( Date.now() < expiresAt ) {
+          await new Promise(resolve => setTimeout(resolve, intervalMs))
+
+          let tokenRes = await this.httpPost({
+            url: tokenUrl,
+            simple: false,
+            headers,
+            form: {
+              'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
+              'device_code': authObj.device_code,
+              'client_id': clientId
+            }
+          })
+
+          if ( this.isValidJson(tokenRes) ) {
+            let obj = JSON.parse(tokenRes)
+            if ( obj.access_token ) {
+              this.log('device authorization successful')
+              this.data.loginToken = obj.access_token
+              this.data.loginTokenExpiry = new Date(new Date().getTime() + obj.expires_in * 1000)
+              if ( obj.refresh_token ) this.data.refreshToken = obj.refresh_token
+              this.save_session_data()
+              await this.getSession()
+              return
+            } else if ( obj.error === 'slow_down' ) {
+              intervalMs += 5000
+            } else if ( obj.error && obj.error !== 'authorization_pending' ) {
+              this.log('device authorization failed: ' + (obj.error_description || obj.error))
+              return
+            }
+          }
+        }
+        this.log('device authorization timed out; reload page to try again')
+      } finally {
+        delete this.deviceAuth
+        this.deviceAuthPolling = false
+      }
+    })()
+
+    return ''
   }
 
   // API call
@@ -4042,7 +4126,7 @@ class sessionClass {
             'User-Agent': USER_AGENT
           }
         }
-        if ( (this.credentials.account_username.length > 0) && (this.credentials.account_password.length > 0) ) {
+        if ( this.data.loginToken || this.data.refreshToken ) {
           let access_token = await this.getLoginToken()
           let okta_id = await this.getOktaId()
           if ( access_token && okta_id ) {

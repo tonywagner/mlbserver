@@ -4,8 +4,6 @@ services:
     container_name: mlbserver
     environment:
       - TZ=America/New York
-      - account_username=your.account.email@example.com
-      - account_password=youraccountpassword
       #- fav_teams=AZ,BAL
       #- http_root=/mlbserver
       #- debug=false

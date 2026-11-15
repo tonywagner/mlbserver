@@ -56,8 +56,6 @@ Basic command line or Docker environment options:
 Advanced command line or Docker environment options:
 
 ```
---account_username (required, email address, default will use stored credentials or prompt user to enter them if not using Docker)
---account_password (required, default will use stored credentials or prompt user to enter them if not using Docker)
 --fav_teams (optional, comma-separated list of favorite team abbreviations from https://github.com/tonywagner/mlbserver/blob/master/session.js#L23 -- will prompt if not set or stored and not using Docker)
 --http_root (specify the alternative http webroot or initial path prefix, default is none)
 --free (optional, highlights free games)

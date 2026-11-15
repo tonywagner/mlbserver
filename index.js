@@ -133,7 +133,7 @@ var argv = minimist(process.argv, {
     lp: 'login_page'
   },
   boolean: ['ffmpeg_logging', 'debug', 'logout', 'session', 'cache', 'version', 'free', 'env', 'login_page'],
-  string: ['account_username', 'account_password', 'fav_teams', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'data_directory', 'http_root']
+  string: ['fav_teams', 'multiview_path', 'ffmpeg_path', 'ffmpeg_encoder', 'page_username', 'page_password', 'content_protect', 'data_directory', 'http_root']
 })
 
 if (argv.env) {
@@ -239,6 +239,16 @@ app.listen(port, function(addr) {
   }
   session.clear_multiview_files()
 })
+
+// Refresh login token every 12 hours
+setInterval(async () => {
+  try {
+    await session.getLoginToken()
+  } catch (e) {
+    session.log('scheduled token refresh error : ' + e.message)
+  }
+}, 12 * 60 * 60 * 1000)
+
 var multiview_app = http.createServer()
 var hls = new HLSServer(multiview_app, {
   path: '/' + hls_base,
@@ -429,6 +439,13 @@ app.get('/stream.m3u8', async function(req, res) {
         options.referer = req.query.referer
         session.debuglog('sending referer : ' + options.referer)
       }
+      
+			if ( session.deviceAuth ) {
+				let server = (req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : 'http') + '://' + req.headers.host + http_root
+				session.log('MLB account authorization required - visit ' + server + '/device-auth')
+				res.end('')
+				return
+			}
 
       getMasterPlaylist(streamURL, req, res, options)
     } else {
@@ -1564,6 +1581,43 @@ app.get('/logout', async function(req, res) {
   }
 });
 
+// Device Code OAuth prompt page
+app.get('/device-auth', async function(req, res) {
+  if ( ! (await protect(req, res)) ) return
+
+  let content_protect_a = session.protection.content_protect ? '?content_protect=' + session.protection.content_protect : ''
+
+  if ( !session.deviceAuth ) {
+    res.writeHead(302, { 'Location': http_root + '/' + content_protect_a })
+    res.end()
+    return
+  }
+
+  const { verifyUrl, userCode, hasCompleteUrl } = session.deviceAuth
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+  res.end(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="3">
+  <title>Authorize - ${appname}</title>
+  <style>
+    body { background-color: #0e0e0e; color: LightGray; font-family: Verdana, Tahoma, sans-serif; padding: 2rem; text-align: center; }
+    h1 { color: goldenrod; }
+    .code { font-size: 2rem; font-weight: bold; letter-spacing: 0.15em; background: #1e1e1e; padding: 0.75rem 1.5rem; border-radius: 6px; display: inline-block; margin: 1rem 0; color: #fff; border: 1px solid #444; }
+    a.btn { display: inline-block; padding: 0.75rem 1.5rem; background: goldenrod; color: #000; font-weight: bold; text-decoration: none; border-radius: 4px; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>MLB Account Authorization</h1>
+  <p>Click below to open MLB login in a new tab and authorize this server:</p>
+  <p><a class="btn" href="${verifyUrl}" target="_blank" rel="noopener">Open MLB Login</a></p>
+  ${hasCompleteUrl ? `<p><small>If prompted for a code, enter: <strong>${userCode}</strong></small></p>` : `<p>Enter this code when prompted:</p><div class="code">${userCode}</div>`}
+  <p><small>This page refreshes automatically and will redirect once login is complete.</small></p>
+</body>
+</html>`)
+})
+
 // Server homepage, base URL
 app.get('/', async function(req, res) {
   try {
@@ -1996,6 +2050,11 @@ app.get('/', async function(req, res) {
     let currentDate = new Date()
 
     let entitlements = await session.getEntitlements()
+    if ( session.deviceAuth ) {
+      res.writeHead(302, { 'Location': http_root + '/device-auth' + content_protect_a })
+      res.end()
+      return
+    }
 
     body += `<script>
 document.addEventListener("DOMContentLoaded", function () {
@@ -3382,7 +3441,7 @@ body += `
     body += '<p><a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}})();">Boxscore</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Scoreboard</a> | <a href="javascript:(function(){let x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">Linescore</a> | <a href="javascript:(function(){let x=document.querySelector(\'#mlbtv-stats-panel\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-header-container\');if(x.style.display==\'none\'){x.style.display=\'initial\';}else{x.style.display=\'none\';}x=document.querySelector(\'.mlbtv-container--footer\');if(x.style.display==\'none\'){let y=document.querySelector(\'.mlbtv-players-container\');y.style.display=\'none\';x.style.display=\'initial\';setTimeout(function(){y.style.display=\'initial\';},15);}else{x.style.display=\'none\';}})();">All</a></p>' + "\n"
 
     // Print version
-    body += '<p class="tinytext">Version ' + version + ' (<a href="' + http_root + '/clearcache">clear session and cache</a>)</p>' + "\n"
+    body += '<p class="tinytext">Version ' + version + ' (<a href="' + http_root + '/clearcache">clear session and cache, forcing re-login</a>)</p>' + "\n"
     body += '</div></div></div>'
 
     // Datepicker functions
